@@ -23,8 +23,11 @@ import java.awt.event.WindowEvent;
  * terminal, the connection status bar and the menu bar, and closing it quits the application.
  * Every other window is a free-floating top-level {@code JFrame} owned by the
  * {@code WindowManager} - there is no MDI desktop pane here and there never will be.</p>
+ *
+ * <p>Final because the constructor hands {@code this} to menu-item listeners; there is exactly
+ * one main window and nothing to gain from subclassing it.</p>
  */
-public class MainWindow extends JFrame {
+public final class MainWindow extends JFrame {
 	public MainWindow() {
 		super("PDP11GUI");
 		setDefaultCloseOperation(EXIT_ON_CLOSE);

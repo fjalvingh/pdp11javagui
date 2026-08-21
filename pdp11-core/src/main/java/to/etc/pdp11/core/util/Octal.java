@@ -34,6 +34,19 @@ public final class Octal {
 	}
 
 	/**
+	 * How many octal digits are needed to print a value of the given bit width: 6 for 16 and
+	 * 18 bits, 8 for 22.
+	 *
+	 * <p>Note 16 and 18 bits both come to six digits - {@code 0777776} is six digits wide.
+	 * From {@code Dword2OctalStr}'s {@code (fixbitwidth+2) div 3} ({@code AuxU.pas:174}).</p>
+	 */
+	public static int digitsForBits(int bits) {
+		if(bits < 1)
+			throw new IllegalArgumentException("bits must be >= 1, got " + bits);
+		return (bits + 2) / 3;
+	}
+
+	/**
 	 * Format a 16-bit word as six octal digits, the way a PDP-11 console prints one.
 	 */
 	public static String word(int value) {

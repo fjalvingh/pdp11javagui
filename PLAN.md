@@ -551,15 +551,22 @@ toolchain support and will fight current compiler/enforcer plugin versions. Reso
 Maven wrapper pinning 3.9.11 plus a `requireMavenVersion` floor of 3.9, rather than by
 touching the user's `~/bin/mvn`: the wrapper is what CI uses on all three platforms anyway.
 Build with `./mvnw`. JDK 21 and 25 are both
-installed; target 21 (LTS). `macro11`, `m4` and SimH's `pdp11` are already on `PATH`
-(`/home/jal/bin/`), so phase 4 and 6 integration tests can run locally from the start. **Extract `machines/*.ini` from the retrocmp.com installer and commit them** —
+installed; target 21 (LTS). `macro11`, `m4` and SimH's `pdp11` are already on `PATH` (`/home/jal/bin/`), so phase 4 and 6
+integration tests can run locally from the start — **but `pdp11` does not currently start**:
+it is linked against `libvdeplug.so.2`, which is not installed and which Ubuntu now ships as
+`libvdeplug2t64`. Nothing here uses VDE networking, so unpacking that `.deb` and pointing
+`LD_LIBRARY_PATH` at it is enough, no root needed; `tools/gen-disas-corpus.sh` carries the
+recipe. Phase 4's SimH integration tests must handle this, and CI has no SimH at all — which
+is why the disassembler corpus is committed rather than generated during the build. Free
+Pascal is **not** installed either, so the Lazarus reference build cannot currently be
+compiled or run on this machine for cross-checking. **Extract `machines/*.ini` from the retrocmp.com installer and commit them** —
 they drive bitfield definitions, register-group windows, the I/O page scanner and the fakes'
 valid-address map, and they are not in the Pascal repo. **Done:** recovered from
 `PDP11GUI.msi` 1.48.6 (GitHub releases → `Data1.cab`) and committed to
 `pdp11-app/src/main/resources/machines/` — `pdp11.ini` plus the eight `*.modules` libraries
 it includes, ISO-8859-1 with CRLF. *Small.*
 
-**Phase 1 — Pure core.** `Address`, `MemoryAddressType`, octal formatting, `BitfieldDef*`,
+**Phase 1 — Pure core. DONE.** `Address`, `MemoryAddressType`, octal formatting, `BitfieldDef*`,
 `Disassembler` (from `common/Pdp11DisasU.pas`, 628 lines — take `byte[]` instead of the
 `PAnsiChar` that exists only for retired-DLL ABI compatibility, `:56-58`), plus the `Logger`
 and `ProgressMonitor` abstractions. ~1,500 lines, no dependencies, immediately unit-testable.
@@ -569,6 +576,28 @@ disassembler against **SimH itself** (`examine -m`) rather than against the Pasc
 `Pdp11DisasU.pas` explicitly mirrors SimH's `pdp11_sys.c` operand classes (`:104-106`), SimH
 is already installed, and checking against the authority beats checking against another port
 of it. *Small–medium.*
+
+**Outcome.** The cross-check went **exhaustive** rather than sampled — all 65536 words, via
+`tools/gen-disas-corpus.sh`, committed as a test fixture so the test needs no SimH. It paid
+for itself four times over:
+
+- **Two bugs in the Pascal, not reproduced.** `cls3B` reads SPL's level from bits 8..6 instead
+  of 2..0 (`Pdp11DisasU.pas:513`, reusing the `reg3` field meant for RSOP/SOPR), so it prints
+  `SPL 2` for `000234`. And mode 0 of a float operand passes the full 3-bit register field to
+  `FacName`, which masks it to 2 bits (`:410`, `:342`), so `CLRF AC5` prints as `CLRF AC1`.
+- **Two bugs in SimH, not adopted.** Its `opcode[]` table has the same copy-paste duplicate in
+  each half of the condition-code group: `000256` repeats `000255`'s text and `000276` repeats
+  `000275`'s. Bit 0 is clear in both, so the decodes are `CLN CLZ CLV` and `SEN SEZ SEV`. The
+  Pascal header documents only the first; the second surfaced *because* the sweep was
+  exhaustive.
+- **A third SimH bug.** SimH decodes `LDEXP` for AC0 only, though `STEXP` — identical encoding
+  format — works for all four. `macro11` assembles `LDEXP R0,AC1` to `176500`, so SimH's mask
+  for that one entry is too wide.
+
+`macro11`, already on `PATH` for phase 6, turned out to be the tie-breaker whenever SimH and
+the Pascal disagreed: it is a third independent implementation of the same encoding, and
+assembling the disputed instruction settles the question in seconds. Worth remembering for
+phase 4.
 
 **Phase 2 — Model.** `MemoryCell`/`MemoryCellGroup`/`MemoryCellGroups` with the new listener
 bus and address index; `Pdp11Mmu`; machine-description `.ini` parsing with the m4 replacement.
