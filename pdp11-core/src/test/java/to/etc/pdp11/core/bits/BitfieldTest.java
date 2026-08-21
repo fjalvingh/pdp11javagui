@@ -77,19 +77,23 @@ class BitfieldTest {
 		assertEquals("PRIO", psw.findByName("prio").name());
 		assertNull(psw.findByName("nonesuch"));
 
-		assertEquals("C", psw.findByBit(0).name());
-		assertEquals("PRIO", psw.findByBit(6).name());
+		assertEquals("C", psw.fieldsAtBit(0).get(0).name());
+		assertEquals("PRIO", psw.fieldsAtBit(6).get(0).name());
 		//-- Bits 15..8 are undefined in this register, which the display shows differently
 		//-- from a defined zero.
-		assertNull(psw.findByBit(15));
+		assertTrue(psw.fieldsAtBit(15).isEmpty());
 		assertEquals(0b11111111, psw.definedMask());
 	}
 
 	@Test
-	void overlappingOrDuplicateFieldsAreRejected() {
+	void duplicateFieldNamesAreRejectedButOverlappingBitsAreNot() {
 		BitfieldsDef d = psw();
 		assertThrows(IllegalArgumentException.class, () -> d.add(BitfieldDef.of("N", "again", 12)));
-		assertThrows(IllegalArgumentException.class, () -> d.add(BitfieldDef.of("OTHER", "", 6)));
+
+		//-- Overlap is how the descriptions express a register that reads one way and writes
+		//-- another: the DZ11 defines RBUF.PAR ERR<12> and LPR.RX ON<12> in one definition.
+		d.add(BitfieldDef.of("WRITE.SOMETHING", "same bit, write side", 6));
+		assertEquals(2, d.fieldsAtBit(6).size());
 	}
 
 	@Test

@@ -33,8 +33,8 @@ reference implementation throughout the port.
 |---|---|---|
 | 0 — Scaffolding | **Done** | 3 Maven modules, wrapper on 3.9.11, FlatLaf shell, CI on all three platforms. Machine `.ini` files recovered from the MSI; the m4 subset they use is measured and tiny. |
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
-| 2 — Model | Next | `MemoryCell*` + listener bus, `Pdp11Mmu`, machine-description parsing and the m4 replacement. |
-| 3 — Transports and fakes | | |
+| 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
+| 3 — Transports and fakes | Next | `PhysicalTransport` + serial/telnet/SimH, and the ported `Fake*` simulators. |
 | 4 — Console layer | | The keystone. Budget it generously. |
 | 5 — First usable app | | |
 | 6 — Assembler and tools | | |
@@ -629,13 +629,51 @@ happen about console protocol behaviour rather than opcodes.
   regenerated against the newer build and the exclusion removed. A disagreement that resolves
   itself in your favour is the strongest confirmation available.
 
-**Phase 2 — Model.** `MemoryCell`/`MemoryCellGroup`/`MemoryCellGroups` with the new listener
+**Phase 2 — Model. DONE.** `MemoryCell`/`MemoryCellGroup`/`MemoryCellGroups` with the new listener
 bus and address index; `Pdp11Mmu`; machine-description `.ini` parsing with the m4 replacement.
 Cut `MemoryCellU`'s dependency on `ConsolePDP1144U` and `FormMainU` (`:185-192`) behind
 interfaces. Decide `ChangeAdddressWidth` (`MemoryCellU.pas:841-857`, called from
 `FormMainU.pas:762,769,776`): with immutable `Address` it becomes a rebuild rather than an
 in-place mutation. **Done when:** a real `machines/pdp11.ini` loads into groups and bitfield
 defs, and propagation tests cover the three storm guards. *Medium.*
+
+**Outcome.** Both criteria met, and the shipped description loads with **zero warnings**: 17
+device groups, 62 bitfield definitions, 233 cells. Remember this feature has never worked on
+Linux at all, so nothing had ever checked what is actually in those files.
+
+- **The m4 replacement reproduces GNU m4 1.4.21 byte for byte** over the shipped description.
+  Two properties of m4 turned out not to be optional. A macro's expansion must be *rescanned* —
+  `Module_SLU`'s body contains `_offset($1,0)`, so a regex pass cannot work — and a builtin
+  name is only a macro when it is actually *called*: these files are full of English prose
+  containing the words `include`, `index`, `format` and `len`, and expanding those would
+  corrupt the descriptions. 215 expansions for `pdp11.ini`.
+- **Two tightenings I added were wrong, and the real data said so.** I rejected overlapping
+  bitfields and duplicate addresses within a group as obvious corruption. Both are deliberate:
+  the DZ11 defines a register's read and write meanings in one section with a name prefix (41
+  overlapping fields), and the RX211 declares its single data buffer under six names at one
+  address because the controller reinterprets it at each stage of a transfer. Loading the real
+  file before trusting a validation rule is the lesson.
+- **Four bugs in `Pdp11MmuU.pas`, not reproduced.** No oracle exists for these — SimH's console
+  `examine` does not relocate, so it cannot be asked — so each has a test stating the handbook
+  rule it follows rather than just a number. (1) The displacement mask is `$1777`, not `$1FFF`;
+  that is not a contiguous field, so bits 3, 7 and 11 drop out of the middle of every offset.
+  (2) The page-length check is off by one block, so a `PLF` of 0 — a legal one-block page —
+  rejects every address in it. (3) Downward-expanding pages raise an exception, and those are
+  stack pages, the first thing you meet in a running kernel. (4) Four of the twelve
+  register-dispatch branches are copy-paste wrong: kernel instruction PAR and PDR both write
+  the *user* arrays, and three PDR branches re-test the PAR range above them and so are
+  unreachable, leaving those PDR sets zero forever. The Java drives that dispatch off a table
+  of twelve blocks rather than a ladder of near-identical range tests, which is what stops it
+  recurring.
+- **Divergence from §2's sketch, deliberately.** The sketch puts `addListener` on
+  `MemoryCellGroups`; listeners are on `MemoryCellGroup` instead, because all eight Pascal
+  subscription sites are per-group and the `pdpOverwritesEdit` opt-out is per-group too. A
+  single global list would make every window filter events for 25 groups it does not care
+  about. The *address index* is on `MemoryCellGroups`, as the sketch has it.
+- **The index is keyed on the address normalised to 22 bits**, not on the raw value. The MMU
+  builds its group at 22 bits while descriptions load at 16, and `0177776` and `017777776` are
+  the same processor status word; comparing raw values, as the Pascal does, gets that wrong in
+  both directions.
 
 **Phase 3 — Transports and fakes.** `PhysicalTransport` + serial (jSerialComm), telnet
 (Socket + IAC state machine, ~150 lines replacing `OverbyteIcsTnCnx.pas`), SimH child process,

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Phase 2 — model
+
+- `to.etc.pdp11.core.mem`: `CellValue` and `AddressRange` replace the `$ffffffff` sentinel with
+  types where the unknown state cannot be compared at all; `MemoryCell`, `MemoryCellGroup`,
+  `MemoryCellGroups` with a real listener list per group (the Pascal has a single delegate, so
+  a second subscriber silently unsubscribed the first) and an address index across all groups
+  in place of the O(groups x cells) scan on every word.
+  - The index is keyed on the address normalised to 22 bits, so the MMU's 22-bit group and a
+    description's 16-bit groups recognise each other's registers.
+  - All three propagation guards are preserved and tested: the per-group `pdpOverwritesEdit`
+    opt-out, self-exclusion, and the value-equality short-circuit that terminates propagation.
+    A depth guard sits behind them, since the Pascal has no recursion guard at all.
+- `to.etc.pdp11.core.machine`: `M4Preprocessor` reimplements the m4 subset the machine
+  descriptions use and **reproduces GNU m4 1.4.21 byte for byte** over the shipped
+  description. This replaces a shell-out to `m4.bat` — a Windows batch file, which is why
+  bitfields, the I/O page scanner and the register-group windows have never worked on Linux —
+  along with its temp file, 5 second timeout and two `ProcessMessages` spin loops.
+  `IniFile` and `MachineDescription` load the result: 17 device groups, 62 bitfield
+  definitions and 233 cells from `pdp11.ini`, with no warnings.
+- `to.etc.pdp11.core.mmu`: `Pdp11Mmu`, with four bugs in the Pascal corrected — a displacement
+  mask of `$1777` that is not a contiguous field, a page-length check off by one block (a legal
+  one-block page rejected every address in it), downward-expanding pages raising instead of
+  translating, and four of twelve register-dispatch branches copy-pasted so that kernel
+  instruction PAR/PDR wrote the user arrays and three PDR sets could never be written at all.
+- Two validation rules added on the way in turned out to be wrong about the real data and were
+  removed: overlapping bitfields and several register names at one address are both
+  deliberate. See `machines/README.md`.
+
 ### Phase 1 — pure core
 
 - `to.etc.pdp11.core.addr`: `MemoryAddressType` and an immutable `Address` record.

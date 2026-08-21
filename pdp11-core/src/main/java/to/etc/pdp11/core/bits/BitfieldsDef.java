@@ -28,21 +28,19 @@ public final class BitfieldsDef {
 	/**
 	 * Add a field.
 	 *
-	 * <p>Overlapping fields are rejected. The Pascal accepts them silently, which lets a typo
-	 * in a machine description produce a register display where editing one field quietly
-	 * changes another - and the machine descriptions have never been validated by anything,
-	 * because {@code m4.bat} means they cannot even be loaded on Linux (PLAN.md §7).</p>
+	 * <p><b>Overlapping fields are legal and common.</b> Many PDP-11 device registers mean one
+	 * thing when read and another when written, and the descriptions define both at one
+	 * address with a name prefix - the DZ11's {@code Bits.M7819.RBUF_LPR} carries
+	 * {@code RBUF.PAR ERR<12>} and {@code LPR.RX ON<12>} together, and there are 41 such
+	 * fields across the shipped description. Rejecting overlap looked like a sensible
+	 * tightening until the real data said otherwise.</p>
 	 *
-	 * @throws IllegalArgumentException if the name is already used, or the bits overlap an
-	 *                                  existing field.
+	 * @throws IllegalArgumentException if the name is already used - that one really is a typo.
 	 */
 	public void add(BitfieldDef field) {
 		for(BitfieldDef existing : m_fields) {
 			if(existing.name().equalsIgnoreCase(field.name()))
 				throw new IllegalArgumentException(m_name + " already has a field called '" + field.name() + "'");
-			if((existing.mask() & field.mask()) != 0)
-				throw new IllegalArgumentException(m_name + ": field " + field.toBitRangeString()
-					+ " overlaps " + existing.toBitRangeString());
 		}
 		m_fields.add(field);
 	}
@@ -65,13 +63,18 @@ public final class BitfieldsDef {
 		return null;
 	}
 
-	/** The field containing the given bit, or {@code null} if that bit is undefined here. */
-	public BitfieldDef findByBit(int bit) {
+	/**
+	 * Every field covering the given bit, in declaration order. More than one is normal: see
+	 * {@link #add}. Empty when the bit is undefined in this register, which the register
+	 * display shows differently from a defined zero.
+	 */
+	public List<BitfieldDef> fieldsAtBit(int bit) {
+		List<BitfieldDef> found = new ArrayList<>(1);
 		for(BitfieldDef f : m_fields) {
 			if(bit >= f.bitLo() && bit <= f.bitHi())
-				return f;
+				found.add(f);
 		}
-		return null;
+		return found;
 	}
 
 	/**
