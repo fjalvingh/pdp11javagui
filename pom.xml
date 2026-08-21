@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>to.etc.pdp11</groupId>
+    <artifactId>java11gui</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>java11gui</name>
+    <description>PDP11GUI - a Java/Swing IDE for real and simulated PDP-11 computers</description>
+
+    <organization>
+        <name>etc.to</name>
+        <url>https://etc.to/</url>
+    </organization>
+
+    <licenses>
+        <license>
+            <name>GNU General Public License, version 2</name>
+            <url>https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>jal</id>
+            <name>Frits Jalvingh</name>
+            <email>jal@etc.to</email>
+            <organization>etc.to</organization>
+            <organizationUrl>https://etc.to/</organizationUrl>
+            <roles>
+                <role>architect</role>
+                <role>developer</role>
+            </roles>
+            <timezone>+1</timezone>
+        </developer>
+    </developers>
+
+    <modules>
+        <module>pdp11-core</module>
+        <module>pdp11-ui</module>
+        <module>pdp11-app</module>
+    </modules>
+
+    <properties>
+        <jdk.version>21</jdk.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- The class holding main(); referenced by the shade and exec plugins. -->
+        <main.class>to.etc.pdp11.app.Pdp11Gui</main.class>
+
+        <!-- Libraries. Versions live here only; modules declare artifacts without a version. -->
+        <flatlaf.version>3.7.2</flatlaf.version>
+        <miglayout.version>11.4.3</miglayout.version>
+        <rsyntaxtextarea.version>4.0.1</rsyntaxtextarea.version>
+        <jserialcomm.version>2.11.4</jserialcomm.version>
+        <jdt.annotation.version>2.4.100</jdt.annotation.version>
+
+        <!-- Test dependencies -->
+        <junit.version>5.14.4</junit.version>
+        <archunit.version>1.5.0</archunit.version>
+
+        <!-- Plugin versions -->
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
+        <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
+        <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+
+        <!--
+            Pinned only because requirePluginVersions insists every plugin have an explicit
+            version, including the ones Maven binds to the lifecycle by default. That is the
+            point of the rule: the build must not drift when the Maven version does.
+        -->
+        <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+        <maven-install-plugin.version>3.1.4</maven-install-plugin.version>
+        <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
+        <maven-site-plugin.version>3.22.0</maven-site-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>to.etc.pdp11</groupId>
+                <artifactId>pdp11-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>to.etc.pdp11</groupId>
+                <artifactId>pdp11-ui</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.eclipse.jdt</groupId>
+                <artifactId>org.eclipse.jdt.annotation</artifactId>
+                <version>${jdt.annotation.version}</version>
+            </dependency>
+
+            <!-- UI stack. Declared here, used by pdp11-ui / pdp11-app as the phases land. -->
+            <dependency>
+                <groupId>com.formdev</groupId>
+                <artifactId>flatlaf</artifactId>
+                <version>${flatlaf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.formdev</groupId>
+                <artifactId>flatlaf-extras</artifactId>
+                <version>${flatlaf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.miglayout</groupId>
+                <artifactId>miglayout-swing</artifactId>
+                <version>${miglayout.version}</version>
+            </dependency>
+            <!-- Phase 6: the MACRO-11 editor. -->
+            <dependency>
+                <groupId>com.fifesoft</groupId>
+                <artifactId>rsyntaxtextarea</artifactId>
+                <version>${rsyntaxtextarea.version}</version>
+            </dependency>
+
+            <!-- Phase 3: the serial transport. -->
+            <dependency>
+                <groupId>com.fazecast</groupId>
+                <artifactId>jSerialComm</artifactId>
+                <version>${jserialcomm.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.eclipse.jdt</groupId>
+            <artifactId>org.eclipse.jdt.annotation</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${jdk.version}</release>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-serial,-processing</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven-jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven-resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven-shade-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec-maven-plugin.version}</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${maven-clean-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven-install-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven-deploy-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${maven-site-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-build-environment</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <!--
+                                    Maven 3.5.4 is still the default on the development machine and
+                                    predates workable Java 11+ toolchain support; 3.9+ is required.
+                                    Use ./mvnw, which pins the version for everybody.
+                                -->
+                                <requireMavenVersion>
+                                    <version>[3.9.0,)</version>
+                                </requireMavenVersion>
+                                <requireJavaVersion>
+                                    <version>[${jdk.version},)</version>
+                                </requireJavaVersion>
+                                <banDuplicatePomDependencyVersions/>
+                                <requirePluginVersions>
+                                    <banSnapshots>true</banSnapshots>
+                                </requirePluginVersions>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                        PLAN.md section 6: a threading deadlock must fail CI rather than hang it.
+                    -->
+                    <systemPropertyVariables>
+                        <junit.jupiter.execution.timeout.default>60 s</junit.jupiter.execution.timeout.default>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

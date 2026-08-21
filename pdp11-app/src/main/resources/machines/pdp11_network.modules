@@ -1,0 +1,33 @@
+
+;################################################################################
+;# Module_DELUA() - Template for definition of DELUA ethernet controller
+;# $1 = baseadress, typical 174510
+define(Module_DELUA,`
+PCSR0= _offset($1,0) ;"Port Control and Status Register 0";Bits.DELUA.PCSR0
+PCSR1= _offset($1,2) ;"Port Control and Status Register 1";Bits.DELUA.PCSR1
+PCSR2= _offset($1,4) ;"Port Control and Status Register 2: Low order address bits of port control block (PCB)"
+PCSR3= _offset($1,6) ;"Port Control and Status Register 3: 1:0 = address bits 17:16 of port control block (PCB)"
+')
+
+[Bits.DELUA.PCSR0]
+SERI=15;"Status Error Interrupt. Error bit in extended status."
+PCEI=14;"Port Command Error Interrupt. Function error or UNIBUS timeout. See PCSR1"
+RXI=13;"Receive interrupt. DELUA has placed frame in receive data buffer in host memory."
+TXI=12;"Transmit Interrupt. DELUA has finished transmitting all frames on the transmit ring."
+DNI=11;"Done Interrupt. DELUA has completed a port command."
+RCBI=10;"Receive Buffer Unavailable Interrupt. 1. DELUA owns no more data buffers. 2. Writing to data buffers too slow."
+FATL=9;"Fatal Internal Error. PCSR1 invalid."
+USCI=8;"Unsolicited State Change Interrupt. 1. Remote boot started. 2. NI halted state, error in LANCE subsystem. See PCSR1 state."
+INTR=7;"Interrupt Summary. OR of 15:8"
+INTE=6;"Interrupt Enable. Can not be written together with PORT bits."
+RSET=5;"Reset. Initializes DELUA."
+PORT_COMMAND=3:0;"Port Command: 0=NOOP,1=GET PCBB,2=GET CMD,3=SELFTEST,4=START,5=BOOT,10=PDMD,16=HALT,17=STOP"
+
+[Bits.DELUA.PCSR1]
+STER=15;"Status or Selftest Error."
+ERROR_CODE=14:8;"Status or Selftest Error Code. Displayed on LEDs D3..D9. See table 6-1 in EK-DELUA-UG"
+PCT0=7;"Port Command Timeout. Info for PCEI. 1=UNIBUS timeout, 0=function error."
+ID=6:4;"Identification. DELUA=001, DEUNA=000"
+STATE=3:0;"0=Reset,1=Primary Load,2=Ready,3=Running,5=UNIBUS Halted,6=NI Halted,7=NI+UNIBUS Halted,10=Port Halted,17=Secondary load"
+
+

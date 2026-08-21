@@ -1,0 +1,15 @@
+
+
+;################################################################################
+;# Module_LP11() - Template for definition of printer controller
+;# $1 = baseaddr, typical 177514
+define(Module_LP11,`
+Info=LP11
+LPCS= _offset($1,0) ; "Line Printer Controller and Status. " ; Bits.LP11.LPCS
+LPDB= _offset($1,2) ; "Line Printer Data Buffer Register. 7-bit ASCII characters only. (write-only)"
+')
+
+[Bits.LP11.LPCS]
+ERROR=15;"Asserted whenever an error condition exists in the line printer"
+READY=7;"Asserted when printer is ready for next character to be loaded"
+INT ENB=6;"Interrupt Enable. Interrupt is requested on READY"

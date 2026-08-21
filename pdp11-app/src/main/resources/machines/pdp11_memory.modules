@@ -1,0 +1,257 @@
+
+
+;################################################################################
+;# Module_MMU1144() - Template for definition of standard 11/44 MMU
+define(Module_MMU1144,`
+SR0=177572;"MM Status Register 0";Bits.MMU.SR0
+SR1=177574;"MM Status Register 1"
+SR2=177576;"MM Status Register 2: Virtual address at the beginning of the fetch cycle of each instruction"
+SR3=172516;"MM Status Register 3";Bits.MMU.SR3
+
+;
+Kernel Instruction PAR 0=172340;"Page Address Register"
+Kernel Instruction PAR 1=172342;"Page Address Register"
+Kernel Instruction PAR 2=172344;"Page Address Register"
+Kernel Instruction PAR 3=172346;"Page Address Register"
+Kernel Instruction PAR 4=172350;"Page Address Register"
+Kernel Instruction PAR 5=172352;"Page Address Register"
+Kernel Instruction PAR 6=172354;"Page Address Register"
+Kernel Instruction PAR 7=172356;"Page Address Register"
+Kernel Instruction PDR 0=172300;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 1=172302;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 2=172304;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 3=172306;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 4=172310;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 5=172312;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 6=172314;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Instruction PDR 7=172316;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PAR 0=172360;"Page Address Register"
+Kernel Data PAR 1=172362;"Page Address Register"
+Kernel Data PAR 2=172364;"Page Address Register"
+Kernel Data PAR 3=172366;"Page Address Register"
+Kernel Data PAR 4=172370;"Page Address Register"
+Kernel Data PAR 5=172372;"Page Address Register"
+Kernel Data PAR 6=172374;"Page Address Register"
+Kernel Data PAR 7=172376;"Page Address Register"
+Kernel Data PDR 0=172320;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 1=172322;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 2=172324;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 3=172326;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 4=172330;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 5=172332;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 6=172334;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Data PDR 7=172336;"Page Descriptor Register";Bits.MMU.PDR
+
+Supervisor Instruction PAR 0=172240;"Page Address Register"
+Supervisor Instruction PAR 1=172242;"Page Address Register"
+Supervisor Instruction PAR 2=172244;"Page Address Register"
+Supervisor Instruction PAR 3=172246;"Page Address Register"
+Supervisor Instruction PAR 4=172250;"Page Address Register"
+Supervisor Instruction PAR 5=172252;"Page Address Register"
+Supervisor Instruction PAR 6=172254;"Page Address Register"
+Supervisor Instruction PAR 7=172256;"Page Address Register"
+Supervisor Instruction PDR 0=172200;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 1=172202;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 2=172204;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 3=172206;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 4=172210;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 5=172212;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 6=172214;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Instruction PDR 7=172216;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PAR 0=172260;"Page Address Register"
+Supervisor Data PAR 1=172262;"Page Address Register"
+Supervisor Data PAR 2=172264;"Page Address Register"
+Supervisor Data PAR 3=172266;"Page Address Register"
+Supervisor Data PAR 4=172270;"Page Address Register"
+Supervisor Data PAR 5=172272;"Page Address Register"
+Supervisor Data PAR 6=172274;"Page Address Register"
+Supervisor Data PAR 7=172276;"Page Address Register"
+Supervisor Data PDR 0=172220;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 1=172222;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 2=172224;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 3=172226;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 4=172230;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 5=172232;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 6=172234;"Page Descriptor Register";Bits.MMU.PDR
+Supervisor Data PDR 7=172236;"Page Descriptor Register";Bits.MMU.PDR
+
+User Instruction PAR 0=177640;"Page Address Register"
+User Instruction PAR 1=177642;"Page Address Register"
+User Instruction PAR 2=177644;"Page Address Register"
+User Instruction PAR 3=177646;"Page Address Register"
+User Instruction PAR 4=177650;"Page Address Register"
+User Instruction PAR 5=177652;"Page Address Register"
+User Instruction PAR 6=177654;"Page Address Register"
+User Instruction PAR 7=177656;"Page Address Register"
+User Instruction PDR 0=177600;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 1=177602;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 2=177604;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 3=177606;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 4=177610;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 5=177612;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 6=177614;"Page Descriptor Register";Bits.MMU.PDR
+User Instruction PDR 7=177616;"Page Descriptor Register";Bits.MMU.PDR
+User Data PAR 0=177660;"Page Address Register"
+User Data PAR 1=177662;"Page Address Register"
+User Data PAR 2=177664;"Page Address Register"
+User Data PAR 3=177666;"Page Address Register"
+User Data PAR 4=177670;"Page Address Register"
+User Data PAR 5=177672;"Page Address Register"
+User Data PAR 6=177674;"Page Address Register"
+User Data PAR 7=177676;"Page Address Register"
+User Data PDR 0=177620;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 1=177622;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 2=177624;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 3=177626;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 4=177630;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 5=177632;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 6=177634;"Page Descriptor Register";Bits.MMU.PDR
+User Data PDR 7=177636;"Page Descriptor Register";Bits.MMU.PDR
+')
+
+[Bits.MMU.SR0]
+Nonresident Abort=15;"Set by access to page with ACF=0 or 4"
+Page Length Abort=14;"Set by access to block in page outside of area"
+Read-Only Abort=13;"Set by attempt to write a read only page (ACF=2)"
+Maintenance/Destination Mode=8;"set for maintenance/diagnostics"
+Page Mode=6:5;"CPU mode (User,Kernel) causing abort"
+I/D Space=4
+Page Number=3:1;"Page number causing abort"
+Enable Relocation=0;"Set to enable MMU operation"
+
+[Bits.MMU.SR1]
+Inc/Dec 2nd Register=15:11
+2nd Register Number=10:8
+Inc/Dec 1st Register=7:3
+1st Register Number=2:0
+
+[Bits.MMU.SR3]
+Enable UNIBUS Map=5
+Enable 22-Bit Mapping=4
+Enable Call Supervisor=3
+Enable Kernel D Space=2
+Enable Supervisor D Space=1
+Enable User D Space=0
+
+[Bits.MMU.PDR]
+Cache Bypass=15;"When set, all references to this page will bypass the cache"
+Page Length Field=14:8;"Number of 32-word blocks in page"
+Page Written Into=6;"Page being accessed was modified since PAR/PDR was loaded (page modified)"
+Expansion Direction=3;"Direction in which page is authorized to expand.0 = upwards, 1= downwards"
+Access Control Field=2:1;"Access rights: 0=abort all, 1=read-only; 3=read/write"
+
+
+
+;################################################################################
+;# Module_MMU1134() - Template for definition of reduced 11/34 MMU
+;# Die 11/34 hat nicht Instruction/Data split, und nicht den Supervisor mode,
+;# kein 18/22 bit Umschalten, nur zwei statt 4 Statusregister
+define(Module_MMU1134,`
+SR0=177572;"MM Status Register 0";Bits.MMU.SR0
+SR2=177576;"MM Status Register 2: Virtual address at the beginning of the fetch cycle of each instruction"
+
+Kernel Active PAR 0=172340;"Page Address Register"
+Kernel Active PAR 1=172342;"Page Address Register"
+Kernel Active PAR 2=172344;"Page Address Register"
+Kernel Active PAR 3=172346;"Page Address Register"
+Kernel Active PAR 4=172350;"Page Address Register"
+Kernel Active PAR 5=172352;"Page Address Register"
+Kernel Active PAR 6=172354;"Page Address Register"
+Kernel Active PAR 7=172356;"Page Address Register"
+Kernel Active PDR 0=172300;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 1=172302;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 2=172304;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 3=172306;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 4=172310;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 5=172312;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 6=172314;"Page Descriptor Register";Bits.MMU.PDR
+Kernel Active PDR 7=172316;"Page Descriptor Register";Bits.MMU.PDR
+
+
+User Active PAR 0=177640;"Page Address Register"
+User Active PAR 1=177642;"Page Address Register"
+User Active PAR 2=177644;"Page Address Register"
+User Active PAR 3=177646;"Page Address Register"
+User Active PAR 4=177650;"Page Address Register"
+User Active PAR 5=177652;"Page Address Register"
+User Active PAR 6=177654;"Page Address Register"
+User Active PAR 7=177656;"Page Address Register"
+User Active PDR 0=177600;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 1=177602;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 2=177604;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 3=177606;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 4=177610;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 5=177612;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 6=177614;"Page Descriptor Register";Bits.MMU.PDR
+User Active PDR 7=177616;"Page Descriptor Register";Bits.MMU.PDR
+')
+
+
+
+;################################################################################
+;# Module_Cache1144() - Template for definition of standard 11/44 Cache
+define(Module_Cache1144,`
+CME=177744;"Cache Error Register";Bits.Cache.CME
+CCSR=177746;"Cache Control/Status Register";Bits.Cache.CCSR
+CMR=177750;"Cache Maintenance Register";Bits.Cache.CMR
+CHR=177752;"Cache Hit Register"
+CDR=177754;"Cache Memory Data Register"
+')
+
+[Bits.Cache.CMR]
+Address Match Bits=15:10;"Address Match Bits 21:16. Bits 15:0 are in cache hit register."
+Compare=15:13;"Compare 3:1, compare lines of cahce hit logic."
+Valid=12;"Word currently beeing read is a valid copy of backup store"
+Parity=11:9
+Hit=8
+Enable Stop Action=4
+Address Matched=3
+Enable Halt Action=2
+Hit On Destination Only=1
+Tag Data=0;"Tag data from Address Match Register"
+
+
+[Bits.Cache.CCSR]
+Valid Store in Use=13
+Valid Clear in progress=12
+Write Wrong Parity Tag=10
+Unconditional Cache Bypass=9
+Flush Cache=8
+Parity Error Abort=7
+Write Wrong Parity Data=6
+Force Miss High=3
+Force Miss Low=2
+Disable Cache Parity Interrupt=0
+
+[Bits.Cache.CME]
+Parity Error=15
+Parity Error High Byte=7
+Parity Error Low Byte=6
+Tag Parity Error=5
+
+
+
+
+;################################################################################
+;# Module_MS11P() - Template for definition of MS11-P memory module
+;# $1 = decimal modul nr as set by switch pack. DEC: nr = switch bit pattern "+ 1"!
+;# CSR addr is calculated
+define(Module_MS11P, `
+CSR=eval(0172100+ (($1 - 1) * 2), 8);"CSR for module number $1";Bits.M8732.CSR
+')
+
+[Bits.M8732.CSR]
+Uncorrectable Error=15;"Uncorrectable Error: double error on DATI/DATIP. Red LED!"
+EUB Error Address Retrieval=14;"EUB Error Address Retrieval"
+Set Inhibit Mode=13;"Set Inhibit Mode"
+Check Bit Storage=5:11;"multi function"
+Single Error=4;"Single Error detected"
+Inhibit Mode Pointer=3;"Inhibit Mode Pointer"
+Diagnostic Check Mode=2;"Diagnostic Check Mode (diagnostic aid)"
+Disable Correction Mode=1;"Disable Correction Mode (diagnostic aid)"
+Uncorrectable Error Indication Enable=0;"Uncorrectable Error Indication Enable"
+
+
+
+
+

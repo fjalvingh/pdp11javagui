@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>to.etc.pdp11</groupId>
+        <artifactId>java11gui</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>pdp11-core</artifactId>
+    <name>pdp11-core</name>
+    <description>
+        Model, transports, console protocol, disassembler, memory loaders and disc images.
+        No Swing, no AWT, no display: everything here is unit-testable headlessly against the
+        ported Fake* simulators. See PLAN.md section 2.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>${jdk.version}</release>
+                    <compilerArgs>
+                        <arg>-Xlint:all,-serial,-processing</arg>
+                        <!--
+                            THE layering constraint (PLAN.md section 2, CLAUDE.md "Hard rules").
+
+                            maven-enforcer cannot express this: Swing and AWT are JDK packages,
+                            not artifacts, so there is no dependency to ban. Limiting the module
+                            graph to java.base makes javac refuse the import outright:
+
+                                package javax.swing is not visible
+                                (declared in module java.desktop, which is not in the module graph)
+
+                            which is a compile failure in this module rather than a review comment.
+                            The ArchUnit test in src/test is the belt to this pair of braces; it
+                            also covers the test sources, which are compiled without this flag.
+
+                            If a genuine java.base gap turns up later (java.logging, java.xml, ...)
+                            add that module here explicitly and say why. Never add java.desktop.
+                        -->
+                        <arg>--limit-modules</arg>
+                        <arg>java.base</arg>
+                    </compilerArgs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <!--
+                            Test sources may not be limited to java.base: ArchUnit and JUnit need
+                            more of the JDK than the production code is allowed to touch.
+                        -->
+                        <id>default-testCompile</id>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>-Xlint:all,-serial,-processing</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

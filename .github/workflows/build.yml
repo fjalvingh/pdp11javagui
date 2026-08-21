@@ -1,0 +1,58 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Windows runners default to pwsh, where "./mvnw" would pick the POSIX launcher and
+        # fail. Git Bash is present on every runner and the wrapper script handles msys.
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        # PLAN.md phase 0: CI on the three target platforms. macos-latest is arm64, so this
+        # also covers the architecture the jpackage installers of phase 8 have to handle.
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # The UI module compiles against AWT, and later phases will have tests that construct
+      # Swing components. Linux runners are headless, so give them a display.
+      - name: Start virtual display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: ./mvnw -B --no-transfer-progress verify
+
+      - name: Upload the fat jar
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdp11gui-jar
+          path: pdp11-app/target/pdp11gui.jar
+          if-no-files-found: error

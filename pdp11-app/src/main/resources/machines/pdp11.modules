@@ -1,0 +1,102 @@
+
+
+;###############################################################################
+;# pdp11.modules
+;# PDP11 machine description module library to be included by machine description files (*.ini)
+;#
+;# - A machine consists of a bunch of "modules", plugged into a backplane and
+;#   jumpered to some addresses.
+;# - A module template is a description of a module, as given in DEC's documentation.
+;# - A module instance is actual use of a module in a certain machine,
+;#       which different parameters (most likely the base address) resolved.
+;#   There may be more than one instance of a module in a machine,
+;#      jumpered to different base adresses.
+;#
+;# Each module is given as a M4 macro.
+;# a machine description file consists of a lot of module instances, each instance
+;# calls the macro and substitutes some parameters.
+;# Example: the Standard Serial Line Unit (SLU)
+;#
+;# 1) module template as M4 macro in "machine description module library" (pdp11.modules):
+;#         $1 = baseaddr, $2 = info
+;#         define(Module_SLU,`
+;#         Info="Standard serial console terminal"
+;#         RCSR= _offset($1,0) ;"Receiver Control/Status Register";Bits.CIM.RCSR
+;#         RBUF= _offset($1,2) ;"Receiver Data Buffer";Bits.CIM.RBUF
+;#         XCSR= _offset($1,4) ;"Transmitter Control/Status Register";Bits.CIM.TerminalXCSR
+;#         XBUF= _offset($1,6) ;"Transmitter Buffer Register";Bits.CIM.XBUF        ')
+;#
+;# 2) module instance in a machine description file:
+;#
+;#         include(`pdp11.modules')
+;#         ...
+;#         [Console Terminal]
+;#         Info="Serial console terminal and aux registers on CIM"
+;#         Module_SLU(177560)
+;#
+;# 3) Resulting module description after M4 macro expansion:
+;#         [Console Terminal]
+;#         Info="Serial console terminal and aux registers on CIM"
+;#         RCSR= 177560 ;"Receiver Control/Status Register";Bits.CIM.RCSR
+;#         RBUF= 177562 ;"Receiver Data Buffer";Bits.CIM.RBUF
+;#         XCSR= 177564 ;"Transmitter Control/Status Register";Bits.CIM.TerminalXCSR
+;#         XBUF= 177566 ;"Transmitter Buffer Register";Bits.CIM.XBUF
+;#
+;#
+;# ##############################################################################
+;# Syntax
+;# M4 Syntax is different from .INI-Files, so there are two levels of syntax used:
+;#
+;# M4:
+;#       comments are '#'
+;#       Strings are `...'
+;#  IN MACRO EXPANSION neither NO "'" is ALLOWED!
+;#
+;# final .ini-File:
+;#       comments are ';', item separators are ';'
+;#       Strings are "..."
+;#
+;#  So recommended Comment begins with ";#" ... works always for .ini and M4 level
+;#
+;# ##############################################################################
+;# ######################## Revision history ####################################
+;# ##############################################################################
+;#
+;#
+;#
+;#
+;# 31.7.2010:    V1.00
+;#               Initial version, port from old machine description files.
+
+
+;###############################################################################
+;######################### Auxillary M4 macros #################################
+;###############################################################################
+;
+;# _offset(...) adds two octal numbers, which are given without the leading '0'
+define(_offset,`eval(0$1+0$2,8)')
+;# (For M4, octal integers must be normally prefixed with a '0')
+
+
+;###############################################################################
+;############################# start of module library #########################
+;###############################################################################
+
+; Section formed like "[Bits.*]" contain Bitfield-definitions,
+; all other sections contain device and register definitions.
+;
+; Addresses always are located in the I/O page.
+; They are always given as 16 bit addresses in the range 160000 to 177776
+; so the same device definition can be used for 16 bit, 18 bit and 22 bit machines
+; and there are not so many '7'-digits.
+
+
+include(`pdp11_cpu.modules')
+include(`pdp11_rom.modules')
+include(`pdp11_serial.modules')
+include(`pdp11_memory.modules')
+include(`pdp11_disc.modules')
+include(`pdp11_network.modules')
+include(`pdp11_printer.modules')
+include(`pdp11_tape.modules')
+

@@ -1,0 +1,61 @@
+
+
+;################################################################################
+;# Module_TM11() - Template for definition of TM11 controllerfor TU10 tape drives
+;# see TM11 DECmagtape system (Aug 1974, DEC-11-HTMAA-D-D).pdf
+;# $1 = base address, typical 172520
+define(Module_TM11,`
+MTS=  _offset($1,0) ;"Status Register";Bits.TM11.MTS
+MTC=  _offset($1,2) ;"Command Register";Bits.TM11.MTC
+MTBRC=_offset($1,4) ;"Byte Record Counter: 2s complement of number of bytes to read or write"
+MTCMA=_offset($1,6) ;"Current Memory Address Register: Memory Address to/from data transfer."
+MTD=  _offset($1,10) ;"Data Buffer Register";Bits.TM11.MTD
+MTRD= _offset($1,12) ;"TU10 Read Lines";Bits.TM11.MTRD
+')
+
+
+[Bits.TM11.MTS]
+ILC=15;"Illegal Command Bit: DATO during CU RDY clear, Write when WRLK write lock set, Cmd while unit off-line"
+EOF=14;"End Of File Bit: tape has reached end of file. Cleared by INIT or GO"
+CRE=13;"CRC Error Bit: CRC error dtected on read or write. Cleared by INIT or GO"
+PAE=12;"Parity Error Bit: OR of lateral and longitudial parity. Cleared by INIT or GO"
+BGL=11;"Bus Grant Late Bit: Bus Grant on NPR too late."
+EOT=10;"End-Of-Tape Bit: EOT marker detected. Error if moving forward."
+RLE=9;"Record Length Error Bit: During read, byte record counter goes below 0."
+BTE=8;"Bad Tape Error Bit: character detected during gap shutdown or tape function settle down"
+NXM=7;"Non-Existent Memory Bit: No SSYN while Bus master transfer during NPR."
+SELR=6;"Select Remote Bit: Set when tape unit selected. 0 if unit not existing, off-line or powered off."
+BOT=5;"Beginning-Of-Tape Bit: BOT marker detected by master tape transport. Not an error."
+7CH=4;"7-Channel Bit. When set, TU10 detected an 7-channel tape, else 9-channel tape."
+SDWN=3;"Settle Down Bit: Set while tape stops. Set by master tape transport"
+WRL=2;"Write Lock Bit: Master tape transport has write lock set."
+RWS=1;"Rewind Status Bit: Set while master tape is rewinding."
+TUR=0;"Tape Unit Ready Bit: Set when master tape unit is stopped and ready to receive new command."
+
+[Bits.TM11.MTC]
+ERR=15;"OR of all error conditions. If set CU RDY is also set."
+DEN8=14;"DEN8,DEN5 select density of tape. DEN8/5 = 0/0: 200 bpi 7ch, 0/1=556 bpi 7ch, 1/0=800 bpi 7ch, 1/1=800 bpi 9ch"
+DEN5=13;"see DEN8"
+PWR CLR=12;"Clear controller logic and all tape units. Read as 0."
+PEVN=11;"Even Parity Bit: Tape unit is to read/write even lateral parity. Cleared by INIT"
+SEL=10:8;"Select tape unit to function under program control. Cleared by INIT"
+CU RDY=7;"TM11 controller is ready to receive cmd. Set at end of tape oepration, on ERR or while INIT."
+INT ENB=6;"Interrupt Enable Bit. Allow an interrupt on ERR or CU RDY to occur. Interrupt also if set without GO."
+ADRS BIT17=5;"Extended Bus Address Bit 17. Increments with MTCMA"
+ADRS BIT16=4;"Extended Bus Address Bit 16"
+FUNCTION=3:1;"0=Off-Line,1=Read,2=Write,3=Write end of file,4=Space forward,5=Space reverse,6=Write w extended IRG,7=Rewind"
+GO=0;"Set to initiate selected function. Cleared when GO pulse sent to tape unit, delay max 10 ms."
+
+
+[Bits.TM11.MTD]
+DATIDATA=15:9;"Bits 07:01 on a processor DATI cycle."
+PARITY=8;"Parity bit of mag tape"
+DATA=7:0;"8/6 bit data word read from 9/7 channel tape."
+
+[Bits.TM11.MTRD]
+TIMER=15;"Timer output, read only. Timer is 100 micro sec with 50% duty."
+CHAR SEL=14;"select last record char to be loaded into data buffer. 7ch: 0/1 = last data/LPC, 9ch: CRC/LPC"
+BTE GEN=13;"Bad Tape Error Generator Bit: Simulates bad tape. Sets CU RDY, resulting in premature gap shutdown. Write only"
+GAP SHUTDOWN=12;"Indicates a gap shutdown period. Read only."
+PARITY=8;"Parity Bit read from tape by transport. Used with DATA7:0 for longitudinal parity. 1 indicates error"
+DATA=7:0;"Data bits read from tape by transport. Cleared after processor read unless parity error exists."

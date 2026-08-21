@@ -1,0 +1,456 @@
+
+
+;################################################################################
+;# Module_RL11() - Template for definition of RL11 controller for RL01/RL02 disk
+;# $1 = base address, typical 174400
+define(Module_RL11,`
+CSR= _offset($1,0) ;"Control Status Register";Bits.RL11.CSR
+BA = _offset($1,2) ;"Bus Address Register: source/target address for data transfers"
+DA = _offset($1,4) ;"Disk Address Register: holds also cmd during Seek and Get Status";Bits.RL11.DAR
+MPR= _offset($1,6) ;"Multi Purpose Register";Bits.RL11.MPR
+')
+
+
+[Bits.RL11.CSR]
+ERR=15;"Composite Error: Combination of other error flags"
+DE=14;"Drive Error: the selected drive has flagged an error. Execute Get Status command."
+NXM=13;"Non-Existent Memory: Addressed memory does not respond within 20 µs"
+DLT/HNF=12;"Data Late on write, Header Not Found on read"
+DCRC/HCRC/WCE=11;"Data CRC, Header CRC or Write Check"
+OPI=10;"Operation incomplete: command not complete after 200ms"
+Drive Select=9:8;"These bit select the drive that will communicate with the controller"
+CRDY=7;"Controller ready: clear to execute cmd in bits 3:1, is set if controller is ready to accept cmd"
+IE=6;"Interrupt enable"
+BA17/BA16=5:4;"Bus Address Extension Bits: bits 16 and 16 of bus address register"
+Function code=3:1;"0=Noop, 1=Write check, 2=Get Status, 3=Seek, 4=Read Header, 5=Write Data, 6=Read Data, 7=rd w/o check"
+DRDY=0;"Drive Ready:tied to Drive Ready signal of drive. set, when drive is ready to read/write/seek"
+
+
+[Bits.RL11.DAR]
+CA=15:7;"Cylinder Address: 0 to 777 (octal)"
+HS=6;"Head Select:1 = lower head, 0 = upper head"
+SA=5:0;"Sector Address: one of the 40 sectors on a track"
+Seek.DF=15:7;"Seek Cylinder Address Difference: number of cylinders the heads are to move"
+Seek.HS=4;"Seek: Head Select"
+Seek.DIR=2;"Direction: when set, heads move toward spindle (to higher cylinder address)"
+Seek.Marker=1:0;"Seek: Marker, must be 1"
+GetStatus.Marker3=15:4;"Get Status: must be zero"
+GetStatus.RST=3;"Get Status Reset: when set, drive clears error register before sending status word"
+GetStatus.Marker2=2;"Get Status: must be zero"
+GetStatus.GS=1;"Get Status: Indicates to the drive that the status word is requested. Result in MP"
+GetStatus.Marker=0;"Get Status: must be 1"
+
+[Bits.RL11.MPR]
+GetStatus.WDE=15;"Get Status Current Write Data Error: Write gate asserted but no write data transitions within required time"
+GetStatus.CHE=14;"Get Status Current In Head Error: Write current in head when write gate not asserted"
+GetStatus.WL=13;"Get Status Write Lock: Drive is write protected"
+GetStatus.SKTO=12;"Get Status Seek Time Out: Heads not on track during seek, ready lsot while drive in position (lock-on) mode"
+GetStatus.SPE=11;"Get Status Spin Error: Spindle spins not up fast enough or speed to high"
+GetStatus.WGE=10;"Get Status Write Gate Error: During write gate if: not ready, write protected, sector pulse, another error"
+GetStatus.VC=9;"Get Status Volume Check: set during cartridge spin up. Indicator that cartridge may have been mounted"
+GetStatus.DSE=8;"Get Status Drive Select Error: Set when a multiple drive selection is detected"
+GetStatus.DT=7;"Get Status Drive Type: 0 = RL01, 1 = RL02"
+GetStatus.HS=6;"Get Status Head Select: indicates the currently selected head"
+GetStatus.CO=5;"Get Status Cover Open: set when the cartridge access cover is open or the dust cover is not in place"
+GetStatus.HO=4;"Get Status Heads Out: set when the heads are over the disk"
+GetStatus.BH=3;"Get Status Brush Home: set when the brushes are home"
+GetStatus.ST=2:0;"Get Status Drive State: 0=Load Cartridge, 1=Spin-up, 2=Brush Cycle, 3=Load Heads, 4=Seek, 5=Lock On, 6=Unload Heads, 7=Spin-down"
+ReadHeader.CA=15:7;"Read Header Command: cylinder address"
+ReadHeader.HS=6;"Read Header Command: head select"
+ReadHeader.SA=5:0;"Read Header Command: sector address"
+R/W.Ones=15:13;"must be 7"
+R/W.WC=12:0;"Read/Write Data Word Count: 2s complement of total number of words to be transferred"
+
+
+
+;################################################################################
+;# Module_EmulexSC31() - Template for definition of Module_EmulexSC31 controller
+;#      jumpered for SMD disk drives to emulate an RM611 with RM02/03/05
+;# $1 = base address, typical 176700
+define(Module_EmulexSC31_RM,`
+RMCS1= _offset($1,0) ;"Control/Status Register 1";Bits.SC31.RMCS1
+RMWC= _offset($1,2) ;"Word Count Register. Twos complement, num auf data word to be transferred. Auto inc."
+RMBA= _offset($1,4) ;"UNIBUS Adress Register. Base Memory Address for data transfer. Auto inc."
+RMDA= _offset($1,6) ;"Disk Adress Register. 15:8=track, 7:0=sector. Auto inc."
+RMCS2= _offset($1,10) ;"Control/Status Register 2";Bits.SC31.RMCS2
+RMDS= _offset($1,12) ;"Drive Status Register";Bits.SC31.RMDS
+RMER1= _offset($1,14) ;"Error Register 1";Bits.SC31.RMER1
+RMAS= _offset($1,16) ;"Attention Summary Register. ATA bits of all drive units 7..0"
+RMLA= _offset($1,20) ;"Look-Ahead Register. Sector counter in 10:6 to present angular position relative to heads."
+RMDB= _offset($1,22) ;"Data Buffer. Maintenance tool for controller data paths. Access to SILO buffer."
+RMMR1= _offset($1,24) ;"Maintenance Register 1. Simulate signals for diagnostic tests."
+RMDT= _offset($1,26) ;"Drive Type Register.";Bits.SC31.RMDT
+RMSN= _offset($1,30) ;"Serial Number Register.";Bits.SC31.RMSN
+RMOF= _offset($1,32) ;"Offset Register. Head position/PLO trimming.";Bits.SC31.RMOF
+RMDC= _offset($1,34) ;"Desired Cylinder Register."
+RMHR= _offset($1,36) ;"Holding Register. Write opcode->read parm: 100027->max cyl, 100030->max track, 100031->max sector, 177777->enable optional cmds"
+RMMR2= _offset($1,40) ;"Maintenance Register 2. Read only 11777 if drive connected and selected."
+RMER2= _offset($1,42) ;"Error Register 2";Bits.SC31.RMER2
+RMEC1= _offset($1,44) ;"ECC Position Register"
+RMEC2= _offset($1,46) ;"ECC Pattern Register"
+')
+
+[Bits.SC31.RMCS1]
+SC=15;"Special Condition IE, as long as  TRE or ATA"
+TRE=14;"Transfer Error. Set by DLT, WCE, UPE, NED, NEM PGE MXF or during data transfer. Write to clear"
+DVA=11;"Drive Available"
+PSEL=10;"Port Select (diagnostic only)"
+A17A16=9:8;"Extended Bus Address. Upper extension for RPBA/RMBA register. Auto inc."
+RDY=7;"Ready. Reset on transfer command, set on end of command"
+IE=6;"Interrupt Enable. Interrupt on RDY or ATA."
+F4-F0=5:1;"Function code. 1=nop,3=unload,5=seek,7=recalib,11=drv clr,13=release,15=offs cmd,17=ret centerline,21=readin preset,23=pack ack"
+F4-F0_1=5:1;"Function code cont. 31=search,51=write check data,53=51+check header, 61=write data,63=write header+data,71=read data,73=read header+data"
+GO=0;"GO Bit. Set to cause controller to respond to command".
+
+[Bits.SC31.RMCS2]
+; [SC31 4-5]
+DLT=15;"Data Late. Can not occur on SC31 becaus of buffering"
+WCE=14;"Write Check Error."
+UPE=13;"UNIBUS Parity error."
+NED=12;"Nonexistent Drive"
+NEM=11;"Nonexistent memory. Timeout on DMA"
+PGE=10;"Program Error. Program attempted to initiate Data transfer while controller is performing one."
+MXF=9;"Missed Transfer. Data Transfer cannot be executed becaus ERR set."
+MDPE=8;"Massbus Data Bus Parity. Always 0"
+OR=7;"Output Ready. RMDB has new data."
+IR=6;"Input Ready. Always 1"
+CLR=5;"Controller Clear. Write 1 to initialize controller."
+PAT=4;"Parity Test. Diagnostic only"
+BAI=3;"UNIBUS Address Increment Inhibit. When 1, no auto inc on RMBA during data transfer"
+U2-U0=2:0;"Unit Select. Select one of 8 drives."
+
+[Bits.SC31.RMDS]
+ATA=15;"Attention Active. Any attention condition is present. (error, completion change of MOL, search end, unload)"
+ERR=14;"Error. Any error present in RMer1 or RMER2. If set, only drive clear cmd is accepted."
+PIP=13;"Positioning in Progress. Seek, Offset, Return-to-centerline, Recalibrate or Search active."
+MOL=12;"Medium On-Line. Heads are over track and no fault."
+WRL=11;"Write Lock."
+LST=10;"Last Sector Transfer. Last sector of pack has been read or written."
+PGM=9;"Programmable. Dual Port or Dual Access operation is enabled."
+DPR=8;"Drive Present. Controller has seized drive, reflection of RMCS1.DVA."
+DRY=7;"Drive Ready. Goes to 1 at completion of every cmd."
+VV=6;"Volume Valid. 0, if disk pack may have changed."
+OFM=0;"Offset Mode. Set by Offset cmd to indicate heads are in offset position."
+
+[Bits.SC31.RMER1]
+DCK=15;"Data Check. ECC error, data transfer termiantes. See ECI bit."
+UNS=14;"Unsafe. Composite of RMER2 unsafe and seek incomplete. Correct operation cannot be guaranteed."
+OPI=13;"Operation Incomplete. Read/Write cannot find header within 3 index pulses. Also during Search."
+DTE=12;"Drive Timing Error. Header or data sync pattern not found. Also on sector pulse before sector end."
+WLE=11;"Write Lock Error. Write command issued on locked drive."
+IAE=10;"Invalid Address Error. Address in RMDC or RMDA is invalid on seek, search or transfer."
+AOE=9;"Address Overflow Error. RMDC overflow during read/write. Head woludbe beyoond last cylinder."
+HCRC=8;"Header CRC Error."
+HCE=7;"Header Compare Error. Header does not match RMDC and RMDA."
+ECH=6;"ECC Hard Error. Non-correctable ECC error. DCK is also set."
+WCF=5;"Write CLock Fail."
+FER=4;"Format Error. RMOF.FMT16 does not bit 12 in word 1 of sector header. Controller does not implemenet 18-bit per word mode."
+PAR=3;"Parity Error. Zero unless written into."
+RMR=2;"Register Modification Refused. Set when write to any register is attempted while RDY is zero."
+ILR=1;"Illegal Register. Zero unless written into."
+ILF=0;"Illegal Function. Function code in RMCS1 is illegal on GO."
+
+[Bits.SC31.RMDT]
+MOH=13;"Moving-Head. Drive is a moving head device."
+DPM=11;"Dual Port Mode. Drive is operatin in dual port mode."
+DTC=7:0;"Drive Type Code. 20=RP04,21=RP05,22=RP06,24=RM03,25=RM02,26=RM80,27=RM05."
+
+[Bits.SC31.RMSN]
+SW2=15:8;"SW2-8 to SW2-1"
+FirmwareRev=7:4
+PortNo=3:0
+
+[Bits.SC31.RMOF]
+FMT16=12;"Format Bit. 1 = 16 bit mode, 0 = 18 bit mode. Always 1"
+ECI=11;"Error Correction Code Inhibit. Disable ECC error correction."
+HCI=10;"Header Compare Inhibit. Inhibit header compare and CRC check, use only sector count for sector identification."
+SSEI=9;"Skip-Sector Error Inhibit. For RM80 emulation only."
+OFS7=7;"Offset Direction. 1 = retard, 0 = advance."
+OFS5=5;"PLO Offset Enable. No PLO offset on RM drives."
+OFS4=4;"Positioner Offset Enable. Enabled only with RP drives, For RM drives positioner offset is implied."
+
+[Bits.SC31.RMER2]
+BSE=15;"Bad Sector Error. Zero in bit 15/14 of first header word."
+SKI=14;"Seek Incomplete. Seek error from drive."
+OPE=13;"Operator Plug Error. Address plug was removed and reinstalled."
+IVC=12;"Invalid Command. Whenever any cmd to drive with MOL=0, OR not VV=0 (Read-In Preset/Pack Acknowldege OK)."
+LSC=11;"Loss of Sector Clock. More than 128 sector pulses without Index pulse (B cable)"
+LBC=10;"Loss of Bit Clock. less than 16 servo clocks within 3.0 microseconds."
+MDS=9;"Multiple Drive Select."
+DCU=8;"DC Power Unsafe. -5V to cable drivers/receivers is not proper."
+DVC=7;"Device Check. Fault indication is received from drive. "
+ACU=6;"AC Power Unsafe. ACLO indication from UNIBUS."
+SSE=5;"Skip-Sector Error. RM80 only."
+DPE=3;"Data Parity Error. Zero unless written into."
+
+
+
+
+;################################################################################
+;# Module_MSCP() - Template for definition of MSCP controller
+;# $1 = base address, typical 172150
+define(Module_MSCP, `
+IP= _offset($1,0) ;"Initialize and Poll. Write = init sequence, read = execute commands"
+SA= _offset($1,2) ;"Status and Address";Bits.MSCP.SA
+')
+
+[Bits.MSCP.SA]
+SA.Read.Err=15;"On read: Error"
+SA.Read.S4=14;"On read: 1 = Initialization step 4:"
+SA.Read.S3=13;"On read: 1 = Initialization step 3: "
+SA.Read.S2=12;"On read: 1 = Initialization step 2: set ring len, IE, intvec"
+SA.Read.S1=11;"On read: 1 = Initialization step 1: set NV,QB"
+SA.ReadS2.PortType=10:8;"On read in step2: port type"
+SA.ReadS2.WR=6;"1 = diagnostic warp mode"
+SA.ReadS2.CRngLng=5:3;"number of slots in command ring"
+SA.ReadS2.RRngLng=2:0;"number of slots in response ring"
+
+
+;################################################################################
+;# Module_RX11(),Module_RX211() - Template for definition of RX211/RXV21 controller for RX02 floppy disks
+;# RX211/RX02 is like RX11, but can selected single/double density and has DMA.
+;# RX2WC and RX2BA are not on RX11
+;# see RX8,RX11 floppy disk system user's guide (Nov 1976, EK-RX01-OP-001).pdf
+;#     RX02 Floppy Disk System User's Guide (July 1978, EK-RX02-UG-001).pdf
+;# $1 = base address. typical 177170
+;# 2nd register is multi-function
+define(Module_RX11, `
+RXCS= _offset($1,0) ; "Command and Status." ; Bits.RX11.RXCS
+RXTA= _offset($1,2) ; "RX Track Address. Selects on of 0..76 (0114) tracks"
+RXSA= _offset($1,2) ; "RX Sector Address. Selects one of 1..26 (032) sectors"
+RXDB= _offset($1,2) ; "Data Buffer Register. General purpose data path"
+RXES= _offset($1,2) ; "RX Error and Status. " ; Bits.RX11.RXES
+')
+
+[Bits.RX11.RXCS]
+ERROR=15;"Set by RX01 to indicate error. Cleared by Initialize or new command (read-only)"
+RX INIT=14;"Initialize. Initalize RX11 controller, moves heads to track 0. Read sector 1, track 1 of drive 0 into buffer. (write-only)"
+TR=7;"Transfer Request. RX11 needs data or has data available. (read-only)"
+INT ENB=6;"Interrupt Enable. Cleared by Initalize. (read/write)"
+DONE=5;"Completion of function. Generates interrupt. (read-only)"
+UNIT SEL=4;"Select drive 0 or 1. Readable when 'Done' set"
+FUNCTION=3:1;"0=Fill Buffer, 1= Empty Buffer, 2=Write Sector, 3=Read Sector, 5=Read Status, 6=Write Deleted Data Sector, 7=Read Error Code"
+GO=0;"Initiates a command to RX01. (write-only)"
+
+[Bits.RX11.RXES]
+UNIT SEL=8;"Unit Select. Indicates selected drive."
+DRV RDY=7;"Drive Ready. Current drive unit exists, has power, has diskette, door is closed and is upto speed"
+DD=6;"Deleted Data Detected. During data recovery, ID mark preceeding data was decoded as 'deleted data'"
+ID=2;"Initialize Done. Asserted to indicate completion of Initalize.(also on power failures or UNIBUS reset)"
+PAR=1;"Parity Error. Problem in interface cable between RX01 and RX11"
+CRC=0;"CRC Error. Checksum failure while retrieving data from data field of the diskette"
+
+
+define(Module_RX211, `
+RX2CS= _offset($1,0) ; "Command and Status." ; Bits.RX211.RX2CS
+RX2TA= _offset($1,2) ; "RX Track Address. Selects on of 0..76 (0114) tracks"
+RX2SA= _offset($1,2) ; "RX Sector Address. Selects one of 1..26 (032) sectors"
+RX2WC= _offset($1,2) ; "RX Word Count Register. Max 128 for double density and 64 for single density"
+RX2BA= _offset($1,2) ; "RX Bus Address Register. Address of data for Fill Buffer, Empty Buffer and Read Error operation. (write-only)"
+RX2DB= _offset($1,2) ; "Data Buffer Register. Interface to internal controller sector data buffer"
+RX2ES= _offset($1,2) ; "RX Error and Status. " ; Bits.RX211.RX2ES
+')
+
+[Bits.RX211.RX2CS]
+ERROR=15;"Set by RX02 to indicate error. Cleared by Initialize or new command (read-only)"
+RX INIT=14;"Initialize. Initalize RX211/RXV21 controller, moves heads to track 0. Read sector 1, track 1 of drive 0 into buffer. (write-only)"
+EXT ADDR=13:12;"Extended address. Used to declare an extended bus address. (write-only)"
+RX02=11;"Set by interface to indicate RX02 disk. (read-only)"
+DEN=8;"Density. Determines density of the function to be executed. Readable when Done set. (read/write)"
+TR=7;"Transfer Request. RX211/RXV21 needs data or has data available. (read-only)"
+INTR ENB=6;"Interrupt Enable. Cleared by Initalize. (read/write)"
+DONE=5;"Completion of function. Generates interrupt. (read-only)"
+UNIT SEL=4;"Select drive 0 or 1. Readable when 'Done' set"
+FUNCTION=3:1;"0=Fill Buffer, 1= Empty Buffer, 2=Write Sector, 3=Read Sector, 4=Set Density, 5=Read Status, 6=Write Deleted Data Sector, 7=Read Error Code"
+GO=0;"Initiates a command to RX02. (write-only)"
+
+
+[Bits.RX211.RX2ES]
+NXM=11;"Non Existent Memory Error. DMA transfer being performed and RX2BA points to nonexistent memory."
+WC OVL=10;"Word Count Overflow. Word count is beyond sector size."
+UNIT SEL=8;"Unit Select. Indicates selected drive."
+DRV RDY=7;"Drive Ready. Current drive unit exists, has power, has diskette, door is closed and is upto speed"
+DD=6;"Deleted Data Detected. During data recovery, ID mark preceeding data was decoded as 'deleted data'"
+DRV DEN=5;"Drive Density. Indicates density of diskette in the selected drive."
+DEN ERR=4;"Density Error. Density of function does not match drive density."
+RX AC LO=3;"RX02 subsystem power failure"
+ID=2;"Initialize Done. Asserted to indicate completion of Initalize.(also on power failures or UNIBUS reset)"
+CRC=0;"CRC Error. Checksum failure while retrieving data from data field of the diskette"
+
+
+
+define(Module_RK11,`
+RKDS= _offset($1,0) ; "Drive Status Register (read-only)" ; Bits.RK11.RKDS
+RKER= _offset($1,2) ; "Error Register (read-only)" ; Bits.RK11.RKER
+RKCS= _offset($1,4) ; "Control Status Register" ; Bits.RK11.RKCS
+RKWC= _offset($1,6) ; "Word Count Register"
+RKBA= _offset($1,10) ; "Bus Address Register (Current Memory Address)"
+RKDA= _offset($1,12) ; "Disk Address Register" ; Bits.RK11.RKDA
+RKDB= _offset($1,16) ; "Data Buffer Register (read-only)"
+')
+
+[Bits.RK11.RKDS]
+SC=0:3;"Sector Counter. Current sector address of the selected drive."
+SCESA=4;"Sector Counter Equals Sector Address. Disk heads are positioned over disk address currently held in sector address."
+WPS=5;"Write Protect Status. Set when selected disk is in the write-protect mode."
+RWSRDY=6;"Read/Write/Seek Ready. Selected drive head mechanism is not in motion, drive ready to accept new function."
+DRY=7;"Drive Ready. Power OK, cartridge loaded, door closed, RUN switch, disk rotating, heads loaded, drive not 'unsafe'."
+SOK=8;"Sector Counter OK. Sector Counter on selected drive stable and ready for examination."
+SIN=9;"Seek Incomplete. Seek function can not be completed (unusual)."
+DRU=10;"Drive Unsafe. Drive unable to perform any operations (unusual)."
+RK05=11;"RK05 Disk on Line. Always set, to identify the selected drive as RK05."
+DPL=12;"Drive Power Low. Loss of power to one of the disk drives."
+ID=15:13;"Identification of Drive. Logical drive number that caused interrupt."
+
+[Bits.RK11.RKER]
+WCE=0;"Write Check Error. Faulty bit comparison between disk data and memory data."
+CSE=1;"Checksum Error. Set while performing Read or Read Check as result of faulty recalculation of checksum."
+NXS=5;"Nonexistent Sector. Attempt to initiate transfer to a sector larger than 13(octal)= 11(dec)."
+NXC=6;"Nonexistent Cylinder. Attempt to initiate transfer to a cylinder larger than 312(octal)= 202(dec)."
+NXD=7;"Nonexistent Disk. Attempt to initiate a function on a nonexistent drive."
+TE=8;"Timing Error. Loss of timing pulses for at least 5 microsecs."
+DLT=9;"Data Late. Write: Multibuffer file empty and operation incomplete. Read: multibuffer file filled and operation incomplete."
+NXM=10;"Nonexistent Memory. Memory does not respond when RK11 becomes bus master during NPR."
+PGE=11;"Programming Error. RKCS.10 (Format) was set while initiating a function other than Read or Write."
+SKE=12;"Seek Error. Disk head not properly positioned during Read or Write. 16 tries have been completed."
+WLO=13;"Write Lock Error. Attempt to write on a disk that is currently write-protected."
+OVR=14;"Overrun. Attempt to read/write beyond last disk sector."
+DRE=15;"Drive Error. One of the drives senses power loss, is not ready or in some error condition."
+
+[Bits.RK11.RKCS]
+GO=0;"RK11 carries out function from bits <3:1>. Set until execution begins, max 3.3ms due to sector protection. (write only)"
+Function=3:1;"0=Control Reset, 1=Write, 2=Read, 3=Write Check, 4=Seek, 5=REad Check, 6=Drive Reset, 7=Write Lock"
+MEX=5:4;"Memory Extension. Bits <17:16> of Bus Address."
+IDE=6;"Interrupt on Done Enable. Interrupt to 220 if: function complete, hard error, soft error and SSE set, RDY and not GO"
+RDY=7;"Control Ready. Control ready to perform a function. Cleared by GO."
+SSE=8;"Stop on Soft Error. On soft error stop all action after current sector. Bus request if RKCS.6 IDE set."
+EXB=9;"Extra Bit. Unused on RK11-D and RK11-E."
+FMT=10;"Format. Reformat sector/disk. Write: head positioner not checked. Read: transfer only sector header, no data."
+IBA=11;"Inhibit Incrementing the RKBA. All data transfer to or from same memory location."
+SCP=13;"Search Complete. Previous interrupt was result of Seek or Drive reset. Cleared on next function."
+HE=14;"Hard Error. Set on any RKER <15:05>. Stops all action, Bus request on IDE."
+ERR=15;"Error. Set on any RKER bit. Bus request on IDE."
+
+[Bits.RK11.RKDA]
+SA=3:0;"Sector Address. Allowed 0..11 = 0..13(oct)"
+SUR=4;"Surface. 1 = lower disk head, 0 = upper disk head."
+CYLADDR=12:5;"Cylinder Address. Allowed 0..202 = 0..312(octal)"
+DRSEL=15:13;"Drive Select."
+
+
+
+define(Module_RK611,`
+RKCS1= _offset($1,0) ;"Control/Status Register 1: disk command and operational status";Bits.RK611.RKCS1
+RKWC = _offset($1,2) ;"Word Count: number of words to be transferred"
+RKBA = _offset($1,4) ;"Bus Address: 16 low order bits of DMA memory address"
+RKDA= _offset($1,6) ;"Disk Address: start sector/track(=head) on selected disk";Bits.RK611.RKDA
+RKCS2= _offset($1,10) ;"Control/Status Register 2: drive select, operational status and Silo";Bits.RK611.RKCS2
+RKDS= _offset($1,12) ;"Drive Status: operational status of selected drive (read only)";Bits.RK611.RKDS
+RKER= _offset($1,14) ;"Drive Error: error status of selected drive (read only)";Bits.RK611.RKER
+RKAS/OF=_offset($1,16) ;"Attention Summary/Offset: head offset status and Attention signal line";Bits.RK611.RKASOF
+RKDC= _offset($1,20) ;"Desired Cylinder: address of desired cyclinder";Bits.RK611.RKDC
+RKDB= _offset($1,24) ;"Data Buffer Register: read/write data from/to Silo"
+RKMR1= _offset($1,26) ;"Maintenance Register 1: operational analysis";Bits.RK611.RKMR1
+RKECPS= _offset($1,30) ;"ECC Position: error correction code position value of ECC correction sequence (read only)";Bits.RK611.RKECPS
+RKECPT= _offset($1,32) ;"ECC Pattern: error correction code pattern (read only)";Bits.RK611.RKECPT
+RKMR2= _offset($1,34) ;"Maintenance Register 2: used for message A controller-to-drive"
+RKMR3= _offset($1,36) ;"Maintenance Register 3: used for message B drive-to-controller-to-drive"
+')
+
+[Bits.RK611.RKCS1]
+GO=0;"When GO is set, the disk command function Code (F1-F4) is executed"
+Function Code=4:1;"0=Drive Sel,1=Pack Ack,2=Drive Clr,3=Unload,3=Start Spindle,5=Recalibrate,6=Offset,7=Seek,10=Read Data,11=Write Data,12/13=Read/Write Header,14=Write Chk"
+IE=6;"Interrupt Enable."
+RDY=7;"Controller Ready. Reset on GO (read only)"
+EBA=8:9;"Extended Bus Address. UNIBUS address bits 16 and 17 of BA"
+CDT=10;"Controller Drive Type. Set 0 for RK06, 1 for RK07"
+CTO=11;"Controller Time Out. Error bit, set if GO has been set for approx. 800ms"
+CFMT=12;"Controller Format. Sectors on track of selected drive. 1 = 20 sector format (18 bit words), 0 = 22 sector format (16 bit words)"
+DTC PAR=13;"Drive-to-Controller Parity Error. set on parity error in a serial message from selected drive"
+DI=14;"Drive Interrupt. 1 = interrupt initated by drive, 0 = by controller"
+CERR/CCLR=15;"Combined Error/Controller Clear. Read: 1 = error in controller or drives. Write: clear error and conctroller"
+
+
+[Bits.RK611.RKDA]
+SA=0:4;"Sector Address. Set to define star sector Start with 0, maximum depends on RKCS1.CFMT"
+TA=8:10;"Track Address. Set 0-2 for head select"
+
+[Bits.RK611.RKCS2]
+DS=0:2;"Drive Select"
+RLS=3;"Release. Release drive from controller, used in dual-access configuration"
+BAI=4;"Buss Address Increment Inhibit. 1 = RKBA does not increment, used for diagnostics"
+SCLR=5;"Subsystem Clear. 1 = controller clear and Initalize line asserted to clear all drives"
+IR=6;"Input Ready. 1 = Silo input buffer ready to accept a word. 0 = Silo full."
+OR=7;"Output Ready. 1 = word in Silo buffer to read."
+UFE=8;"Unit Field Error. Drive select code bit mismatch Messag A line, or no SACK on Deselect"
+MDS=9;"Multiple Drive Select. Error bit set by MDS line via selected drive."
+PGE=10;"Programming Error. Error bit set if controller regsiter is written while GO is set."
+NEM=11;"Nonexistent Memory. Error bit set if controller executed bus cycle with no SSYN."
+NED=12;"Nonexistent Drive. Error bit set if no SACK from selected drive, or no complete message from drive"
+UPE=13;"Unibus Parity Error. Error bit set on parity error of 16 bit word format Write or Write Check"
+WCE=14;"Write Check Error.  Error bit set if word from disk does not match memory on Write Check. "
+DLT=15;"Data Late. Error bit set if Silo empty on Write, or Silo full on Read"
+
+[Bits.RK611.RKDS]
+DRA=0;"Drive Available. Drive available to accept commands. 0 = drive accessed by the other controller."
+OFST=2;"Offset. Set to indicate selected drive is in offset mode."
+ACLO=3;"Drive AC Low. Set to indicate that AC power is low on selected drive. Heads will unload."
+SPLS=4;"Speed Loss. Spindle speed is unacceptably low."
+DROT=5;"Drive Off Track. Write Gate signal asserted while heads not properly positioned."
+VV=6;"Volume Valid. 1 after Pack Acknowledge command: cartridge and unit plug not changed since last command."
+DRDY=7;"Drive Ready. 1= Drive up to speed and heads positioned."
+DDT=8;"Disk Drive Type. Set by drive to 0 if RK06, 1 for RK07. Compares with RKCS1.CDT"
+WRL=11;"Write Lock."
+PIP=13;"Positioning In Progress. Heads are in motion"
+CDA=14;"Current Drive Attention. Set on drive status change. Seek/Offset complete, heads unloading, FAULT condition set, Read/Write unsafe"
+SVAL=15;"Status Valid. Drive Status RKDS and Error RKER updated after Init, Command, Drive Select or Attention."
+
+
+[Bits.RK611.RKER]
+ILF=0;"Illegal Function. Illegal command loaded into RKCS1."
+SKI=1;"Seek Incomplete. Address invalid, no Seek Motion, Limit Detected or Servo Unsafe."
+NXF=2;"Nonexecutable Function. Seek or Write while not Valume Valid."
+DRPAR=3;"Control-to-Drive Parity. Drive detected message parity error."
+FMTE=4;"Format Error. Format status bit from drive does not compare with RKCS1.CFMT"
+DTYE=5;"Drive Type Error. Drive type status bit does not compare with RKCS1.CDT"
+ECH=6;"Error Correction Hard. Data error could not be corrected using ECC."
+BSE=7;"Bad Sector Error. Dat transfer from or to sector with a Good Sector Flag reset"
+HRVC=8;"Header Vertical Redundancy Check Error."
+COE=9;"Cylinder Overflow Error. RCWC not zero after transfer from/to last cylinder".
+IDAE=10;"Invalid Disk Address Error. Illegal cylinder or track address detected by drive or controller."
+WLE=11;"Write Lock Error. Drive received assertion of Write GAte while in Write Protect mode."
+DTE=12;"Drive Timing Error. Loss of Write clock by controller during write, loss of read data by controller during read."
+OPI=13;"Operation Incomplete. Header not found on track after positioning. Caused by head mispositioning, head selection, read channel failure or pack formatting."
+UNS=14;"Drive Unsafe. One of 8 Read/Write drive unsafe conditions, heads are unloaded."
+DCK=15;"Data Check. Data error detected during sector read."
+
+
+[Bits.RK611.RKASOF]
+OF=0:7;"Offset. OF0-OF5 = magnitude, OF7 = sign of track head movement: 0 = to spindle, 1 = away from spindle"
+ATN=0:7;"Attention. Bitmap with Driver Status Change flip-flops of each possible disk drive unit. (read only)"
+
+[Bits.RK611.RKDC]
+DC=0:9;"Desired Cylinder. RK06 range = 0-410 octal, RK07 = 0-1456"
+
+[Bits.RK611.RKMR1]
+MS=0:3;"Message Select."
+PAT=4;"Parity Test."
+DMD=5;"Diagnostic Mode."
+MSP=6;"Maintenance Sector Pulse Bit. Signal simulation"
+MIND=7;"Maintenance Index. Signal simulation"
+MCLK=8;"Maintenance Clock. Signal simulation"
+MERD=9;"Maintenance-Encode Read Data. Signal simulation"
+MEWD=10;"Maintenance-Encode Write Data. Signal simulation"
+PCA=11;"Precompensation Advance. Write Logic parameter (read only)"
+PCD=12;"Precompensation Delay. Write Logic parameter (read only)"
+ECCW=13;"ECC Word. 0 = timing logic is reflecting the sectors ECC field. (read only)"
+WD GT=15;"Write Gate. 1 = Write Gate has been asserted by the controeller (read only)"
+RD GT=15;"Read Gate. 1 = Read Gate has been asserted by the controeller (read only)"
+
+
+[Bits.RK611.RKECPS]
+EP=0:12;"Error Position. Start bit location of error burst within 256-word Data field (read only)"
+
+[Bits.RK611.RKECPT]
+EPA=0:10;"Error Pattern. 11-bit correction pattern for an error burst that is correctable (read only)"
+

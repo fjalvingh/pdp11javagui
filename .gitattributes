@@ -1,0 +1,15 @@
+* text=auto
+
+# Machine descriptions come out of the retrocmp installer as ISO-8859-1 with CRLF line
+# endings, and pdp11.expected.ini is a byte-for-byte golden fixture of m4's output over
+# them. Git must not rewrite either, or the preprocessor test fails for reasons that have
+# nothing to do with the preprocessor.
+*.ini    -text
+*.modules -text
+
+# MACRO-11 sources are fed to an external assembler; leave them exactly as they are.
+*.mac    -text
+*.mac2   -text
+
+mvnw     text eol=lf
+mvnw.cmd text eol=crlf

@@ -1,0 +1,38 @@
+
+
+;# ROM modules on M9312 boot termiantor,
+;# or on PDP11/44 UBI
+
+
+;################################################################################
+;# Module_M9312_ROM_IDs - ID words of boot roms on M9312
+define(Module_M9312_ROM_IDs,`
+; the ID words are special locations within each ROM
+CPU diagnostic=165774;"CPU diagnostic ROM, IC E58, 1K * 4=256 words"
+; CPU diagnostic=17776774;"IC E58" doku ... ist quatsch!
+Boot device 1=173000;"Boot strap ROM device 1, IC E48. 1/2 * 512 * 4 = 64 words"
+Boot device 2=173200;"Boot strap ROM device 2, IC E49. 1/2 * 512 * 4 = 64 words"
+Boot device 3=173400;"Boot strap ROM device 3, IC E50. 1/2 * 512 * 4 = 64 words"
+Boot device 4=173600;"Boot strap ROM device 4, IC E59. 1/2 * 512 * 4 = 64 words"
+Boot select=173024;"Switch pack E28. 165XYZ= boot to console, 173XYZ=boot device"
+')
+
+
+
+;################################################################################
+;# Module_M9312 - CPU diagnostic and boot address switch on M9312
+define(Module_M9312, `
+Boot select=173024;"Switch pack E28. 165XYZ= boot to console, 173XYZ=boot device"
+CPU diagnostic=165000:165776;"CPU diagnostic ROM, IC E58, 1K * 4=256 words"
+')
+
+;################################################################################
+;# Module_M9312_ROM_Boot
+;# the ROMs on M9312 boot terminator.
+;# One NS82S131 contains 256 4bit-nibbles = 128 bytes = 64 words
+;# $1 = device no: #1 .. #4. Must give:  #1 -> 173000, #2 -> 173200, #3 -> 173400, #4 -> 173600
+define(Module_M9312_ROM_Boot,`
+Boot ROM $1=eval(`0173000+($1-1)*128',8):eval(`0173000+($1-1)*128+126',8);"Boot strap ROM device $1, 1/2 * 512 * 4 = 64 words"
+')
+
+

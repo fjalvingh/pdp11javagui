@@ -1,0 +1,159 @@
+
+
+;################################################################################
+;# Module_serial() - Template for definition of standard Serial Line Unit
+;#                   Alos paper tape.
+
+;# $1 = baseaddr
+define(Module_SLU,`
+RCSR= _offset($1,0) ;"Receiver Control/Status Register";Bits.SLU.RCSR
+RBUF= _offset($1,2) ;"Receiver Data Buffer";Bits.SLU.RBUF
+XCSR= _offset($1,4) ;"Transmitter Control/Status Register";Bits.SLU.XCSR
+XBUF= _offset($1,6) ;"Transmitter Buffer Register";Bits.SLU.XBUF        ')
+
+
+[Bits.SLU.RCSR]
+Receiver Done=7;"program I/O mode: complete character in RBUF. read-only"
+Receiver Interrupt Enable=6;"Enable interrupt on 'receiver done'"
+
+[Bits.SLU.RBUF]
+Error=15;"Overrun error or framing error oder parity error. read-only"
+Overrun Error=14;"character in RBUF has not been read before another character is received"
+Framing Error=13;"The character read does not include a valid stop bit"
+Parity Error=12;"Parity of data in character is incorrect"
+Receiver Data=7:0;"Data character that was read"
+
+; 11/44 hat zwei extra bits ... uninteressant
+[Bits.SLU.ConsoleXCSR]
+Transmitter Ready=7;"XBUF register is ready or initialization"
+Transmitter Interrupt Enable=6;"Enable interrupt on 'Transmitter Ready' bit"
+Console Interface Remote=5;"CPU is operating remote diagnostic mode"
+Enable Console=4;"CPU is operating in console mode"
+Remote Diagnostic Bits Enable=3;"Switch S2 (E79) on MFM mode. Enable bits 5 and 4."
+Maintenance=2;"closed loop test on terminal UART"
+Break=0;"transmission of continuous space character"
+
+[Bits.SLU.XCSR]
+Transmitter Ready=7;"XBUF register is ready or initialization"
+Transmitter Interrupt Enable=6;"Enable interrupt on 'Transmitter Ready' bit"
+Maintenance=2;"closed loop test on UART"
+Break=0;"transmission of continuous space character"
+
+[Bits.SLU.XBUF]
+Transmitter Data=7:0
+
+
+
+;################################################################################
+;# Module_DZ11() - Template for definition of DZ11 8 mux serial controller
+;# $1 = baseaddr
+define(Module_DZ11,`
+CSR= _offset($1,0) ;"Control/Status";Bits.M7819.CSR
+RBUF/LPR= _offset($1,2) ;"Receiver Buffer (read)/Line Parameter (write)";Bits.M7819.RBUF_LPR
+TCR= _offset($1,4) ;"Transmit Control";Bits.M7819.TCR
+MSR/TDR= _offset($1,6) ;"Modem Status (read)/Transmit Data (write)";Bits.M7819.MSR_TDR
+')
+
+[Bits.M7819.CSR]
+TRDY=15;"Transmitter Ready: a line number is found with transmit buffer empty and "LINE ENAB" set (readonly)"
+TIE=14;"Transmitter Interrupt Enable"
+SA=13;"Silo Alarm: 16 characters are in silo"
+SAE=12;"Silo Alarm Enable: If RIE, Silo Alarm generated interrupt"
+TLINE=10:8;"Transmit Line: If TRDY, line that is ready to transmit character (readonly)"
+RDONE=7;"Receiver Done: set if silo contains character, triggers interrupt (readonly)"
+RIE=6;"Receiver Interrupt Enable"
+MSE=5;"Master Scan Enable: activates the scanner to enable the receiver transmitter and silo."
+CLR=4;"Clear: 15us reset, clears everything"
+MAINT=3;"Maintenance: feed back output data into input. Cleared by BUS INT and CLR"
+
+[Bits.M7819.RBUF_LPR]
+RBUF.DATA VALID=15;"Data valid: Read from RBUF until DTA VALID = 0, indicating empty silo"
+RBUF.OVRN=14;"Overrun: Receiver buffer overflow, character lost"
+RBUF.FRAM ERR=13;"Framing Error: stop bit was not a mark"
+RBUF.PAR ERR=12;"Parity Error"
+RBUF.RXLINE=10:8;"Line number: line for which character was received"
+RBUF.RBUF=7:0;"Received character"
+LPR.RX ON=12;"Receiver On: set to activate receiver clock (transmit clock is always on)"
+LPR.FREQ=11:8;"Speed Select: 14=9600, 12=4800, 10=2400, 7 = 1200, etc"
+LPR.ODD PAR=7;"If parity enabled: 0 = even, 1 = odd parity"
+LPR.PAR ENAB=6;"Parity: 0 = no check, 1 = check"
+LPR.STOP CODE=5;"Stop bits: 0=1 stop bit, 1 = 2/1.5 stop bits"
+LPR.CHAR LGTH=4:3;"Character length: 0=5 bit, 1= 6 bit, 2=7 bit, 3=8 bit"
+LPR.LINE=2:0;"Line number: select the line for parameter loading"
+
+[Bits.M7819.TCR]
+DTR 7=15;"'Data Terminal Ready' for line #7, read/write"
+DTR 6=14
+DTR 5=13
+DTR 4=12
+DTR 3=11
+DTR 2=10
+DTR 1=9
+DTR 0=8
+LINE ENAB 7=7;"Enable line #7"
+LINE ENAB 6=6
+LINE ENAB 5=5
+LINE ENAB 4=4
+LINE ENAB 3=3
+LINE ENAB 2=2
+LINE ENAB 1=1
+LINE ENAB 0=0
+
+[Bits.M7819.MSR_TDR]
+MSR.CO 7=15;"Modem signal 'Carrier' for line #7, read only"
+MSR.CO 6=14
+MSR.CO 5=13
+MSR.CO 4=12
+MSR.CO 3=11
+MSR.CO 2=10
+MSR.CO 1=9
+MSR.CO 0=8
+MSR.RI 7=7;"Modem signal 'Ring indicator' for line #7, read only"
+MSR.RI 6=6
+MSR.RI 5=5
+MSR.RI 4=4
+MSR.RI 3=3
+MSR.RI 2=2
+MSR.RI 1=1
+MSR.RI 0=0
+TDR.BRK 7=15;"Break: Output break level on line #7"
+TDR.BRK 6=14
+TDR.BRK 5=13
+TDR.BRK 4=12
+TDR.BRK 3=11
+TDR.BRK 2=10
+TDR.BRK 1=9
+TDR.BRK 0=8
+TDR.TBUF=7:0;"Transmit buffer: holds character to be transmitted"
+
+
+
+
+;################################################################################
+;# Module_PC11() - Template for definition of PC11 high speed reader/punch PC05 paper tape controller
+;# $1 = baseaddr. Std = 777550
+define(Module_PC11,`
+PRS= _offset($1,0) ;"Reader Status";Bits.PC11.PRS
+PRB= _offset($1,2) ;"Reader Buffer (read only)";Bits.PC11.PRB
+PPS= _offset($1,4) ;"Punch Status Register";Bits.PC11.PPS
+PPB= _offset($1,6) ;"Punch Buffer Register (write only)";Bits.PC11.PPB
+')
+
+[Bits.PC11.PRS]
+RDR ENB =0;"Reader Enable. Writing 1 starts read cycle, BUSY is set, DONE and PRB are cleared. Read as 0."
+RDR INTR ENB=6;"Reader Interrupt Enable. If 1, DONE or ERROR start an interrupt sequence. Cleared by INIT."
+DONE=7;"Set when new data available. Cleared on RDR ENB, PRB is read or INIT. Starts interrupt."
+BUSY=11;"Reader is completing operation. Set on RDR ENB, cleared on DONE."
+ERROR=15;"1 = Reader out of tape, reader off-line, no power to reader. Starts interrupt."
+
+[Bits.PC11.PRB]
+DATA=0:7; "Transfer 8 bits of data from PC05 to Unibus."
+
+[Bits.PC11.PPS]
+PUN INTR ENB=6; "Punch Interrupt Enable. When set, either READY or ERROR start interrupt sequence. Cleared by INIT."
+READY = 7; "1 = Punch can accept a byte. Set by INIT, cleared when PPB is loaded. Starts interrupt."
+ERROR = 15; "1 = Punch out of tape, no power to punch. Starts interrupt."
+
+[Bits.PC11.PPB]
+DATA=0:7; "Loading a byte clears READY and begins punch cycle. (write-only)"
+

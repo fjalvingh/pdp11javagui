@@ -1,0 +1,65 @@
+
+;# machine description library of CPU-like modules
+
+
+;################################################################################
+;# Module_CPU - generic CPU, 11/44
+define(Module_CPU,`
+PSW      =177776;"Processor Status Word";Bits.CPU.PSW
+PIRQ     =177772;"Program Interrupt Request";Bits.CPU.PIRQ
+CPU Error=177766;;Bits.CPU.Error
+R0=177700
+R1=177701
+R2=177702
+R3=177703
+R4=177704
+R5=177705
+SP=177706;"stack pointer = R6"
+PC=177707;"program counter = R7"
+')
+
+[Bits.CPU.PSW]
+Current Mode=15:14;"Current processor mode. 0=kernel,1=supervisor,2=illegal,3=user mode"
+Previous Mode=13:12;"Processor mode prior to last trap, irq oder PSW loading"
+CIS Instruction Suspension=8;"1, when a CIS instruction is entered and completed"
+Priority=7:5;"Current level of processor priority"
+T=4;"Trap: when 1, trap to 14. Debugging."
+N=3;Negative
+Z=2;Zero
+V=1;Overflow
+C=0;Carry
+
+[Bits.CPU.PIRQ]
+PIRQ Level=15:9;"PIR7-PIR1 - interrupt request of given priority level"
+PIA-Hi=7:5;"Program interrupt active, MSB"
+PIA-Lo=3:1;"Program interrupt active, LSB"
+
+[Bits.CPU.Error]
+Data Transfer=15;"Monitors DATA TRAN line. 0 = UNIBUS transfer"
+C1=14;"1 when UNIBUS control signal BS C1 is asserted"
+Cache Restart=13;"1, when cache has restartet processor clock"
+KTE=12;"1, when memory management error has occured"
+Bus Error=11;"1, when access to non existing memory, or UNIBUS 20us timeout"
+Parity Error=10;"1, when memory parity error"
+AC LO=9;"UNIBUS AC LO asserted."
+DC LO=8;"UNIBUS DC LO asserted."
+Illegal Halt=7;"Halt instruction in user or supervisor mode"
+Odd Address Error=6;"Program attempted a word reference on an odd address"
+Memory Time-Out=5;"Read from non-existant memory. Does not include UNIBUS addresses"
+UNIBUS Time-Out=4;"No response from UNIBUS within 20 µs"
+Processor Initialize=3;"This bit monitors the processor initialize signal"
+Stack Overflow=2;"Kernel hardware stack is less than octal 400"
+CIM Power Failure=0;"DC power to the machine has exceeded voltage tolerance limit for more than 1.5 µs"
+
+
+
+;################################################################################
+;# Module_LTC - standard Line time clock
+define(Module_LTC,`
+Info="Standard Line Time Clock register"
+LKS=177546;"Line Time Clock Control/Status";Bits.LTC.LKS
+')
+
+[Bits.LTC.LKS]
+LTC INT MON=7;"Line Time Clock Monitor - set by line frequency and cleared by program"
+LTC ENAB=6;"Line Time Clock Interrupt Enable. When set, starts an interrupt"
