@@ -62,17 +62,11 @@ class DisassemblerSimhCorpusTest {
 		SIMH_DISAGREEMENTS.put(0000276,
 			"SimH prints SEN SEZ SEC, duplicating 000275. Bit 0 is clear, so the decode is SEN SEZ SEV.");
 
-		//-- LDEXP is 1764AC+dst: the AC field is bits 7..6, exactly like STEXP at 1750AC+dst.
-		//-- SimH decodes STEXP for all four accumulators but LDEXP only for AC0, so its mask
-		//-- for this one entry is too wide. macro11 settles it: "LDEXP R0,AC1" assembles to
-		//-- 176500, so 176500 is a valid instruction and SimH's refusal to decode it is wrong.
-		for(int ac = 1; ac <= 3; ac++) {
-			for(int dst = 0; dst < 64; dst++) {
-				SIMH_DISAGREEMENTS.put(0176400 | (ac << 6) | dst,
-					"SimH decodes LDEXP for AC0 only; macro11 assembles LDEXP R0,AC" + ac
-						+ " to 0" + Integer.toOctalString(0176400 | (ac << 6)) + ", so AC1..AC3 are legal.");
-			}
-		}
+		//-- A third disagreement used to live here: SimH build 8ed26d30 decoded LDEXP for AC0
+		//-- only, though STEXP - identical encoding format - worked for all four. macro11
+		//-- assembles "LDEXP R0,AC1" to 176500, so SimH's mask for that one entry was too wide.
+		//-- Build a1f57fa3 fixes it and now agrees with us, which is as good a confirmation as
+		//-- the disagreement was informative. Nothing to exclude any more.
 	}
 
 	@Test

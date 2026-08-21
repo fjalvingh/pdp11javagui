@@ -43,12 +43,28 @@ import static to.etc.pdp11.core.disas.OpClass.*;
  *       V is: the decodes are {@code CLN CLZ CLV} and {@code SEN SEZ SEV}. We follow the
  *       documented per-flag bit encoding. (The Pascal unit header records only the first of
  *       the pair; the second surfaced when the cross-check corpus went exhaustive.)</li>
- *   <li><b>Opcode {@code 0002 3N} (SPL).</b> The level is bits 2..0. The Pascal reads bits
- *       8..6 instead ({@code Pdp11DisasU.pas:513}, using the {@code reg3} field meant for the
- *       RSOP/SOPR classes), so it prints {@code SPL 2} for {@code 000234} where SimH and the
- *       processor handbook both say {@code SPL 4}. That is a bug in the Pascal, found by the
- *       SimH cross-check of PLAN.md phase 1, and it is not reproduced here.</li>
  * </ul>
+ *
+ * <h2>Where this deliberately differs from the Pascal</h2>
+ *
+ * <p>Diffing both implementations over all 65536 words - see {@code tools/pascal-disas-diff.sh} -
+ * turns up 183 differing words and no others, in two groups. Both are bugs in the Pascal,
+ * found by the SimH cross-check of PLAN.md phase 1 and confirmed by running it:</p>
+ *
+ * <ul>
+ *   <li><b>SPL ({@code 0002 3N}).</b> The level is bits 2..0. The Pascal reads bits 8..6
+ *       instead ({@code Pdp11DisasU.pas:513}, reusing the {@code reg3} field meant for the
+ *       RSOP/SOPR classes). Those bits are part of SPL's own opcode and are always
+ *       {@code 010}, so it prints {@code SPL 2} for every SPL there is - only {@code 000232}
+ *       comes out right, by coincidence.</li>
+ *   <li><b>Mode 0 of a float operand.</b> The register field is three bits and the FP11 has
+ *       six accumulators, but {@code FacName} masks it to two ({@code :342}, called from
+ *       {@code :410}), so {@code CLRF AC4} and {@code CLRF AC5} print as {@code AC0} and
+ *       {@code AC1}. {@code macro11} assembles {@code CLRF AC5} to {@code 0170405}, which
+ *       settles it. 176 words are affected.</li>
+ * </ul>
+ *
+ * <p>Everything else agrees exactly, word counts included.</p>
  */
 public final class Disassembler {
 	/** OR into an instruction word to select the FP11 long-integer variants. */

@@ -25,7 +25,25 @@ Lazarus port works, but it carries a heavy tax:
 windows instead of MDI, eventually replacing the Lazarus version — which stays as the
 reference implementation throughout the port.
 
-**Target:** `/home/jal/git/grb/java11gui` (currently empty).
+**Target:** `/home/jal/git/grb/java11gui`.
+
+## Progress
+
+| Phase | State | Notes |
+|---|---|---|
+| 0 — Scaffolding | **Done** | 3 Maven modules, wrapper on 3.9.11, FlatLaf shell, CI on all three platforms. Machine `.ini` files recovered from the MSI; the m4 subset they use is measured and tiny. |
+| 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
+| 2 — Model | Next | `MemoryCell*` + listener bus, `Pdp11Mmu`, machine-description parsing and the m4 replacement. |
+| 3 — Transports and fakes | | |
+| 4 — Console layer | | The keystone. Budget it generously. |
+| 5 — First usable app | | |
+| 6 — Assembler and tools | | |
+| 7 — Disc images | | |
+| 8 — Packaging | | |
+
+Each phase's entry below carries its own "done when" and, once finished, what it actually
+found. Keep both current: the findings are the part that changes what the *next* phase should
+do, and they are worth more than the tick.
 
 ## Decisions taken
 
@@ -551,15 +569,17 @@ toolchain support and will fight current compiler/enforcer plugin versions. Reso
 Maven wrapper pinning 3.9.11 plus a `requireMavenVersion` floor of 3.9, rather than by
 touching the user's `~/bin/mvn`: the wrapper is what CI uses on all three platforms anyway.
 Build with `./mvnw`. JDK 21 and 25 are both
-installed; target 21 (LTS). `macro11`, `m4` and SimH's `pdp11` are already on `PATH` (`/home/jal/bin/`), so phase 4 and 6
-integration tests can run locally from the start — **but `pdp11` does not currently start**:
-it is linked against `libvdeplug.so.2`, which is not installed and which Ubuntu now ships as
-`libvdeplug2t64`. Nothing here uses VDE networking, so unpacking that `.deb` and pointing
-`LD_LIBRARY_PATH` at it is enough, no root needed; `tools/gen-disas-corpus.sh` carries the
-recipe. Phase 4's SimH integration tests must handle this, and CI has no SimH at all — which
-is why the disassembler corpus is committed rather than generated during the build. Free
-Pascal is **not** installed either, so the Lazarus reference build cannot currently be
-compiled or run on this machine for cross-checking. **Extract `machines/*.ini` from the retrocmp.com installer and commit them** —
+installed; target 21 (LTS). `macro11`, `m4` and SimH's `pdp11` are on `PATH` (`/home/jal/bin/`), so phase 4 and 6
+integration tests can run locally. Two toolchain gaps found during phase 1 have since been
+closed and both tools now work: `pdp11` was linked against a `libvdeplug.so.2` Ubuntu no
+longer packages under that name, and Free Pascal was not installed at all, so the Lazarus
+reference build could not be compiled for cross-checking. `tools/gen-disas-corpus.sh` still
+carries the `libvdeplug` workaround in case the binary is replaced.
+
+**CI has no SimH, no `macro11` and no Free Pascal**, and is not going to get them. Anything
+that needs one is either a committed fixture (the disassembler corpus) or a script under
+`tools/` run by hand — see `tools/pascal-disas-diff.sh`. Keep that split; a cross-check that
+only runs on one machine must not be able to break the build on the others. **Extract `machines/*.ini` from the retrocmp.com installer and commit them** —
 they drive bitfield definitions, register-group windows, the I/O page scanner and the fakes'
 valid-address map, and they are not in the Pascal repo. **Done:** recovered from
 `PDP11GUI.msi` 1.48.6 (GitHub releases → `Data1.cab`) and committed to
@@ -578,26 +598,36 @@ is already installed, and checking against the authority beats checking against 
 of it. *Small–medium.*
 
 **Outcome.** The cross-check went **exhaustive** rather than sampled — all 65536 words, via
-`tools/gen-disas-corpus.sh`, committed as a test fixture so the test needs no SimH. It paid
-for itself four times over:
+`tools/gen-disas-corpus.sh`, committed as a test fixture so the test needs no SimH. Going
+exhaustive rather than sampling is what turned up half of what follows.
 
-- **Two bugs in the Pascal, not reproduced.** `cls3B` reads SPL's level from bits 8..6 instead
-  of 2..0 (`Pdp11DisasU.pas:513`, reusing the `reg3` field meant for RSOP/SOPR), so it prints
-  `SPL 2` for `000234`. And mode 0 of a float operand passes the full 3-bit register field to
-  `FacName`, which masks it to 2 bits (`:410`, `:342`), so `CLRF AC5` prints as `CLRF AC1`.
+Three implementations of this instruction set are available on this machine — the Java port,
+the Pascal, and SimH — plus `macro11`, which encodes rather than decodes and so is an
+independent fourth opinion. Every disagreement between the first three was settled by
+assembling the disputed instruction with `macro11`. **That technique is the transferable
+result of this phase**; remember it for phase 4, where the same three-way disagreement will
+happen about console protocol behaviour rather than opcodes.
+
+- **Two bugs in the Pascal, not reproduced.** Both confirmed by *running* it, not just reading
+  it — `tools/pascal-disas-diff.sh` rebuilds the Pascal unit with `fpc -Mdelphi` and diffs all
+  65536 words.
+  - `cls3B` reads SPL's level from bits 8..6 instead of 2..0 (`Pdp11DisasU.pas:513`, reusing
+    the `reg3` field meant for RSOP/SOPR). Those bits are part of SPL's own opcode and are
+    always `010`, so it prints `SPL 2` for *every* SPL; only `000232` is right, by accident.
+  - Mode 0 of a float operand passes the full 3-bit register field to `FacName`, which masks
+    it to 2 bits (`:410`, `:342`), so `CLRF AC4`/`AC5` print as `AC0`/`AC1`. 176 words.
+  - **Those 183 words are the *only* difference between the two implementations**, word counts
+    included. That is the phase-1 statement of a faithful port.
 - **Two bugs in SimH, not adopted.** Its `opcode[]` table has the same copy-paste duplicate in
   each half of the condition-code group: `000256` repeats `000255`'s text and `000276` repeats
   `000275`'s. Bit 0 is clear in both, so the decodes are `CLN CLZ CLV` and `SEN SEZ SEV`. The
-  Pascal header documents only the first; the second surfaced *because* the sweep was
-  exhaustive.
-- **A third SimH bug.** SimH decodes `LDEXP` for AC0 only, though `STEXP` — identical encoding
-  format — works for all four. `macro11` assembles `LDEXP R0,AC1` to `176500`, so SimH's mask
-  for that one entry is too wide.
-
-`macro11`, already on `PATH` for phase 6, turned out to be the tie-breaker whenever SimH and
-the Pascal disagreed: it is a third independent implementation of the same encoding, and
-assembling the disputed instruction settles the question in seconds. Worth remembering for
-phase 4.
+  Pascal header documents only the first, and the Pascal gets both right; the second surfaced
+  *because* the sweep was exhaustive. Still present in the current SimH build.
+- **A third SimH bug, since fixed upstream.** Build `8ed26d30` decoded `LDEXP` for AC0 only,
+  though `STEXP` — identical encoding format — worked for all four; `macro11` assembles
+  `LDEXP R0,AC1` to `176500`. Build `a1f57fa3` fixes it and now agrees with us. The corpus was
+  regenerated against the newer build and the exclusion removed. A disagreement that resolves
+  itself in your favour is the strongest confirmation available.
 
 **Phase 2 — Model.** `MemoryCell`/`MemoryCellGroup`/`MemoryCellGroups` with the new listener
 bus and address index; `Pdp11Mmu`; machine-description `.ini` parsing with the m4 replacement.
@@ -706,7 +736,13 @@ is rework.
   safety net, per the agreed strategy.
 - **SimH integration tests** in phase 4+, launching a real `pdp11` from the test and
   exercising examine/deposit/run/halt/step.
-- **Disassembler corpus test** against the Pascal implementation output.
+- **Disassembler cross-checks, two of them, with different jobs.** The committed SimH corpus
+  (`pdp11-core/src/test/resources/disas/simh-corpus.txt`, all 65536 words) is the permanent
+  regression test: SimH is the authority both implementations were written against, and the
+  fixture means CI needs no SimH. The Pascal diff (`tools/pascal-disas-diff.sh`) is **not** a
+  committed test — pinning a regression test to an implementation with known bugs would pin
+  the bugs — but is run by hand when the disassembler changes, to confirm the places the two
+  part company are still exactly the 183 deliberate ones.
 - **Cross-checking against the Lazarus build** by hand for each window as it lands — the old
   app remains runnable via `./Pdp11gui/run.sh` throughout.
 - **Golden transcripts are deferred** by decision, but keep the door open: because
