@@ -5,6 +5,7 @@ import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowManager;
@@ -78,6 +79,10 @@ public final class MainWindow extends JFrame {
 		connect.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_K, menuMask));
 		connect.addActionListener(e -> connect(m_context.getSettings().currentProfile()));
 
+		JMenuItem settings = new JMenuItem("Connection settings ...");
+		settings.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, menuMask));
+		settings.addActionListener(e -> SettingsDialog.open(this, m_context, this::connect));
+
 		JMenuItem disconnect = new JMenuItem("Disconnect");
 		disconnect.addActionListener(e -> {
 			m_context.getConnectionManager().disconnect();
@@ -91,6 +96,7 @@ public final class MainWindow extends JFrame {
 		JMenu file = new JMenu("File");
 		file.setMnemonic(KeyEvent.VK_F);
 		file.add(connect);
+		file.add(settings);
 		file.add(buildConnectToMenu());
 		file.add(disconnect);
 		file.addSeparator();
@@ -130,9 +136,9 @@ public final class MainWindow extends JFrame {
 	/**
 	 * Connect to a simulated machine of each kind, without configuring anything.
 	 *
-	 * <p>Stands in for the Settings dialog until it exists, and earns its place regardless: a
-	 * simulated machine needs no hardware, no SimH and no serial port, so this is the one menu
-	 * that always works and the quickest way to see whether anything is broken.</p>
+	 * <p>Earns its place beside the settings dialog: a simulated machine needs no hardware, no
+	 * SimH and no serial port, so this is the one menu that always works and the quickest way to
+	 * see whether anything is broken.</p>
 	 */
 	private JMenu buildConnectToMenu() {
 		JMenu menu = new JMenu("Connect to simulated");
@@ -150,6 +156,14 @@ public final class MainWindow extends JFrame {
 		for(WindowType type : WindowType.values()) {
 			if(!windows.isRegistered(type))
 				continue;
+			if(type.isMultiple()) {
+				//-- There can be any number of these, so the menu offers another one rather than
+				//-- "the" one; the ones that exist are listed below with everything else open.
+				JMenuItem item = new JMenuItem("New " + type.getTitle().toLowerCase() + " window");
+				item.addActionListener(e -> windows.openNew(type));
+				m_windowsMenu.add(item);
+				continue;
+			}
 			JMenuItem item = new JMenuItem(type.getTitle());
 			item.addActionListener(e -> windows.open(type));
 			m_windowsMenu.add(item);

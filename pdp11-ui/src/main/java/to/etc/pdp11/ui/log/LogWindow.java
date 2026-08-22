@@ -29,7 +29,9 @@ public final class LogWindow extends ToolWindow {
 	}
 
 	@Override
-	protected void onFirstShow() {
+	protected void onShowing() {
+		//-- Every show, not only the first: onHiding detaches, so a window that subscribed once
+		//-- would come back empty the second time it was opened.
 		m_panel.attach();
 	}
 

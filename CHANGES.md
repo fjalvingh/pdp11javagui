@@ -2,7 +2,60 @@
 
 ## Unreleased
 
-### Phase 5 — the shell that connects
+### Phase 5 — the windows that make it useful
+
+- **The application does what it is for.** Connect to a machine, look at memory, change it, run
+  the CPU, single-step it and watch the disassembly follow the program counter — the four
+  windows PLAN.md §5's "done when" asks for. `WindowsDriveTheMachineTest` drives all of it from
+  the panels themselves against a machine simulated in this JVM: no hardware, no SimH, no serial
+  port and no display.
+- **Settings: two selectors, not twenty-four sentences.** `ConnectionSettingsPanel` is the
+  {console protocol} × {transport} decomposition made visible, with saved named profiles and a
+  per-transport card of its own settings. The two combinations that cannot work — SimH on a
+  serial line, a real machine "launched as a process" — say why, and Connect is simply not
+  offered for a configuration that could not work.
+- **Memory view**, unlimited: `MemoryCellGroupTable` is the port of `FrameMemoryCellGroupGridU`,
+  the first of the two reusable frames seven Pascal forms share. Octal in and out, a gap in the
+  addresses showing as a gap in the grid, the changed-value colour, examine and deposit of one
+  cell or the whole range, fill-with-address, verify, and export as a SimH `DO` script.
+- **`pdpOverwritesEdit` now follows whether there is anything to protect.** *Divergence.* In the
+  Pascal it is decided once at construction, so the plain memory window — the very window the
+  frame's own comment uses as its example of the problem — still loses uncommitted edits when
+  another window examines the same address. Here a grid with edits in it is never overwritten
+  and a grid without them tracks the machine.
+- **Execution control**, with the enablement table ported case by case: which buttons work
+  depends on the console's features *and* the machine's state at once, and getting it wrong
+  produces a button that silently does nothing. Halt is always enabled, as in the Pascal,
+  because a console that cannot halt can still say which switch to move.
+- **Disassembler**, following the PC. `DisassemblyListing` (in `pdp11-core`, so it is testable
+  with no window) does the decoding *and* the awkward part: a PC that falls inside an instruction
+  rather than at the start of one, which the listing fixes by beginning two bytes later and
+  trying again.
+- **`MachineState` replaces the reach-ins.** `TFormExecute.SetAndShowPc` tells five other windows
+  about a new PC by naming each of them, which with create-on-demand windows has no target. The
+  PC is application state now; windows watch it, the execution window does not know the
+  disassembler exists, and a machine that stops while every window is shut is still noticed.
+- `AppContext.onConsole(what, job)` is the single door between a button and a machine: queued on
+  the command thread, never waited for on the event thread, with cancellation and failure
+  handled in one place. `ProgressDialog` implements the core's `ProgressMonitor` and appears only
+  after a second, so a bulk examine over a serial line can be watched and stopped while the same
+  operation against a simulated machine flashes nothing at anybody.
+- `MemoryCellGroup.shiftRange` — how a memory view scrolls and how the disassembler follows the
+  PC. **One correction to the original:** `CellIndexByAddr` compares raw address values and
+  ignores the width they are expressed at, so a group shifted to a different width carried values
+  across between addresses that are not the same location. 16-bit `0177570` and 22-bit
+  `017777570` are the same register; the raw numbers are not close.
+- Two defects found on the way: `ToolWindow` ran its subscribe hook only on the *first* show
+  while unsubscribing on every hide, so any window that was closed and reopened came back
+  showing nothing (the Log window had this); and `SerialTransport.availablePortNames()` now
+  answers an empty list instead of failing when jSerialComm cannot load its native library —
+  a settings dialog that will not open because there are no serial ports is worse than one
+  offering none.
+- A `JTable` hands its header to the enclosing scroll pane from `addNotify()`, which never runs
+  without a display — so the offscreen renders, the ones a person actually looks at, had no
+  column headings. Both tables wire theirs up explicitly.
+
+### Phase 5 part 1 — the shell that connects
 
 - **It runs.** `java -jar pdp11gui.jar` opens a window with a terminal, a connection status bar
   and a Windows menu, and connects to a simulated machine of any of the seven console protocols

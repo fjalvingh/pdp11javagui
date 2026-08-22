@@ -54,6 +54,15 @@ silently diverging.
   `ConsoleConnection.call()` is how the work gets onto the command thread, and it throws rather
   than deadlocking if it is called from that thread itself. `ConnectionManager.connect()` blocks
   too, for as long as launching SimH takes — the main window runs it on a worker.
+- **A button reaches the machine through `AppContext.onConsole`, and nothing else.** It queues
+  the job on the command thread and returns at once, so the rule above cannot be broken by
+  accident; the job then calls the console as often as it likes and marshals anything it wants to
+  show back with `AppContext.onUi`. Long operations take a `ProgressDialog`, which is the UI's
+  implementation of the core's `ProgressMonitor`.
+- **No window tells another window anything.** Shared machine state - is it running, where is the
+  PC - lives on `MachineState`, and windows watch it. This is what replaces the Pascal's
+  `TFormExecute.SetAndShowPc` naming five other forms one by one; a window that is not open hears
+  nothing and needs to hear nothing, and adding a window changes no existing one. See PLAN.md §5.
 - **A window is handed what it needs; it never reaches for it.** Everything shared lives on
   `AppContext`, which is constructed once in `Pdp11Gui.main` and passed down. There is no static
   instance and there must not be one. This is what makes lazy window creation work at all — see

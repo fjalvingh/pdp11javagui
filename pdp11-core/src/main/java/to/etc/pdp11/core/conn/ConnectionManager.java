@@ -238,6 +238,25 @@ public final class ConnectionManager implements AutoCloseable {
 		};
 	}
 
+	/**
+	 * Flip the simulated machine's pretend RUN/HALT switch, if that is what is connected.
+	 *
+	 * <p>A console cannot see a physical switch, so the execution-control window tells it where
+	 * the operator says it is. When the machine is simulated there is no operator and no switch,
+	 * and the fake has to be told the same thing or it answers as though the switch were
+	 * somewhere else - which is what {@code FormExecuteU.pas:544-568} does with
+	 * {@code FormMain.SerialIoHub.FakePDP11.RunMode}.</p>
+	 *
+	 * @return whether there was a simulated machine to tell
+	 */
+	public boolean setSimulatedRunMode(boolean running) {
+		PhysicalTransport t = m_transport;
+		if(!(t instanceof FakeTransport fake))
+			return false;
+		fake.getFake().setRunMode(running);
+		return true;
+	}
+
 	// -------------------------------------------------------------------------------------
 	// The emulated machine's own console
 	// -------------------------------------------------------------------------------------

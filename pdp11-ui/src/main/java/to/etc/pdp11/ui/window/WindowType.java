@@ -12,21 +12,39 @@ package to.etc.pdp11.ui.window;
 public enum WindowType {
 	LOG("Log"),
 	TERMINAL("Terminal"),
-	MEMORY("Memory"),
+	MEMORY("Memory", true),
 	EXECUTION("Execution control"),
 	DISASSEMBLER("Disassembler"),
-	REGISTER_GROUP("Registers"),
+	REGISTER_GROUP("Registers", true),
 	SIMH_CONSOLE("SimH console"),
 	SIMH_REMOTE_LOG("SimH remote console log");
 
 	private final String m_title;
 
+	private final boolean m_multiple;
+
 	WindowType(String title) {
+		this(title, false);
+	}
+
+	WindowType(String title, boolean multiple) {
 		m_title = title;
+		m_multiple = multiple;
 	}
 
 	/** The window's title, before any instance name is added to it. */
 	public String getTitle() {
 		return m_title;
+	}
+
+	/**
+	 * Whether there can be more than one of these, each with its own {@code instanceId}.
+	 *
+	 * <p>Memory views, because looking at two parts of memory at once is the ordinary way to use
+	 * one; register groups, because the machine description creates one per group and the Pascal
+	 * builds them the same way ({@code FormMainU.pas:608-645}).</p>
+	 */
+	public boolean isMultiple() {
+		return m_multiple;
 	}
 }

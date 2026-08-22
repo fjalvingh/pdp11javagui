@@ -123,11 +123,13 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 		m_commandTimeoutMillis = commandTimeoutMillis;
 	}
 
+	@Override
 	public ConsoleRunMode getRunMode() {
 		return m_runMode;
 	}
 
 	/** Where the ENABLE/HALT switch is. Only meaningful with {@link ConsoleFeature#SWITCH_ENABLE_OR_HALT}. */
+	@Override
 	public void setRunMode(ConsoleRunMode runMode) {
 		m_runMode = runMode;
 	}

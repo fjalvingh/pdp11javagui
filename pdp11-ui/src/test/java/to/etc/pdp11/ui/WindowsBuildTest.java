@@ -2,16 +2,12 @@ package to.etc.pdp11.ui;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.bits.BitfieldsDefs;
-import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
 import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.ui.disas.DisassemblerWindow;
+import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
-import to.etc.pdp11.ui.log.UiLogger;
-import to.etc.pdp11.ui.settings.SettingsStore;
+import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
-import to.etc.pdp11.ui.window.WindowManager;
 import to.etc.pdp11.ui.window.WindowType;
 
 import javax.swing.SwingUtilities;
@@ -22,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -41,16 +38,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  */
 class WindowsBuildTest {
 	private static AppContext context(Path dir) {
-		SettingsStore store = new SettingsStore(dir.resolve("settings.json"));
-		MemoryCellGroups groups = new MemoryCellGroups();
-		UiLogger logger = new UiLogger();
-		Scheduler scheduler = new Scheduler.Manual();
-		ConnectionManager connections = new ConnectionManager(groups, logger, scheduler, dir);
-		WindowManager windows = new WindowManager(store);
-		AppContext ctx = new AppContext(store, logger, groups, new BitfieldsDefs(), connections, windows,
-			scheduler, dir);
-		windows.setContext(ctx);
-		return ctx;
+		return TestContext.create(dir);
 	}
 
 	/** Build on the event thread, as Swing requires, and hand back whatever went wrong. */
@@ -126,6 +114,86 @@ class WindowsBuildTest {
 			assertSame(w, onEdt(() -> ctx.getWindowManager().open(WindowType.LOG)));
 			assertNotNull(ctx.getSettings().getWindowGeometry(w.key().toStorageKey()),
 				"where it was is remembered on the way out");
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	@Test
+	void everyToolWindowBuilds(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		LogWindow.register(ctx);
+		MemoryWindow.register(ctx);
+		ExecutionWindow.register(ctx);
+		DisassemblerWindow.register(ctx);
+		try {
+			for(WindowType type : new WindowType[] {WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION,
+				WindowType.DISASSEMBLER}) {
+				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
+				assertNotNull(w, type + " builds");
+				assertTrue(w.getTitle().startsWith(type.getTitle()), w.getTitle());
+			}
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * Memory views are unlimited, and each is its own window with its own remembered geometry -
+	 * which is what the {@code instanceId} half of {@link to.etc.pdp11.ui.window.WindowKey} is
+	 * for. The Pascal creates exactly four in {@code FormCreate} and calls that unlimited.
+	 */
+	@Test
+	void thereCanBeSeveralMemoryWindows(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MemoryWindow.register(ctx);
+		try {
+			ToolWindow first = onEdt(() -> ctx.getWindowManager().openNew(WindowType.MEMORY));
+			ToolWindow second = onEdt(() -> ctx.getWindowManager().openNew(WindowType.MEMORY));
+			assertNotSame(first, second);
+			assertEquals("1", first.key().instanceId());
+			assertEquals("2", second.key().instanceId());
+			assertEquals("Memory - 2", second.getTitle());
+			assertEquals(2, ctx.getWindowManager().windowsOfType(WindowType.MEMORY).size());
+			//-- Two views, two groups on the propagation bus, so a deposit in one shows in the other.
+			assertEquals(2, ctx.getMemoryCellGroups().size());
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	/** Hiding and reopening must leave the window still following what it displays. */
+	@Test
+	void aReopenedWindowIsAttachedAgain(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		ExecutionWindow.register(ctx);
+		try {
+			ExecutionWindow w = (ExecutionWindow) onEdt(() -> ctx.getWindowManager().open(WindowType.EXECUTION));
+			onEdt(() -> {
+				w.hideWindow();
+				return null;
+			});
+			onEdt(() -> ctx.getWindowManager().open(WindowType.EXECUTION));
+			//-- The panel updates from the machine state, so a state change must reach it again.
+			onEdt(() -> {
+				ctx.getMachineState().stopped(to.etc.pdp11.core.addr.Address.of(
+					to.etc.pdp11.core.addr.MemoryAddressType.VIRTUAL, 0777));
+				return null;
+			});
+			assertEquals("000777", w.getPanel().getCurrentPcField().getText(),
+				"a window that came back is still listening");
 		} finally {
 			onEdt(() -> {
 				ctx.getWindowManager().closeAll();

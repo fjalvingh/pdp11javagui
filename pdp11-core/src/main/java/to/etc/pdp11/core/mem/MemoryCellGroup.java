@@ -212,6 +212,74 @@ public final class MemoryCellGroup {
 		}
 	}
 
+	/**
+	 * Re-point this group at {@code count} consecutive words starting at {@code start}, keeping
+	 * the values of any address that is still in range.
+	 *
+	 * <p>Ported from {@code ShiftRange} ({@code MemoryCellU.pas:463-517}). This is how a memory
+	 * window scrolls and how the disassembler follows the PC: the range moves, the cells that
+	 * overlap the old range keep what the machine already told us about them, and only the new
+	 * addresses come back unknown and have to be examined.</p>
+	 *
+	 * <p>The Pascal does this by copying the whole group, growing it, renumbering every address
+	 * and looking each one up in the copy. Here it is a snapshot of the old values, a rebuild,
+	 * and a lookup - which also removes the ordering trap in the original, where the list has to
+	 * be grown <i>before</i> the shift and shrunk <i>after</i> it or the tail is lost.</p>
+	 *
+	 * <p>One correction. {@code CellIndexByAddr} compares raw address values and ignores the
+	 * width they are expressed at, so a group told to shift to a different width matches cells
+	 * that are not at the same location at all. Here a value is carried over only when the two
+	 * addresses genuinely name the same word - which for the concrete physical widths means
+	 * after conversion, exactly as {@link MemoryCellGroups} indexes them.</p>
+	 *
+	 * @param count how many words. Negative means "as many as there are now", matching the
+	 *              Pascal's {@code newsize < 0}.
+	 * @param optimize whether to keep the values of addresses that survive the move. False
+	 *                 discards everything, which is what a "reload, trust nothing" wants.
+	 */
+	public void shiftRange(Address start, int count, boolean optimize) {
+		if(start == null)
+			throw new IllegalArgumentException("A range has to start somewhere");
+		if(count < 0)
+			count = m_cells.size();
+
+		//-- Snapshot before anything moves, keyed at the *new* width, so the lookup below is a
+		//-- comparison of locations rather than of numbers that happen to be equal.
+		Map<Long, MemoryCell> previous = new HashMap<>();
+		if(optimize) {
+			for(MemoryCell mc : m_cells) {
+				Long key = sameLocationAs(mc.getAddr(), start.type());
+				if(key != null)
+					previous.putIfAbsent(key, mc);
+			}
+		}
+
+		clear();
+		m_type = start.type();
+		m_range = AddressRange.empty(m_type);
+		for(int i = 0; i < count; i++) {
+			MemoryCell mc = add(start.val() + 2L * i);
+			MemoryCell old = previous.get(mc.getAddr().val());
+			if(old == null)
+				continue;
+			//-- Everything but the address, which is the one thing that just changed.
+			mc.setPdpValue(old.getPdpValue());
+			mc.setEditValue(old.getEditValue());
+			mc.setName(old.getName());
+			mc.setInfo(old.getInfo());
+			mc.setListingLineNr(old.getListingLineNr());
+		}
+	}
+
+	/** This address expressed at {@code type}, or {@code null} if it is not that kind of address. */
+	private static Long sameLocationAs(Address addr, MemoryAddressType type) {
+		if(addr.type() == type)
+			return addr.val();
+		if(addr.type().isConcretePhysical() && type.isConcretePhysical() && addr.fitsWidth(type))
+			return addr.withWidth(type).val();
+		return null;
+	}
+
 	/** Sort by address. Ported from {@code Sort} ({@code :520-545}). */
 	public void sort() {
 		m_cells.sort((a, b) -> Long.compareUnsigned(a.getAddr().val(), b.getAddr().val()));

@@ -36,7 +36,7 @@ reference implementation throughout the port.
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
-| 5 — First usable app | **Partly done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window and Log window. It starts, connects to any of the seven protocols against a simulated machine, and shows the conversation. 341 tests. **Still to do: the Settings dialog, Memory view, Execution Control and Disassembler.** |
+| 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
@@ -961,11 +961,12 @@ sibling reach-ins (`FormDiscImageU.pas:389, 1038, 1043`; `FormMemoryLoaderU.pas:
 `SettingsStore`, `Logger`, `dataDir()` and the shared failure handler. Retrofitting it in a
 later phase means reworking every window built before it.
 
-**Outcome so far — the shell that connects.** It runs: `java -jar pdp11gui.jar` gives a window
-with a terminal, a connection status bar and a Windows menu, and connecting to a simulated
-machine of any of the seven protocols works from a menu item with nothing installed. What is not
-there yet is the Settings dialog and the three windows that make it *useful* - Memory view,
-Execution Control, Disassembler.
+**Outcome — it does what it is for.** `java -jar pdp11gui.jar` gives a window with a terminal, a
+connection status bar and a Windows menu; the Settings dialog describes a connection as
+{protocol} x {transport} with saved profiles; and the Memory view, Execution Control and
+Disassembler windows examine and deposit memory, reset, run, single-step and follow the program
+counter. `WindowsDriveTheMachineTest` presses those buttons against a machine simulated in this
+JVM, so the "done when" above is checked on a build machine with no hardware and no screen.
 
 - **`AppContext` was built first, and it was the right call.** Nothing reaches for a service; a
   window is handed what it needs and there is no static instance to reach for. That is cheap now
@@ -1018,6 +1019,58 @@ Execution Control, Disassembler.
     to do with rendering offscreen.
   - `Xvfb` would have been the other answer and is not installed; it is also the worse one, since
     it needs a package on every machine that builds this and the offscreen render needs nothing.
+- **The reach-ins had to become an event, and that is the whole reason `AppContext` was not
+  enough on its own.** `TFormExecute.SetAndShowPc` tells five other windows about a new PC by
+  naming each of them (`FormExecuteU.pas:198-235`) - the disassembler, the assembler listing, the
+  cell bus, the 11/70 panel. With create-on-demand windows those names have no target, and even
+  with a service locator every new window would mean another line in a method that has nothing to
+  do with it. `MachineState` inverts it: the PC is application state, windows watch it, and a
+  machine that stops while every window is shut is still noticed. The execution window does not
+  know the disassembler exists.
+- **One door between a button and a machine.** `AppContext.onConsole(what, job)` queues the work
+  on the command thread and never waits on the EDT, so no window has to get PLAN.md §1 right for
+  itself. It also gave cancellation and failure reporting one home rather than the Pascal's
+  `ShowMessage` in every form. `ProgressDialog` implements the core's `ProgressMonitor` and
+  appears only after a second, which is why the same bulk examine can be watched and stopped over
+  a serial line and flashes nothing at all against a simulated machine.
+- **`pdpOverwritesEdit` is better dynamic than static, and the Pascal's own comment says why.**
+  `FrameMemoryCellGroupGridU.pas:38-48` describes the bug in detail - another window's examine
+  eats the values the user has typed - and then the plain memory window leaves the flag at its
+  default and has that bug. Only the loader, the dumper and the assembler code window turn it off,
+  and they turn it off forever. Making it follow whether the grid actually holds uncommitted edits
+  gets both halves: nothing is ever clobbered, and a memory view with nothing typed in it tracks
+  the machine, which is what a memory view is for.
+- **`shiftRange` carried a sentinel-adjacent bug of its own.** `CellIndexByAddr` compares raw
+  address values and ignores the width they are expressed at, so shifting a group to a different
+  width matched addresses that are not the same location - 16-bit `0177570` and 22-bit
+  `017777570` are one register and the numbers are nowhere near each other. Same family as the
+  `MEMORYCELL_ILLEGALVAL` hazard §2 predicted: a comparison that is only correct by accident of
+  what has been put in it.
+- **The Pascal's PC window is not the size its constant claims.** `disas_pcaddr_window_size = 10`
+  reads as ten words either side; the arithmetic around it (`FormDisasU.pas:390-396`) is five
+  words before the PC and eleven in all, while `ConnectToMemoryCells` sizes the group for
+  twenty-one. The numbers are spelled out rather than named here, and the behaviour is unchanged.
+- **Two defects found by building on top of phase 5's own scaffolding.** `ToolWindow` ran its
+  subscribe hook on the *first* show only while unsubscribing on every hide, so any window closed
+  and reopened came back dead - the Log window had this and nothing had noticed, because nobody
+  had closed and reopened it. And a `JTable` hands its header to the enclosing scroll pane from
+  `addNotify()`, which never runs without a display, so the offscreen renders had no column
+  headings at all. Both are the kind of thing the render-to-PNG habit is *for*: the assertions
+  were all green.
+- **A hazard to revisit when the M9301/M9312 console arrives.** The memory window examines the
+  unknown cells of a range as soon as the range moves, which the Pascal's Show button
+  deliberately does not - "auf M9312 console emulator führt jede nicht vorhandene Adresse zum
+  stop" (`FormMemoryTableU.pas:180-182`). But its `<`/`>` buttons examine anyway (`:211`), so the
+  hazard is only half avoided there and the price is a memory window that shows nothing until a
+  second button is pressed. When that console is ported, the decision belongs to the console -
+  a `ConsoleFeature` saying a bad address is fatal - not to each window that might read one.
+- **Deliberately left for phase 6, because each has its consumer there and none is needed for
+  the "done when" above.** `FrameMemoryCellGroupListU` -> `MemoryCellGroupList`, the *second*
+  reusable frame: its users are the Memory Loader, the Memory Dumper, the Memory Test, the I/O
+  Page Scanner and the register-group windows, all of which are phase 6, and building a reusable
+  component with no consumer is how you get one that fits nobody. Loading the machine description
+  at startup and the register-group windows it creates, for the same reason. And the execution
+  window's "New program: compile, load and reset" button, which is three quarters assembler.
 - **Known gap: settings are saved when the main window closes, and only then.** Killing the
   process loses them. The Pascal is the same. A shutdown hook would cover it and has not been
   added, because a save on the way out of a crash is not obviously the right thing to want.

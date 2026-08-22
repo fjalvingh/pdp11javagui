@@ -2,16 +2,21 @@ package to.etc.pdp11.ui;
 
 import to.etc.pdp11.core.bits.BitfieldsDefs;
 import to.etc.pdp11.core.conn.ConnectionManager;
+import to.etc.pdp11.core.console.Console;
+import to.etc.pdp11.core.console.ConsoleConnection;
+import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.machine.MachineDescription;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.core.util.OperationCancelledException;
 import to.etc.pdp11.core.util.Scheduler;
 import to.etc.pdp11.ui.settings.ConfigDir;
 import to.etc.pdp11.ui.settings.Settings;
 import to.etc.pdp11.ui.settings.SettingsStore;
 import to.etc.pdp11.ui.window.WindowManager;
 
+import javax.swing.SwingUtilities;
 import java.nio.file.Path;
 import java.util.function.BiConsumer;
 
@@ -44,6 +49,8 @@ public final class AppContext {
 
 	private final Scheduler m_scheduler;
 
+	private final MachineState m_machineState = new MachineState();
+
 	private final Path m_dataDir;
 
 	/** Set once a machine description has been loaded. Null before that, and after unloading. */
@@ -71,6 +78,7 @@ public final class AppContext {
 		m_windowManager = windowManager;
 		m_scheduler = scheduler;
 		m_dataDir = dataDir;
+		m_machineState.bind(connectionManager);
 	}
 
 	/**
@@ -128,6 +136,11 @@ public final class AppContext {
 		return m_scheduler;
 	}
 
+	/** Where the machine is, and where its PC got to. */
+	public MachineState getMachineState() {
+		return m_machineState;
+	}
+
 	/** Where working files go: SimH's generated configuration, temporary listings. */
 	public Path getDataDir() {
 		return m_dataDir;
@@ -156,6 +169,60 @@ public final class AppContext {
 	public void reportFailure(String message, Throwable cause) {
 		m_logger.log(LogChannel.OTHER, cause == null ? message : message + ": " + cause);
 		m_failureHandler.accept(message, cause);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Talking to the machine
+	// -------------------------------------------------------------------------------------
+
+	/** Work to do with the console, on the thread that is allowed to do it. */
+	@FunctionalInterface
+	public interface ConsoleJob {
+		void run(Console console) throws ConsoleException;
+	}
+
+	/**
+	 * Run console work on the command thread, and never on the event thread.
+	 *
+	 * <p>This is the one door between a button and a machine, and it exists so that no window
+	 * has to get the threading right on its own. PLAN.md §1: every console call is serialized
+	 * on one thread, and a call made from the EDT deadlocks the application. The job is queued
+	 * rather than waited for - {@link ConsoleConnection#call} would block whoever asked, and
+	 * the EDT is exactly who is asking.</p>
+	 *
+	 * <p>The job runs <b>on the command thread</b>, so it may call the console directly as often
+	 * as it likes, and it must marshal anything it wants to show back with
+	 * {@link #onUi(Runnable)}.</p>
+	 *
+	 * @return false if there is no machine to talk to, having said so
+	 */
+	public boolean onConsole(String what, ConsoleJob job) {
+		ConsoleConnection connection = m_connectionManager.getConnection();
+		Console console = m_connectionManager.getConsole();
+		if(connection == null || console == null) {
+			reportFailure("Not connected to a machine", null);
+			return false;
+		}
+		connection.execute(() -> {
+			try {
+				job.run(console);
+			} catch(OperationCancelledException x) {
+				//-- The user pressed Cancel on the progress dialog. Not a failure, and not
+				//-- something to put a second dialog in front of them about.
+				m_logger.log(LogChannel.OTHER, what + ": cancelled");
+			} catch(ConsoleException | RuntimeException x) {
+				reportFailure(what + " failed", x);
+			}
+		});
+		return true;
+	}
+
+	/** Do this on the event thread, from wherever you are. */
+	public static void onUi(Runnable work) {
+		if(SwingUtilities.isEventDispatchThread())
+			work.run();
+		else
+			SwingUtilities.invokeLater(work);
 	}
 
 	/** Save the settings, reporting a failure to save rather than throwing one. */

@@ -72,6 +72,17 @@ public abstract class ToolWindow extends JFrame {
 	protected void onFirstShow() {
 	}
 
+	/**
+	 * Called every time this window is shown, after {@link #onFirstShow()}.
+	 *
+	 * <p>This is where a window subscribes to whatever it displays, and {@link #onHiding()} is
+	 * where it unsubscribes - which only pairs up if both run every time. A window that
+	 * subscribed once, on first show, and unsubscribed on every hide would come back the second
+	 * time showing nothing and looking like it had stopped working.</p>
+	 */
+	protected void onShowing() {
+	}
+
 	/** Called as the window goes away. Replaces {@code OnBeforeHide}. */
 	protected void onHiding() {
 	}
@@ -83,6 +94,7 @@ public abstract class ToolWindow extends JFrame {
 			m_shownBefore = true;
 			onFirstShow();
 		}
+		onShowing();
 		setVisible(true);
 		toFront();
 		requestFocus();

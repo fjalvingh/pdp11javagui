@@ -128,6 +128,19 @@ public interface Console {
 	 */
 	TerminalProfile terminalProfile();
 
+	/**
+	 * Where the machine's ENABLE/HALT switch is, for a console that has one.
+	 *
+	 * <p>Only meaningful with {@link ConsoleFeature#SWITCH_ENABLE_OR_HALT}, and it is on the
+	 * interface because the execution-control window both shows it and sets it: the console
+	 * cannot see a physical switch, so somebody has to tell it which way the operator turned
+	 * it, and that changes which features the console then reports.</p>
+	 */
+	ConsoleRunMode getRunMode();
+
+	/** Tell the console where the operator has put the physical RUN/HALT switch. */
+	void setRunMode(ConsoleRunMode runMode);
+
 	/** Told when the machine stops, on the command thread. At most one. */
 	void setExecutionStopListener(ExecutionStopListener listener);
 }

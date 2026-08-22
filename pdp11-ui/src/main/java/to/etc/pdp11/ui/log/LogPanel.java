@@ -65,6 +65,9 @@ public final class LogPanel extends JPanel {
 			m_table.getColumnModel().getColumn(i).setPreferredWidth(220);
 		}
 
+		//-- See MemoryCellGroupTable: a JTable wires its header into the scroll pane from
+		//-- addNotify(), which does not happen when the panel is rendered with no display.
+		m_scroll.setColumnHeaderView(m_table.getTableHeader());
 		add(channels, "wrap");
 		add(m_scroll, "grow");
 	}

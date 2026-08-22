@@ -4,7 +4,10 @@ import com.formdev.flatlaf.FlatLightLaf;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MainWindow;
+import to.etc.pdp11.ui.disas.DisassemblerWindow;
+import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
+import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.log.UiLogger;
 
 import javax.swing.JOptionPane;
@@ -41,11 +44,25 @@ public final class Pdp11Gui {
 		EventQueue.invokeLater(() -> {
 			installLookAndFeel();
 			AppContext context = AppContext.create(logger);
-			LogWindow.register(context);
+			registerWindows(context);
 			logger.log(LogChannel.OTHER, "PDP11GUI starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
 			new MainWindow(context).setVisible(true);
 		});
+	}
+
+	/**
+	 * Say how to build each kind of window.
+	 *
+	 * <p>The one place that knows the whole set. {@code WindowManager} knows about no window in
+	 * particular, which is what lets every window depend on it rather than the other way round,
+	 * and none of them are built until something asks for one.</p>
+	 */
+	private static void registerWindows(AppContext context) {
+		LogWindow.register(context);
+		MemoryWindow.register(context);
+		ExecutionWindow.register(context);
+		DisassemblerWindow.register(context);
 	}
 
 	/**

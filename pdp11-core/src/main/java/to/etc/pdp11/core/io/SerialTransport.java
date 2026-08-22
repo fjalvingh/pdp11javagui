@@ -63,14 +63,28 @@ public final class SerialTransport implements PhysicalTransport {
 		m_description = "serial " + portName + " " + baudRate + " " + format;
 	}
 
-	/** The serial ports this machine currently has, for the connection dialog. */
+	/**
+	 * The serial ports this machine currently has, for the connection dialog.
+	 *
+	 * <p>Answers an empty list rather than failing when jSerialComm cannot load its native
+	 * library - which happens on a platform it has no binary for, and in a container with no
+	 * {@code /dev} to look at. The only caller is a dialog listing ports to choose from, and a
+	 * dialog that will not open because there are no serial ports is worse than one offering
+	 * none: every other transport still works.</p>
+	 */
 	public static String[] availablePortNames() {
-		SerialPort[] ports = SerialPort.getCommPorts();
-		String[] names = new String[ports.length];
-		for(int i = 0; i < ports.length; i++) {
-			names[i] = ports[i].getSystemPortName();
+		try {
+			SerialPort[] ports = SerialPort.getCommPorts();
+			String[] names = new String[ports.length];
+			for(int i = 0; i < ports.length; i++) {
+				names[i] = ports[i].getSystemPortName();
+			}
+			return names;
+		} catch(Throwable x) {
+			//-- Throwable, and deliberately: what comes out of a missing native library is an
+			//-- UnsatisfiedLinkError, not an exception.
+			return new String[0];
 		}
-		return names;
 	}
 
 	@Override

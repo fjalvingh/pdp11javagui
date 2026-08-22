@@ -85,6 +85,31 @@ public final class WindowManager {
 		return open(WindowKey.of(type));
 	}
 
+	/**
+	 * Open another window of a type there can be several of.
+	 *
+	 * <p>The instance id is the lowest number not in use, so closing the second of three and
+	 * asking for another gets the gap back rather than counting ever upwards - which matters
+	 * because the id is what the saved geometry is keyed on.</p>
+	 */
+	public ToolWindow openNew(WindowType type) {
+		for(int i = 1; ; i++) {
+			WindowKey key = WindowKey.of(type, String.valueOf(i));
+			if(!m_windows.containsKey(key))
+				return open(key);
+		}
+	}
+
+	/** Every window of one type that exists, showing or not. */
+	public List<ToolWindow> windowsOfType(WindowType type) {
+		List<ToolWindow> l = new ArrayList<>();
+		for(ToolWindow w : m_windows.values()) {
+			if(w.key().type() == type)
+				l.add(w);
+		}
+		return l;
+	}
+
 	/** Bring an existing window forward without creating one. Does nothing if it does not exist. */
 	public void raise(WindowKey key) {
 		ToolWindow w = m_windows.get(key);
