@@ -120,14 +120,30 @@ class SimhConsoleTest {
 		}
 	}
 
+	/**
+	 * 017777710..717 are marked {@code "?"}: the second register set some machines have and SimH
+	 * does not model, so there is nothing to ask about.
+	 *
+	 * <p><b>Reading one answers "unknown"; writing one is an error.</b> That asymmetry is
+	 * deliberate. To a reader an address SimH has never heard of is indistinguishable from one
+	 * that times out on the bus - the test below this says so for a real timeout - and the I/O
+	 * page scanner walks all 4096 words of the page, so a throw would abort the scan eight
+	 * addresses in. A deposit is the other way round: silently dropping a write is how somebody
+	 * ends up debugging a machine that never received what they typed.</p>
+	 */
 	@Test
-	void aRegisterSimhDoesNotHaveIsNeverAskedFor() throws Exception {
+	void aRegisterSimhDoesNotHaveReadsAsAbsentAndRefusesToBeWritten() throws Exception {
 		try(Rig rig = new Rig()) {
-			//-- 017777710..717 are marked "?" - SimH knows of no such thing, so asking is an
-			//-- error rather than a timeout.
+			CellValue v = rig.connection.call(() -> rig.console.examine(phys(017777710L)));
+			assertFalse(v.isKnown(), "nothing is there, which is an answer");
+
 			assertThrows(ConsoleException.class,
-				() -> rig.connection.call(() -> rig.console.examine(phys(017777710L))));
+				() -> rig.connection.run(() -> rig.console.deposit(phys(017777710L), 0123)));
+
+			//-- Either way SimH is never asked: "E ?" and "D ? 123" are not commands.
 			assertFalse(rig.fake.getCommands().stream().anyMatch(c -> c.startsWith("E 177777")));
+			assertFalse(rig.fake.getCommands().stream().anyMatch(c -> c.contains("?")),
+				rig.fake.getCommands().toString());
 		}
 	}
 

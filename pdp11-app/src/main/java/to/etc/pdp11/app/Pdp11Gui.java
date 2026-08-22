@@ -8,7 +8,9 @@ import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
+import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
+import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.log.UiLogger;
 
 import javax.swing.JOptionPane;
@@ -68,6 +70,8 @@ public final class Pdp11Gui {
 		ExecutionWindow.register(context);
 		DisassemblerWindow.register(context);
 		RegisterGroupWindow.register(context);
+		BitfieldsWindow.register(context);
+		IoPageScannerWindow.register(context);
 	}
 
 	/**

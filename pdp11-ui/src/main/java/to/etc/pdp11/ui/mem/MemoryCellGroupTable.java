@@ -105,6 +105,11 @@ public final class MemoryCellGroupTable extends JPanel {
 		//-- One click into a cell starts editing; the Pascal grid behaves this way and a memory
 		//-- editor where you have to double-click every word is tiring within about a minute.
 		m_table.setSurrendersFocusOnKeystroke(true);
+		//-- Announce the selection, so the Bitfields window can follow it. The Pascal grid calls
+		//-- FormMain.syncBitfieldForm from here instead ({@code :159-166}).
+		m_table.getSelectionModel().addListSelectionListener(e -> announceSelection(e.getValueIsAdjusting()));
+		m_table.getColumnModel().getSelectionModel()
+			.addListSelectionListener(e -> announceSelection(e.getValueIsAdjusting()));
 		//-- Explicitly, rather than leaving it to JScrollPane: a JTable only hands its header to
 		//-- the scroll pane from addNotify(), which never runs on a component that is laid out
 		//-- and painted with no display. Without this the offscreen renders - the ones a person
@@ -208,6 +213,14 @@ public final class MemoryCellGroupTable extends JPanel {
 	/** The cell under the selection, or null. */
 	public MemoryCell getSelectedCell() {
 		return cellAt(m_table.getSelectedRow(), m_table.getSelectedColumn());
+	}
+
+	private void announceSelection(boolean adjusting) {
+		if(adjusting)
+			return;
+		MemoryCell mc = getSelectedCell();
+		if(mc != null)
+			m_context.getCellSelection().select(mc);
 	}
 
 	private void repaintCell(MemoryCell cell) {

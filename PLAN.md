@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, and the register-group windows the description creates — 17 of them from the shipped `pdp11.ini`. 413 tests. Still to do: the Assembler, Memory Loader/Dumper/Test, Bitfields, I/O Page Scanner, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields and the I/O Page Scanner. 430 tests. Still to do: the Assembler, Memory Loader/Dumper/Test, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1107,6 +1107,46 @@ declares are created on demand, keyed `REGISTER_GROUP/<name>`.
   raw pointers to `TMemoryCell` in `Objects[]` and a repaint during a rescan — and the scan is
   full of `ProcessMessages` — would paint from freed memory. None of that can happen here; what
   is worth keeping is dropping the subscription before the cells go.
+
+**Outcome so far, part 2 — Bitfields and the I/O Page Scanner.** Both were waiting on the
+machine description, and both are now there: select a register anywhere and the Bitfields window
+breaks it into its named bits; point the scanner at a machine and it tells you what is plugged
+into it.
+
+- **The scan belongs in the core, and that is what made it testable.** `IoPageScanner` reads all
+  4096 words of the I/O page one at a time, drops the addresses that time out, names what the
+  loaded description knows, groups the rest into runs and writes the `.ini` sections for them.
+  None of that needs a window, and the fakes have carried an I/O page validity map since phase 3
+  "which makes the I/O page scanner worth testing" — so it is now tested end to end against a
+  simulated machine that answers at exactly the addresses the description declares.
+- **One examine at a time, deliberately.** The consoles can read a range in a single round trip
+  and this does not use that: "sehr viele Adressen, sehr viele ungültige Adressen"
+  (`FormIoPageScannerU.pas:189-190`). Most of the page is empty, a bulk read of
+  mostly-nonexistent addresses is where the dialects behave least predictably, and a scan that
+  has to be cancellable wants one answer per question.
+- **A found bug in the SimH console, and the scanner is what found it.** `examine` *threw* for
+  017777710..717, the second register set SimH does not model — so a scan aborted eight addresses
+  in. To a reader that address is indistinguishable from one that times out on the bus, which the
+  same console already reports as "unknown", so it answers `CellValue.UNKNOWN` now. `deposit`
+  still throws: silently dropping a write is how somebody ends up debugging a machine that never
+  received what they typed.
+- **`CellSelection` is the second `MachineState`.** Every Pascal grid that shows cells calls
+  `FormMain.SyncBitfieldForm(mc)` when the selection moves, so each frame knows the main form
+  exists and the main form knows the Bitfields window exists. Here a view announces its selection
+  and the Bitfields window subscribes; adding a second subscriber touches no view.
+- **The Bitfields window edits its own cell at the selected address**, as the Pascal does
+  (`memorycell.Assign(mc)`), because experimenting with a register's bits should not change what
+  another window is showing until it is deposited. Re-pointing it goes through
+  `MemoryCellGroup.shiftRange` rather than by assigning the cell's address: the propagation index
+  is keyed on the address, and a cell whose address changed underneath it would keep receiving
+  values meant for the register it used to show. That is a hazard the Pascal does not have,
+  because it has no index.
+- **A Swing trap worth writing down: preferred column widths do not survive layout.** A `JTable`
+  with any auto-resize mode redistributes them on its first layout pass and keeps the result, so
+  a column set to 160 comes back 67 and "Previous Mode" renders as "Previ..." beside three
+  hundred pixels of empty Info column. The minimum width is the floor the redistribution
+  respects. Found by looking at a render, not by an assertion — which is what the render habit is
+  for.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

@@ -51,6 +51,8 @@ public final class AppContext {
 
 	private final MachineState m_machineState = new MachineState();
 
+	private final CellSelection m_cellSelection = new CellSelection();
+
 	private final Path m_dataDir;
 
 	/** Set once a machine description has been loaded. Null before that, and after unloading. */
@@ -139,6 +141,11 @@ public final class AppContext {
 	/** Where the machine is, and where its PC got to. */
 	public MachineState getMachineState() {
 		return m_machineState;
+	}
+
+	/** Which memory cell the user is looking at, for the windows that follow the selection. */
+	public CellSelection getCellSelection() {
+		return m_cellSelection;
 	}
 
 	/** Where working files go: SimH's generated configuration, temporary listings. */

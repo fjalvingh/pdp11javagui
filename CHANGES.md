@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Phase 6 part 2 — Bitfields and the I/O Page Scanner
+
+- **Bitfields**: one register broken into its named bits, editable from either side — type the
+  word and every field follows, type a field and the word follows. Setting the PSW's priority to
+  7 no longer means working out that it is `0340`. A field too wide for its own bits is refused
+  rather than corrupting its neighbours.
+- **I/O Page Scanner**: reads all 4096 words of the I/O page, keeps the addresses that answer,
+  names them from the loaded machine description, and writes an `.ini` section for everything it
+  cannot name — which is how you describe hardware nobody has documented. The scan is
+  `IoPageScanner` in `pdp11-core`, tested end to end against a simulated machine whose I/O page
+  is built from the description.
+- **A bug the scanner found in the SimH console.** `examine` threw for `017777710..717` — the
+  second register set SimH does not model — so a scan died eight addresses in. That address is
+  indistinguishable from one that times out on the bus, which the same console already reports as
+  "unknown", so it now answers `CellValue.UNKNOWN`. `deposit` still throws, because a write that
+  cannot happen must be reported.
+- `CellSelection` replaces `FormMain.SyncBitfieldForm`: a view announces which cell is selected
+  and the Bitfields window subscribes, rather than every grid knowing the main form and the main
+  form knowing the Bitfields window.
+- **Preferred table column widths do not survive layout** — a `JTable` with an auto-resize mode
+  redistributes them on the first layout pass and keeps the result. Both list views set minimum
+  widths, which is the floor the redistribution respects. Caught by looking at a render.
+
 ### Phase 6 part 1 — machine descriptions and the register windows
 
 - **`MemoryCellGroupList`**, the second of the two reusable frames PLAN.md §3 asks for: named

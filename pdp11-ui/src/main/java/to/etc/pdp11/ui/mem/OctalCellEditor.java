@@ -15,8 +15,8 @@ import java.awt.event.KeyEvent;
  * {@code ^V}, because a {@code JTextField} already has a working clipboard, and that is most of
  * what those handlers were.</p>
  */
-final class OctalCellEditor extends DefaultCellEditor {
-	OctalCellEditor() {
+public final class OctalCellEditor extends DefaultCellEditor {
+	public OctalCellEditor() {
 		super(new JTextField());
 		JTextField field = (JTextField) getComponent();
 		field.setFont(new Font(Font.MONOSPACED, Font.PLAIN, field.getFont().getSize()));

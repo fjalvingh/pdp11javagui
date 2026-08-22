@@ -100,14 +100,26 @@ public final class MemoryCellGroupList extends JPanel {
 		add(m_scroll, "grow");
 	}
 
+	/**
+	 * The Pascal measures these from the font ({@code :270-273}); the widest thing each column
+	 * has to hold is the same here.
+	 *
+	 * <p>A minimum as well as a preferred width, because a table with an auto-resize mode
+	 * redistributes preferred widths on its first layout pass and keeps the result - so
+	 * preferred alone lasts exactly until the window is shown.</p>
+	 */
 	private void sizeColumns() {
-		//-- The Pascal measures these from the font ({@code :270-273}); the widest thing each
-		//-- column has to hold is the same here.
-		m_table.getColumnModel().getColumn(COL_NAME).setPreferredWidth(110);
-		m_table.getColumnModel().getColumn(COL_ADDRESS).setPreferredWidth(100);
-		m_table.getColumnModel().getColumn(COL_VALUE).setPreferredWidth(80);
+		fix(COL_NAME, 130);
+		fix(COL_ADDRESS, 100);
+		fix(COL_VALUE, 80);
 		//-- And Info takes whatever is left, which is FrameResize's whole job ({@code :117-127}).
 		m_table.getColumnModel().getColumn(COL_INFO).setPreferredWidth(320);
+		m_table.getColumnModel().getColumn(COL_INFO).setMinWidth(80);
+	}
+
+	private void fix(int column, int width) {
+		m_table.getColumnModel().getColumn(column).setMinWidth(width);
+		m_table.getColumnModel().getColumn(column).setPreferredWidth(width);
 	}
 
 	public JTable getTable() {

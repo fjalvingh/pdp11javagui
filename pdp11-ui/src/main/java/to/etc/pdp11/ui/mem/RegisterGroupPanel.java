@@ -57,6 +57,9 @@ public final class RegisterGroupPanel extends JPanel {
 		add(m_info, "growx");
 
 		m_list.setOnUpdate(this::updateInfo);
+		//-- Say what is selected; the Bitfields window is watching, and this panel does not
+		//-- know that.
+		m_list.setOnSelect(context.getCellSelection()::select);
 		m_list.connectTo(group);
 		updateInfo();
 	}

@@ -677,8 +677,15 @@ public final class SimhConsole extends AbstractConsole {
 	public CellValue examine(Address addr) throws ConsoleException {
 		Address physical = toPhysical(addr);
 		String operand = commandOperand(physical);
-		if("?".equals(operand))
-			throw new ConsoleException("SimH has no register at " + physical.toOctal());
+		if("?".equals(operand)) {
+			//-- SimH knows of nothing at this address - 017777710..017777717, the second register
+			//-- set some machines have and SimH does not model. From a reader's point of view
+			//-- that is exactly a nonexistent address, so it is answered the same way rather
+			//-- than thrown: the I/O page scanner walks all 4096 words of the page and a throw
+			//-- here would abort the scan eight addresses in. (The Pascal sends "E ?" and lets
+			//-- SimH reject it, which arrives at the same answer by a worse route.)
+			return CellValue.UNKNOWN;
+		}
 
 		int echo = sendCommand("E " + operand);
 		//-- The reply is "<addr>: <val>" followed by the prompt.
@@ -701,6 +708,8 @@ public final class SimhConsole extends AbstractConsole {
 	public void deposit(Address addr, int value) throws ConsoleException {
 		Address physical = toPhysical(addr);
 		String operand = commandOperand(physical);
+		//-- A deposit that cannot be made must be reported: silently dropping a write is how a
+		//-- user ends up debugging a machine that never received what they typed.
 		if("?".equals(operand))
 			throw new ConsoleException("SimH has no register at " + physical.toOctal());
 
