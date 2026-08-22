@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Phase 6 part 9 — the Number Converter
+
+- **One number in octal, decimal, hex and binary at once**, each field editable and the rest
+  following. The window needs no machine — it is a desk tool for the moment a listing says
+  `012737` and the manual says `0x15DF`.
+- **The conversions are `NumberConverter` in `pdp11-core`**: digit validity, parsing against a
+  width, padded and unpadded formatting, binary grouping and the signed reading. All of it is
+  loose functions inside a Delphi form in the original, where the only way to check that the
+  binary groups line up with the octal digits above them is to type into the window and count
+  columns.
+- **A width, rather than always 32 bits.** The original's value is a `Dword`, so every word comes
+  with sixteen leading zeros. This defaults to 16 — a PDP-11 word — with 8, 18, 22 and 32 in the
+  selector. Narrowing truncates and says so.
+- **Binary is grouped for its own base**: threes under the octal field, so the columns line up
+  with the six digits above them, and fours under hex. A width that is not a multiple leaves the
+  leftmost group short, which is exactly right: the leading `1` of `177777` really is one bit.
+- **A signed reading**, which the original does not show. `177777` is `-1`, and having to work
+  that out by hand is what this window exists to stop.
+- **Overflow refuses the keystroke** rather than deleting the number's leading digit, which is
+  what the original does (`:312-313`) — so there, typing one digit too many silently turns
+  `177777` into `777777`.
+- **Pasting works.** The original filters key presses and has a `stripInvalidDigits` for the paste
+  case that it never calls — both call sites are commented out — so pasting `1,234` into its
+  decimal field raises out of `StrToInt64`. Here a `DocumentFilter` sees typing, pasting and
+  drops alike.
+
 ### Phase 6 part 8 — the MMU window
 
 - **See what memory management is actually doing**: the 64 KB of virtual address space as a list

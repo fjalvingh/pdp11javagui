@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console; and the MMU window, which shows any mode's map rather than only the current one. 580 tests. Still to do: the Microcode, Number Converter and Blinkenlight Execution windows. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console; the MMU window, which shows any mode's map rather than only the current one; and the Number Converter, at a chosen width rather than always 32 bits. 614 tests. Still to do: the Microcode and Blinkenlight Execution windows. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1365,6 +1365,29 @@ becomes a class, and the last of the Pascal's cross-window reach-ins goes with t
 - **Showing only the current CPU mode is a real limitation, not a simplification.** The Pascal
   reads `MMU.curCpuMode` from the PSW and offers no way past it, so the user map is unreadable
   while the machine is stopped in the kernel - which is when a person is looking. One combo box.
+
+**Phase 6 part 9 — the Number Converter. What it found:**
+
+- **A window with no machine behind it still has an algorithm in it.** Digit validity, parsing
+  against a width, binary grouping and the signed reading are `NumberConverter` in the core with
+  eighteen tests; the panel has three fields and a guard flag. In the original all of it is loose
+  functions and event handlers in the form, and the grouping - the part most likely to be off by
+  one column - can only be checked by typing into it.
+- **Grouping binary from the right is what makes it line up.** Threes under an octal number,
+  fours under a hex one, and a width that is not a multiple leaves the *leftmost* group short.
+  16 bits in threes is `1 111 111 111 111 111`, and that leading single bit is the leading `1` of
+  `177777`. Grouping from the left would look tidier and mean nothing.
+- **The original's overflow rule changes the number.** When a value no longer fits it deletes the
+  most significant digit (`FormNumberconverterU.pas:312-313`), so one digit too many turns `177777` into `777777`
+  rather than into nothing happening. Refusing the keystroke is both simpler and what every other
+  numeric field in this application does.
+- **A `DocumentFilter` is the right place for input rules, not a key listener.** Text arrives in a
+  field from typing, pasting, dragging and `setText`, and only the first of those reaches
+  `keyTyped`. The Pascal filters key presses and has a `stripInvalidDigits` for the paste case
+  which it never calls - both call sites are commented out - so pasting `1,234` into its decimal
+  field raises out of `StrToInt64`.
+- **32 bits was never a decision**, it was the type of the variable. Nothing on this machine is 32
+  bits wide, and the width belongs to the number being looked at rather than to the window.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 a MACRO-11 highlighter + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

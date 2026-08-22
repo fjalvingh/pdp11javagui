@@ -10,6 +10,7 @@ import to.etc.pdp11.ui.macro11.AssemblerWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.mmu.MmuWindow;
+import to.etc.pdp11.ui.numbers.NumberConverterWindow;
 import to.etc.pdp11.ui.simh.SimhConsoleWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowType;
@@ -206,9 +207,10 @@ class WindowsBuildTest {
 		AssemblerWindow.register(ctx);
 		SimhConsoleWindow.register(ctx);
 		MmuWindow.register(ctx);
+		NumberConverterWindow.register(ctx);
 		try {
 			for(WindowType type : new WindowType[] {WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION,
-				WindowType.DISASSEMBLER, WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE, WindowType.MMU}) {
+				WindowType.DISASSEMBLER, WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE, WindowType.MMU, WindowType.NUMBER_CONVERTER}) {
 				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
 				assertNotNull(w, type + " builds");
 				assertTrue(w.getTitle().startsWith(type.getTitle()), w.getTitle());

@@ -14,6 +14,7 @@ import to.etc.pdp11.ui.dump.MemoryDumperWindow;
 import to.etc.pdp11.ui.load.MemoryLoaderWindow;
 import to.etc.pdp11.ui.memtest.MemoryTestWindow;
 import to.etc.pdp11.ui.mmu.MmuWindow;
+import to.etc.pdp11.ui.numbers.NumberConverterWindow;
 import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.simh.SimhConsoleWindow;
 import to.etc.pdp11.ui.log.UiLogger;
@@ -84,6 +85,7 @@ public final class Pdp11Gui {
 		AssemblerWindow.register(context);
 		SimhConsoleWindow.register(context);
 		MmuWindow.register(context);
+		NumberConverterWindow.register(context);
 	}
 
 	/**
