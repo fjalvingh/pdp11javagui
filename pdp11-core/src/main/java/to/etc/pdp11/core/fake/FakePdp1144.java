@@ -54,6 +54,9 @@ public class FakePdp1144 extends FakePdp11 {
 
 	protected static final char RUBOUT = 0x7F;
 
+	/** Gets the console's attention. On a running machine it switches the terminal to console mode. */
+	protected static final char CTRL_P = 0x10;
+
 	/** R0..R7 and R10..R17 at sixteen consecutive byte addresses. {@code :92-93}. */
 	protected static final long GLOBAL_REGISTER_BASE = 017777700L;
 
@@ -146,9 +149,20 @@ public class FakePdp1144 extends FakePdp11 {
 	 */
 	@Override
 	protected void doHalt() {
+		printHaltReport();
+		doPrompt();
+	}
+
+	/**
+	 * The stop report on its own, without the prompt after it.
+	 *
+	 * <p>Separate because a stop reached through a <i>command</i> gets its prompt from the
+	 * command handler; printing one here as well would give two, and a second prompt with no
+	 * halt in front of it is exactly the shape that cancels a pending stop event.</p>
+	 */
+	protected void printHaltReport() {
 		int pc = getMem(getProgramCounterAddr());
 		print("" + CR + LF + "17777707 " + Octal.format(pc, 6));
-		doPrompt();
 	}
 
 	protected void doPrompt() {
@@ -215,9 +229,16 @@ public class FakePdp1144 extends FakePdp11 {
 
 	@Override
 	public void serialWriteByte(int b) {
-		char c = (char) (b & 0x7F);                         // a 7-bit line, as always
-		if(isRunning()) {
-			keyWhileRunning(c);
+		//-- No gate on isRunning here, deliberately: the Pascal has none either ({@code :171-256}),
+		//-- and this console goes on answering while a program has the machine. The V3.40C
+		//-- firmware is the one that stops listening, and it says so by overriding this.
+		handleKey((char) (b & 0x7F));                       // a 7-bit line, as always
+	}
+
+	protected void handleKey(char c) {
+		if(c == CTRL_P) {
+			//-- Not a console command but a terminal mode switch: this console is already in
+			//-- console mode, so there is nothing to do and nothing to echo.
 			return;
 		}
 		if(c != eraseKey()) {
@@ -237,10 +258,6 @@ public class FakePdp1144 extends FakePdp11 {
 			appendInput(c);
 			echo(c);
 		}
-	}
-
-	/** What a key does while the pretend CPU is running. On this firmware: nothing at all. */
-	protected void keyWhileRunning(char c) {
 	}
 
 	protected void keyControlC() {
@@ -318,15 +335,53 @@ public class FakePdp1144 extends FakePdp11 {
 		dispatch(opcode, modifiers, parm1, parm2);
 	}
 
-	/** Which commands this firmware has. */
+	/**
+	 * Which commands this firmware has.
+	 *
+	 * <p><b>{@code H}, {@code N} and {@code C} are an extension</b>, and it is worth saying where
+	 * they come from. The Pascal fake stops at {@code E}, {@code D}, {@code S}, {@code I} and
+	 * {@code ^C} - its own header says so - and never grew the three the shipped console driver
+	 * sends for halt, single step and continue. The driver is the evidence: it sends {@code H},
+	 * {@code N 1} and {@code C}, and parses what comes back from the first two as
+	 * {@code 17777707 <pc>}, so the machine it was written against accepts all three and answers
+	 * a stop with that report. The <i>format</i> is therefore the Pascal's and came from real
+	 * hardware; only the fact that the fake answers at all is inferred.</p>
+	 */
 	protected void dispatch(String opcode, List<String> modifiers, String parm1, String parm2) {
 		switch(opcode) {
 			case "D" -> doDeposit(modifiers, parm1, parm2);
 			case "E" -> doExamine(modifiers, parm1);
 			case "S" -> doStart(parm1);
 			case "I" -> doInit();
+			case "H" -> doHaltCommand();
+			case "N" -> doSingleStep(parm1);
+			case "C" -> doContinue();
 			default -> setError(errorSyntax());
 		}
+	}
+
+	/** {@code H} - halt, and say where. Answers whether or not anything was running. */
+	protected void doHaltCommand() {
+		haltSwitch();
+		printHaltReport();
+	}
+
+	/** {@code C} - carry on from where the machine is, with no initialise. */
+	protected void doContinue() {
+		printStarting();
+		runToHalt(getMem(getProgramCounterAddr()));
+	}
+
+	/** {@code N <count>} - step that many instructions, then report like any other stop. */
+	protected void doSingleStep(String countText) {
+		long count = countText.isEmpty() ? 1 : parseOctalOr(countText, -1);
+		if(count < 0) {
+			setError(errorSyntax());
+			return;
+		}
+		int pc = getMem(getProgramCounterAddr());
+		setMem(getProgramCounterAddr(), (int) (pc + 2 * count));
+		printHaltReport();
 	}
 
 	/** How a modifier list changes the address and the repeat count. */

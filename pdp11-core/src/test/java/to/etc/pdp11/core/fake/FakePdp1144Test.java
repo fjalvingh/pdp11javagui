@@ -187,15 +187,40 @@ class FakePdp1144Test {
 		m_fake.takeOutput();
 		send("S 1000");
 		assertTrue(m_fake.isRunning());
-		//-- The console says nothing at all while a program has the machine.
+		//-- This firmware goes on listening while a program has the machine - the Pascal has no
+		//-- gate on it, and that is the difference from V3.40C, which stops dead and takes only
+		//-- ^P. Here a keystroke is echoed like any other.
 		m_fake.serialWriteByte('E');
-		assertEquals("", m_fake.takeOutput());
+		assertEquals("E", m_fake.takeOutput());
+		m_fake.serialWriteByte(3);                          // ^C, to put the line back
+		m_fake.takeOutput();
 
 		m_clock.fireAll();
 		assertFalse(m_fake.isRunning());
 		String out = m_fake.takeOutput();
 		assertTrue(out.startsWith("\r\n17777707 "), out);
 		assertTrue(out.endsWith(">>>"), out);
+	}
+
+	@Test
+	void haltAndSingleStepAnswerWithTheSameStopReport() {
+		//-- H and N are what the shipped console driver sends, and it parses both answers as
+		//-- "17777707 <pc>" - which is why the fake has them even though the Pascal's does not.
+		m_fake.setMem(m_fake.getProgramCounterAddr(), 01000);
+		assertEquals("\r\n17777707 001000\r\n>>>", send("H"));
+		assertEquals("\r\n17777707 001002\r\n>>>", send("N 1"));
+		assertEquals("\r\n17777707 001006\r\n>>>", send("N 2"));
+	}
+
+	@Test
+	void controlPIsATerminalModeSwitchAndNotAConsoleCommand() {
+		//-- The driver sends it before H. It must not land in the line being typed, or the
+		//-- command after it is gibberish.
+		m_fake.takeOutput();
+		m_fake.serialWriteByte(0x10);
+		assertEquals("", m_fake.takeOutput(), "^P is not echoed and not collected");
+		m_fake.setMem(m_fake.getProgramCounterAddr(), 04000);
+		assertEquals("\r\n17777707 004000\r\n>>>", send("H"));
 	}
 
 	@Test

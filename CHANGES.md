@@ -64,6 +64,24 @@
   rule; the Pascal returns "nothing recognised" there and looks no further until the next byte
   arrives — and if that was the last of the reply, never.
 
+- `Pdp1144Console` and `Pdp1144Firmware`: the PDP-11/44's console processor, both firmwares,
+  driven against both fakes. This is the console that reads a block per command - `E/N:100
+  <addr>` returns sixty-four words in one round trip - and the one where a stop report and an
+  examine answer are the same line: `17777707 000114` is both "stopped at 000114" and what
+  `E/G 7` answers, so it becomes two phrases, halt first, because the prompt after them looks
+  two back for the halt. `17777707` only counts at the start of a line, or every examine of the
+  PC would report a halt.
+- **A stop event could be lost.** The task posted to the command thread re-read the pending PC
+  from a field, and a second prompt with no halt in front of it clears that field first. The
+  address is now captured when the task is created - a fix in the shared base, so it applies to
+  all three consoles.
+- The 11/44 fakes gained `H`, `N` and `C`, which the Pascal's never grew even though the shipped
+  driver sends all three; and the V3.40C fake's `^P` now reports where it stopped, without which
+  the driver's halt has nothing to report. Both are marked in the source as inferred from the
+  driver rather than observed. A gate of our own that made the classic fake ignore the console
+  while a program runs has been removed: the Pascal has no such gate, and it is the V3.40C
+  firmware that stops listening.
+
 ### Phase 3 — transports and fakes
 
 - `to.etc.pdp11.core.io`: `PhysicalTransport`, the boundary the whole test strategy rests on,

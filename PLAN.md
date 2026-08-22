@@ -35,7 +35,7 @@ reference implementation throughout the port.
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 80 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
-| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH) and ODT in both dialects. 259 tests. **Still to do: the M9301/M9312 and 11/44 consoles** - phase 3 is finished, so every fake they need is already in. |
+| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. 282 tests. **Still to do: the M9301/M9312 boot-ROM console.** |
 | 5 — First usable app | | |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
@@ -906,9 +906,45 @@ had a full transcript from a real PDP-11/23 to be tested against from the first 
   matches no rule; the Pascal stops there with input still in the buffer and looks no further
   until the next byte arrives - and if that byte was the last of the reply, never. Every such
   pass consumes at least one character, so the loop still terminates.
-- **What is left of phase 4:** the M9301 and M9312 boot-ROM consoles and the 11/44 - the consoles
-  themselves, since phase 3 is now finished and every fake they need is in and tested. The K1630
-  needs no console of its own; it is a dialect of this one.
+- **What is left of phase 4:** the M9301 and M9312 boot-ROM console, which is one class and a
+  prompt. It is the awkward one - no halt, no reset, no init, and an error stops the machine
+  rather than reporting itself, so the driver has to notice an *absence* of output and say so.
+  The K1630 needs no console of its own; it is a dialect of this one.
+
+**Outcome so far — the 11/44.** The third console, and the one that reads a block per command:
+`E/N:100 <addr>` is sixty-four words for one round trip, which is what makes a memory window over
+a serial line bearable at all. Both firmwares are one class and a `Pdp1144Firmware` enum, the
+same treatment `OdtDialect` got, replacing a boolean and a four-line subclass.
+
+- **A stop report is also an examine answer, and has to be both.** `17777707 000114` means "the
+  CPU stopped at 000114" and is also exactly what `E/G 7` answers, so one line becomes two
+  phrases - and in that order, because it is the prompt after them that fires the stop event and
+  the prompt looks *two* back for it, past the examine. The Pascal does this by parsing the line,
+  keeping the halt, then deliberately pretending it found nothing so the same line gets parsed
+  again. Not a trick worth improving on: any console whose stop report is a valid reading of a
+  register has the same problem.
+- **`17777707` only counts at the start of the line.** Anywhere else it is just an address - and
+  the console echoes everything typed at it, so `E 17777707` would otherwise report a halt every
+  time somebody examined the PC.
+- **A stop event could be lost, and that was ours, not the Pascal's.** The task posted to the
+  command thread re-read the pending PC from a field, and a second prompt arriving with no halt
+  in front of it clears that field first. It is reachable whenever a command answers with two
+  prompts. The address is now captured when the task is created; the fix is in the shared base
+  and applies to all three consoles.
+- **The fakes needed three commands the Pascal's never grew.** Its 11/44 fake stops at `E`, `D`,
+  `S`, `I` and `^C` - its own header says so - so `H`, `N 1` and `C` had nowhere to go, and halt,
+  single step and continue had nothing to be tested against. The shipped driver is the evidence
+  for adding them: it sends all three and parses the first two's answers as `17777707 <pc>`, so
+  the machine it was written against accepts them. **The format is the Pascal's and came from
+  real hardware; only the acceptance is inferred**, and it is worth keeping that distinction in
+  mind when reading those tests.
+- **The V3.40C fake's `^P` reported no PC**, which is where that firmware actually halts, so the
+  driver's halt had nothing to report and would have failed. Same conclusion: the fake was
+  incomplete rather than the driver wrong.
+- **One divergence of ours, removed.** The classic 11/44 fake had been given a "ignore the
+  console while a program runs" gate that the Pascal does not have. It is the V3.40C firmware
+  that stops listening and says so; the classic one goes on answering. Faithful now, and the
+  difference is a test.
 
 **Phase 5 — First usable app.** Main window with terminal and connection status, Settings
 with the decomposed `ConnectionProfile` model, `WindowManager` + `ToolWindow` + geometry

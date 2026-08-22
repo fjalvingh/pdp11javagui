@@ -269,12 +269,14 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 		ConsoleConnection c = m_connection;
 		if(c == null)
 			return;
+		//-- The address is captured here, not read back from the field when the task runs.
+		//-- Anything that clears the field in between - another prompt with no halt in front of
+		//-- it will do it - would otherwise lose the event entirely.
 		c.execute(() -> {
-			Address stopped = m_executionStopPc;
 			clearExecutionStop();
 			ExecutionStopListener l = m_stopListener;
-			if(l != null && stopped != null)
-				l.onExecutionStop(this, stopped);
+			if(l != null)
+				l.onExecutionStop(this, pc);
 		});
 	}
 

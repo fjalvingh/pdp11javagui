@@ -165,7 +165,10 @@ class FakePdp1144V340cTest {
 
 		m_fake.serialWriteByte(0x10);                       // ^P
 		assertFalse(m_fake.isRunning());
-		assertEquals("\r\n(Console)\r\n^P\r\n\r\n>>>", m_fake.takeOutput());
+		//-- And it says where it stopped. On this firmware ^P is where a halt actually happens,
+		//-- so it is the only place the driver can learn the PC from.
+		assertEquals("\r\n(Console)\r\n^P\r\n\r\n(Console)\r\n  Halted at 001000\r\n\r\n>>>",
+			m_fake.takeOutput());
 	}
 
 	@Test

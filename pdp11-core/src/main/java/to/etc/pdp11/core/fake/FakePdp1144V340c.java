@@ -96,18 +96,28 @@ public final class FakePdp1144V340c extends FakePdp1144 {
 	// -------------------------------------------------------------------------------------
 
 	/**
-	 * While a program is running the console listens for {@code ^P} and nothing else.
+	 * While a program has the machine this console stops listening, unlike the other firmware.
 	 *
-	 * <p>{@code ^P} stops the CPU and says so - which is the one thing the base 11/44 firmware
-	 * cannot do at all, and the reason this console reports
-	 * {@code ConsoleFeature.ACTION_HALT_CPU} where the other does not.</p>
+	 * <p>The only key it takes is {@code ^P}, which stops the CPU - and, unlike the other
+	 * firmware, {@code ^P} rather than {@code H} is where a halt actually happens here.</p>
 	 */
 	@Override
-	protected void keyWhileRunning(char c) {
+	public void serialWriteByte(int b) {
+		char c = (char) (b & 0x7F);
+		if(!isRunning()) {
+			handleKey(c);
+			return;
+		}
 		if(c != CTRL_P)
 			return;
 		haltSwitch();
 		print("" + CR + LF + "(Console)" + CR + LF + "^P" + CR + LF);
+		//-- And where it stopped. The Pascal fake prints the mode and the key and no PC
+		//-- ({@code FakePDP1144v340cU.pas:203-211}), which leaves the console driver's halt with
+		//-- nothing to report - and the driver, written against the real machine, requires a stop
+		//-- report here and fails without one. So the fake was incomplete rather than the driver
+		//-- wrong, and this is the report the same firmware prints everywhere else it stops.
+		printHaltReport();
 		doPrompt();
 	}
 
@@ -146,7 +156,7 @@ public final class FakePdp1144V340c extends FakePdp1144 {
 			case "" -> {
 				//-- A bare carriage return just draws a new prompt.
 			}
-			case "D", "E", "S", "I" -> super.dispatch(opcode, modifiers, parm1, parm2);
+			case "D", "E", "S", "I", "N", "C" -> super.dispatch(opcode, modifiers, parm1, parm2);
 			default -> setError("?What?");
 		}
 	}
@@ -204,9 +214,8 @@ public final class FakePdp1144V340c extends FakePdp1144 {
 	 * {@code (Console)} and where it stopped, in words rather than as a bare examine of R7.
 	 */
 	@Override
-	protected void doHalt() {
+	protected void printHaltReport() {
 		int pc = getMem(getProgramCounterAddr());
 		print("" + CR + LF + "(Console)" + CR + LF + "  Halted at " + Octal.format(pc, 6) + CR + LF);
-		doPrompt();
 	}
 }
