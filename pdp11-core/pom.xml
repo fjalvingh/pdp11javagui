@@ -19,6 +19,16 @@
     </description>
 
     <dependencies>
+        <!--
+            The serial transport. It sits on the classpath, not the module path, so the
+            limit-modules setting below does not apply to it; jSerialComm's own API uses
+            nothing outside java.base.
+        -->
+        <dependency>
+            <groupId>com.fazecast</groupId>
+            <artifactId>jSerialComm</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>

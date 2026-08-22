@@ -187,6 +187,19 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-surefire-plugin.version}</version>
+                    <configuration>
+                        <includes>
+                            <include>**/*Test.java</include>
+                            <!--
+                                Tests ending in IT drive an external program - SimH, macro11 -
+                                and are run here rather than under failsafe because they skip
+                                themselves when that program is not installed. CI has none of
+                                them, so there is no second phase worth configuring; locally
+                                they are the only thing that exercises those paths for real.
+                            -->
+                            <include>**/*IT.java</include>
+                        </includes>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

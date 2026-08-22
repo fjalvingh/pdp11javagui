@@ -34,8 +34,8 @@ reference implementation throughout the port.
 | 0 — Scaffolding | **Done** | 3 Maven modules, wrapper on 3.9.11, FlatLaf shell, CI on all three platforms. Machine `.ini` files recovered from the MSI; the m4 subset they use is measured and tiny. |
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
-| 3 — Transports and fakes | Next | `PhysicalTransport` + serial/telnet/SimH, and the ported `Fake*` simulators. |
-| 4 — Console layer | | The keystone. Budget it generously. |
+| 3 — Transports and fakes | **Partly done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; `FakePdp11` + ODT (both dialects), 42 tests. **Still to port: the 11/44, 11/44 v340c, M9301 and M9312 fakes** - phase 4 needs each one as it reaches that console. |
+| 4 — Console layer | Next | The keystone. Budget it generously - and see the SimH findings under phase 3. |
 | 5 — First usable app | | |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
@@ -687,6 +687,78 @@ table at `FakePDP11ODTU.pas:60-83` and the real-hardware behaviour notes at `:86
 (verified on an actual 11/23: odd-address rejection, non-existent memory, echo-then-`?`
 semantics) — those comments are test specifications. **Done when:** a fake responds correctly
 to hand-written byte sequences in tests. *Medium–large.*
+
+**Outcome so far.** All four transports are in and tested, and the ODT fake carries both
+dialects with one test per row of the hardware transcript. **The remaining fakes — 11/44,
+11/44 v340c, M9301, M9312, ~1,700 lines — are not ported yet**; phase 4 orders its consoles
+SimH → ODT → M9301/M9312 → 11/44 → K1630, so each can be ported as its console is reached.
+
+**The SimH-direct handshake, established live.** Four things have to be right before SimH's
+remote console will answer anything, and each was found by it silently not working. Phase 4
+needs all four; `SimhProcessTransportIT.enterMasterMode` is the worked example.
+
+1. **Connect *both* telnet channels.** With only the remote channel open, SimH sends its
+   banner and then answers nothing at all — no prompt, no echo, no reply, however long you
+   wait and whatever you send, `^E` included. Connect the console port as well and it comes
+   to life. The Pascal connects both (`SerialIoHubU.pas:726-727`) but from two unrelated
+   places, so nothing there records that one depends on the other.
+2. **Send `^E`.** Multiple-command mode is what produces a `sim>` prompt at all, whatever
+   `set remote master` is in the `.ini`. SimH echoes the `^E` back as though it were a command
+   and answers it `Unknown command` — harmless in itself, but see the warning below.
+
+**Getting past that reliably is phase 4's job, not phase 3's, and it is harder than it looks.**
+A worked exchange was reached live several times and is quoted below, but attempts to pin it
+down as an integration test kept passing and then failing on the next run. The reason is
+structural rather than a missing sleep: SimH prints its prompt *before* echoing the command it
+is about to run, so no amount of waiting for `sim>` tells you whether the previous command
+finished — and the `Unknown command` the `^E` provokes is indistinguishable, by text alone,
+from one a real command provokes. What is needed is exactly what §2 already specifies for the
+console layer: a restartable scanner that classifies a prompt, an echo and an answer as
+different things. `SimhProcessTransportIT` therefore asserts only what phase 3 owns — launch,
+port probe, both channels, IAC stripping, banner — and this is the raw material for phase 4:
+
+```
+sim> ^E
+Unknown command
+sim> show cpu
+CPU     11/70, FPP, RH70, autoconfiguration enabled, idle disabled
+        256KB
+sim> deposit 1000 123456
+sim> examine 1000
+1000:	123456
+sim>
+```
+
+`SimhProcessTransport` also drains SimH's own stdout on a daemon thread, but **not** because
+not draining it breaks anything — an earlier version of this section claimed that and was
+wrong. SimH prints far too little to fill a 64 KB pipe, and the test that would have shown it
+found `getProcessOutput()` simply empty. Its stdout is a pipe rather than a terminal, so its
+writes are block-buffered and have usually not arrived at all while it runs. It is drained
+because it is the only place SimH reports a failed port bind or a bad configuration line, and
+that is worth having when a launch goes wrong. **Do not synchronise on it.**
+
+Two more things phase 4's scanner has to know, both confirmed live:
+
+- **SimH prints the prompt *before* echoing the command**, so waiting for `sim>` after sending
+  something returns too early. Key on the reply's shape instead: `examine 1000` answers
+  `1000:\t123456`.
+- **Every command is echoed back over the same line before it is acted on.** So an accepted
+  command and a rejected one differ only in the text that follows the echo, which is the
+  consequence the Pascal documents at `ConsolePDP11SimHU.pas:640-652`: prompt detection alone
+  cannot tell them apart, and the echo must be excluded explicitly or every command looks
+  rejected. SimH does keep a command whitelist (`allowed_remote_cmds` /
+  `allowed_master_remote_cmds` in `sim_console.c`), but `show`, `examine` and `deposit` are all
+  on it — an earlier version of this section claimed `show` was not, from misreading a
+  rejection that was actually SimH answering the `^E`. Two wrong readings of this transcript in
+  one sitting is a fair warning about how easy it is to misattribute a line here.
+
+**Something must read the console channel.** Nothing does until the SimH Console window lands
+in phase 6, and an emulated console that is never drained will eventually block SimH the same
+way its stdout did.
+- **PDP11GUI addresses R0..R7 at eight *consecutive byte* addresses** `017700..017707`, not
+  word-spaced — its own convention, visible in the shipped machine description (`R0=177700`,
+  `R1=177701`). So the fake's main memory is indexed by `addr >> 1` as §3 says, but its I/O
+  page must stay byte-indexed or every register pair aliases onto one word.
 
 **Phase 4 — Console layer.** The threading model from §1, `ConsoleScanner`, `AnswerPhrase`,
 and the console implementations — **SimH direct first**, then ODT, then M9301/M9312, 11/44,

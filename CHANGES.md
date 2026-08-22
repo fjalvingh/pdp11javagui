@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Phase 3 — transports and fakes
+
+- `to.etc.pdp11.core.io`: `PhysicalTransport`, the boundary the whole test strategy rests on,
+  with four implementations - `FakeTransport` (a simulated PDP-11 in this JVM),
+  `SerialTransport` (jSerialComm), `TelnetTransport` (socket plus IAC state machine, replacing
+  `OverbyteIcsTnCnx.pas`) and `SimhProcessTransport` (launches SimH and drives its remote
+  console). Reads block, so one reader thread per connection replaces the Pascal's 10 ms poll
+  timer, its 20 ms telnet poll, and the `Application.ProcessMessages` call inside
+  `Physical_ReadByte` itself.
+- `to.etc.pdp11.core.fake`: `FakePdp11` and `FakePdp11Odt`, the latter carrying both the DEC
+  and Robotron K1630 dialects. The ODT state transition table and the behaviour Steve Maddison
+  measured on a real PDP-11/23 in 2008 are carried over verbatim as Javadoc, with one test per
+  case - odd-address rejection, nonexistent memory reading back as zero, echo-then-`?`, and
+  the missing `@` on auto-advanced lines.
+- `Scheduler` in `to.etc.pdp11.core.util`, so the fakes' simulated run-to-halt can be driven
+  deterministically in tests instead of waiting out a randomly chosen one to five seconds.
+- **SimH's remote console stays mute until its console channel is connected too.** With only
+  the remote channel open it sends a banner and then never answers anything. Beyond that,
+  `^E` is what produces a `sim>` prompt at all. `SimhProcessTransport` opens both channels and
+  drains SimH's stdout for diagnosis; see the note on that class and PLAN.md phase 3 for the
+  full handshake and for what phase 4's scanner has to expect.
+- `SimhProcessTransportIT` launches a real SimH and round-trips a deposit and examine. It
+  skips when SimH is not on `PATH`, which is the case on CI.
+- **Not yet ported:** the 11/44, 11/44 v340c, M9301 and M9312 fakes. Phase 4 reaches those
+  consoles after SimH and ODT, so each can follow its console.
+
 ### Phase 2 — model
 
 - `to.etc.pdp11.core.mem`: `CellValue` and `AddressRange` replace the `$ffffffff` sentinel with
