@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console. 558 tests. Still to do: the MMU, Microcode, Number Converter, Blinkenlight Execution. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console; and the MMU window, which shows any mode's map rather than only the current one. 580 tests. Still to do: the Microcode, Number Converter and Blinkenlight Execution windows. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1337,6 +1337,34 @@ becomes a class, and the last of the Pascal's cross-window reach-ins goes with t
   a program that waits for one. Both ways round, against real SimH. The write needs a
   *wait for the transmitter* after it: SimH sends on a scheduled event some instructions later,
   and halting first cancels it, which fails looking exactly like a misrouted channel.
+
+**Phase 6 part 8 — the MMU window. What it found:**
+
+- **The map is an algorithm, and it was inside a grid.** `UpdateMemoryMapGrid` is a nested
+  procedure inside `TFormMMU.UpdateDisplay` that walks all 32768 words of virtual space while
+  assigning into `grid.Cells[]` and computing column widths. `MmuMemoryMap` is the walk with the
+  grid taken out, and the eleven cases it now has tests for - a one-block page, a stack page
+  expanding downward, two pages that happen to be consecutive - are exactly the ones nobody can
+  confirm by looking at a screenshot.
+- **Examining the MMU's own registers tells the MMU nothing.** Cell propagation excludes the cell
+  it started from, deliberately and correctly, so a console examining the group the MMU itself
+  owns never reaches the MMU's listener. `ExamineMMU` (`Pdp11MmuU.pas:365-370`) is examine
+  *plus* `evalMemoryCells` for this reason, and the Java Refresh does the same two steps. Worth
+  knowing generally: **a component that both owns a group and listens to it must re-evaluate
+  after examining it.**
+- **The MMU's register group leaked, one per connection.** The console builds a `Pdp11Mmu`, which
+  builds a 99-cell group inside the application's groups so that examining those registers
+  anywhere updates it. Nothing removed it, so five reconnects left five groups, all still on the
+  propagation index and all still listening. `ConnectionManager.close` now removes them by usage
+  tag, which is what that tag is for.
+- **A simulated machine answered nothing at any MMU register**, because it is handed the I/O page
+  it should respond at during transport setup - which happens before the console exists, and so
+  before the MMU's cells exist. The fake is told again once the console is built. Without that
+  the window's Refresh does nothing whatsoever against a fake, and the whole "drive the
+  application with no hardware" property has a hole in it exactly where this window is.
+- **Showing only the current CPU mode is a real limitation, not a simplification.** The Pascal
+  reads `MMU.curCpuMode` from the PSW and offers no way past it, so the user map is unreadable
+  while the machine is stopped in the kernel - which is when a person is looking. One combo box.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 a MACRO-11 highlighter + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

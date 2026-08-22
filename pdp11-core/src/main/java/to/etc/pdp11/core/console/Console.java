@@ -4,6 +4,7 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.core.util.ProgressMonitor;
 
 import java.util.EnumSet;
@@ -119,6 +120,16 @@ public interface Console {
 	default Address monitorEntryAddress() {
 		return null;
 	}
+
+	/**
+	 * The MMU model this console translates virtual addresses through.
+	 *
+	 * <p>On the interface because the MMU window shows it: what it holds is the machine's own
+	 * page registers as last examined, and it is per connection, because it is per machine.
+	 * Every console has one - a machine with no memory management simply never has its
+	 * relocation bit set, and then virtual is physical.</p>
+	 */
+	Pdp11Mmu getMmu();
 
 	/**
 	 * What a terminal needs to know to display this console's output sensibly.

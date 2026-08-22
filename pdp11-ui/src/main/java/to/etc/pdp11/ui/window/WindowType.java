@@ -21,6 +21,7 @@ public enum WindowType {
 	MEMORY_DUMPER("Memory dumper"),
 	MEMORY_LOADER("Memory loader"),
 	IO_PAGE_SCANNER("I/O page scanner"),
+	MMU("MMU"),
 	REGISTER_GROUP("Registers", true),
 	/**
 	 * SimH's {@code sim>} channel, with a command line on it.

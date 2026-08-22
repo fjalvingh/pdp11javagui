@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Phase 6 part 8 — the MMU window
+
+- **See what memory management is actually doing**: the 64 KB of virtual address space as a list
+  of blocks, each saying where it really is, for instruction space and data space, in whichever
+  CPU mode you pick.
+- **The walk over address space is `MmuMemoryMap` in `pdp11-core`**, not in the window. The
+  Pascal computes it inside a grid-filling procedure nested in `UpdateDisplay`
+  (`FormMmuU.pas:84-160`), so which addresses run together as one block was never checked except
+  by looking at it. Eleven tests now say what a relocated page, two consecutive pages, a
+  one-block page and a downward-expanding stack page each look like.
+- **Any mode, not only the current one.** The original shows `MMU.curCpuMode`, so there is no way
+  to look at the user map while the machine is stopped in the kernel — which is exactly when you
+  want it. The selector starts on the mode the machine is in and says so when you move it.
+- **A page length error is named.** The Pascal prints "not assigned" for both ways translation can
+  fail, and a page length error — what the unused end of a stack page looks like — is not that.
+- **Refresh is two steps and the second is not optional.** `ExamineMMU` (`Pdp11MmuU.pas:365-370`)
+  examines the registers and then re-evaluates them, because cell propagation excludes the cell it
+  started from: examining the MMU's *own* register group never reaches the MMU's own listener.
+- **Two bugs found on the way.** The MMU's register group was created per console and never
+  removed, so every reconnect left another 99 cells on the propagation index; and a simulated
+  machine was given its I/O page *before* the console built those cells, so it answered nothing
+  at any MMU register — the window's Refresh did nothing at all against a fake.
+
 ### Phase 6 part 7 — the SimH Console, and what the main terminal shows
 
 - **The main terminal is the machine's console now, whatever the machine is.** It was the

@@ -20,6 +20,7 @@ import to.etc.pdp11.core.io.SerialTransport;
 import to.etc.pdp11.core.io.SimhProcessTransport;
 import to.etc.pdp11.core.io.TelnetTransport;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.core.util.Scheduler;
@@ -209,6 +210,12 @@ public final class ConnectionManager implements AutoCloseable {
 			//-- AbstractConsole rather than Console, because attaching and the handshake are
 			//-- the console's own plumbing rather than things the windows above ever call.
 			AbstractConsole console = createConsole(profile);
+			//-- The console has just built its MMU, and with it a register group at addresses the
+			//-- simulated machine was told nothing about - it was given the I/O page a moment ago,
+			//-- before those cells existed. Telling it again is what lets the MMU window's
+			//-- Refresh read something back from a machine that is not there.
+			if(transport instanceof FakeTransport fake)
+				fake.getFake().resetIoPageValidMap(m_groups, null);
 			ConsoleConnection connection = new ConsoleConnection(transport, m_logger);
 			//-- Before attach(), which starts the reader: the handshake is the most interesting
 			//-- thing that ever crosses this channel and it happens in init(), below.
@@ -454,6 +461,12 @@ public final class ConnectionManager implements AutoCloseable {
 		m_transport = null;
 		if(t != null)
 			t.close();
+
+		//-- The console built an MMU, and the MMU built a register group inside the application's
+		//-- groups so that examining those registers anywhere updates it. That group belongs to
+		//-- the connection: leaving it behind means every reconnect adds another 99 cells to the
+		//-- propagation index, all of them still listening.
+		m_groups.removeGroupsByUsageTag(Pdp11Mmu.USAGE_TAG);
 
 		Thread drain = m_consoleDrain;
 		m_consoleDrain = null;

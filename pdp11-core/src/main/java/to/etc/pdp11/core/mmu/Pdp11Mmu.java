@@ -50,6 +50,15 @@ import java.util.List;
  * </ol>
  */
 public final class Pdp11Mmu {
+	/**
+	 * What the MMU's register group is tagged with.
+	 *
+	 * <p>A connection's console builds one of these, so the group belongs to that connection and
+	 * goes when it does - {@code ConnectionManager.close} removes it by this tag. Without that,
+	 * every reconnect leaves another 99-cell group on the propagation index forever.</p>
+	 */
+	public static final String USAGE_TAG = "mmu";
+
 	/** I/O page offsets, as 16-bit addresses. Pairs of (offset, what it is). */
 	private static final int PSW = 0177776;
 
@@ -136,7 +145,7 @@ public final class Pdp11Mmu {
 	 */
 	public Pdp11Mmu(MemoryCellGroups groups) {
 		m_group = groups.addGroup(MemoryAddressType.PHYSICAL22, "MMU");
-		m_group.setUsageTag("mmu");
+		m_group.setUsageTag(USAGE_TAG);
 
 		m_pswCell = addRegister(PSW, "PSW");
 		addRegister(MMR0, "MMR0");
@@ -174,6 +183,11 @@ public final class Pdp11Mmu {
 	/** Told whenever a register change moved the MMU's state. */
 	public void addChangeListener(Runnable listener) {
 		m_listeners.add(listener);
+	}
+
+	/** Stop telling this one - a window that has been closed. */
+	public void removeChangeListener(Runnable listener) {
+		m_listeners.remove(listener);
 	}
 
 	private void fireChanged() {

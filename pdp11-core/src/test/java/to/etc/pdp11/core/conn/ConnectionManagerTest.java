@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -264,6 +265,29 @@ class ConnectionManagerTest {
 		ConnectionManager m = manager();
 		m.writeToMachineConsole("hello");
 		assertEquals("", m.getMachineConsole().getText());
+	}
+
+	@Test
+	void theMmuRegisterGroupBelongsToTheConnectionAndGoesWithIt() {
+		//-- The console builds an MMU, which builds a register group inside the application's
+		//-- groups. Connecting five times used to leave five of them, all still listening on the
+		//-- propagation index.
+		MemoryCellGroups groups = new MemoryCellGroups();
+		try(ConnectionManager m = new ConnectionManager(groups, Logger.NULL, new Scheduler.Manual(),
+			Path.of(System.getProperty("java.io.tmpdir")))) {
+			for(int i = 0; i < 3; i++) {
+				assertDoesNotThrow(() -> m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144)));
+				assertEquals(1, mmuGroups(groups), "one MMU, however often it reconnects");
+			}
+			m.disconnect();
+			assertEquals(0, mmuGroups(groups), "and none when there is no machine");
+		}
+	}
+
+	private static long mmuGroups(MemoryCellGroups groups) {
+		return groups.getGroups().stream()
+			.filter(g -> to.etc.pdp11.core.mmu.Pdp11Mmu.USAGE_TAG.equals(g.getUsageTag()))
+			.count();
 	}
 
 	@Test
