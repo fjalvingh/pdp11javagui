@@ -1003,6 +1003,21 @@ Execution Control, Disassembler.
   `TerminalView` exists and `GlassTerminalView` implements it, which is the fallback §3 describes
   as more attractive than it sounds. The consoles are dumb TTYs and none of the protocols emit an
   escape sequence; full ANSI only matters for programs *running on* the PDP-11.
+- **Layout is tested without a display, and rendered to a PNG for eyes.** The windows are thin
+  frames around a `JPanel` - `MainPanel`, `LogPanel` - because a panel can be sized, laid out and
+  painted into an image on a machine with no screen, and a `JFrame` cannot. So the layout
+  assertions run on CI, and `target/ui-render/*.png` gets written on every build for the part
+  that needs looking at rather than asserting. This is also the only polite way to check a layout
+  when the development machine's display belongs to somebody who is using it.
+  - **It found two things immediately.** A six-pixel seam of panel background between the
+    terminal and the status bar, because `insets 0` does not imply `gap 0` in MigLayout. And a
+    deadlock - in the *test*, not the application: laying out a component tree takes the AWT tree
+    lock and then the document's read lock, while appending to the terminal takes the document's
+    write lock and then wants the tree lock. Two threads, opposite order, reliable hang. The
+    harness does all of it on the event thread now, which is the ordinary Swing rule and nothing
+    to do with rendering offscreen.
+  - `Xvfb` would have been the other answer and is not installed; it is also the worse one, since
+    it needs a package on every machine that builds this and the offscreen render needs nothing.
 - **Known gap: settings are saved when the main window closes, and only then.** Killing the
   process loses them. The Pascal is the same. A shutdown hook would cover it and has not been
   added, because a save on the way out of a crash is not obviously the right thing to want.

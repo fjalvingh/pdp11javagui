@@ -36,6 +36,13 @@
 - **The phase-3 warning is discharged:** something now reads SimH's console channel.
   `ConnectionManager` drains it and keeps the last 256 KB, so the SimH Console window in phase 6
   finds a transcript rather than a bug.
+- **Layout is tested with no display at all.** The windows are thin frames around a `JPanel`
+  (`MainPanel`, `LogPanel`), because a panel can be sized, laid out and painted into an image
+  headlessly and a `JFrame` cannot. `UiRenderer` does that; the layout assertions run on CI, and
+  `target/ui-render/*.png` is written on every build for the part that needs eyes. It found a
+  six-pixel seam between the terminal and the status bar (`insets 0` does not imply `gap 0` in
+  MigLayout) and a deadlock in the harness itself — laying out off the event thread while the
+  terminal appends on it takes the AWT tree lock and the document lock in opposite orders.
 - One bug caught by writing the test first: `SettingsStore.getLastProblem()` answered "nothing"
   before anything had been loaded, and its only caller asks on the way up — so an unreadable
   settings file would have been silently ignored. It loads first now.

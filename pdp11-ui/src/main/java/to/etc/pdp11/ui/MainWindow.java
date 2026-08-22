@@ -1,24 +1,20 @@
 package to.etc.pdp11.ui;
 
-import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.ui.terminal.GlassTerminalView;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowManager;
 import to.etc.pdp11.ui.window.WindowType;
 
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.event.MenuEvent;
@@ -44,11 +40,7 @@ import java.awt.event.WindowEvent;
 public final class MainWindow extends JFrame {
 	private final AppContext m_context;
 
-	private final GlassTerminalView m_terminal = new GlassTerminalView();
-
-	private final JLabel m_statusState = new JLabel();
-
-	private final JLabel m_statusDetail = new JLabel();
+	private final MainPanel m_panel = new MainPanel();
 
 	private final JMenu m_windowsMenu = new JMenu("Windows");
 
@@ -63,31 +55,16 @@ public final class MainWindow extends JFrame {
 			}
 		});
 		setJMenuBar(buildMenuBar());
-		setContentPane(buildContent());
+		setContentPane(m_panel);
 		setMinimumSize(new Dimension(720, 420));
 		setSize(new Dimension(1000, 700));
 		setLocationByPlatform(true);
 
-		m_terminal.setInputListener(this::sendToMachine);
+		m_panel.getTerminal().setInputListener(this::sendToMachine);
 		context.getConnectionManager().addListener((manager, state) ->
 			SwingUtilities.invokeLater(() -> onConnectionState(manager)));
 		context.setFailureHandler((message, cause) -> SwingUtilities.invokeLater(() -> showFailure(message, cause)));
 		onConnectionState(context.getConnectionManager());
-	}
-
-	private JPanel buildContent() {
-		JPanel panel = new JPanel(new MigLayout("fill, insets 0", "[grow]", "[grow][]"));
-		panel.add(m_terminal.getComponent(), "grow, wrap");
-		panel.add(buildStatusBar(), "growx");
-		return panel;
-	}
-
-	private JPanel buildStatusBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow]", "[]"));
-		bar.add(m_statusState);
-		m_statusDetail.setForeground(new Color(0x60, 0x60, 0x60));
-		bar.add(m_statusDetail, "growx");
-		return bar;
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -104,7 +81,7 @@ public final class MainWindow extends JFrame {
 		JMenuItem disconnect = new JMenuItem("Disconnect");
 		disconnect.addActionListener(e -> {
 			m_context.getConnectionManager().disconnect();
-			m_terminal.append("\n[disconnected]\n", TerminalStyle.SYSTEM);
+			m_panel.getTerminal().append("\n[disconnected]\n", TerminalStyle.SYSTEM);
 		});
 
 		JMenuItem quit = new JMenuItem("Quit");
@@ -206,7 +183,7 @@ public final class MainWindow extends JFrame {
 	 * and the menu item is the place it gets crossed.</p>
 	 */
 	private void connect(ConnectionProfile profile) {
-		m_terminal.append("\n[connecting to " + profile.describe() + "]\n", TerminalStyle.SYSTEM);
+		m_panel.getTerminal().append("\n[connecting to " + profile.describe() + "]\n", TerminalStyle.SYSTEM);
 		Thread worker = new Thread(() -> {
 			try {
 				m_context.getConnectionManager().connect(profile);
@@ -221,35 +198,24 @@ public final class MainWindow extends JFrame {
 
 	private void onConnectionState(ConnectionManager manager) {
 		ConnectionManager.State state = manager.getState();
-		m_statusState.setText(switch(state) {
-			case DISCONNECTED -> "Not connected";
-			case CONNECTING -> "Connecting…";
-			case CONNECTED -> "Connected";
-			case FAILED -> "Connection failed";
-		});
-		m_statusState.setForeground(switch(state) {
-			case CONNECTED -> new Color(0x1E, 0x7A, 0x32);
-			case FAILED -> new Color(0xA0, 0x20, 0x20);
-			default -> Color.DARK_GRAY;
-		});
-		m_statusDetail.setText(manager.getMessage());
-		m_terminal.setInputEnabled(state == ConnectionManager.State.CONNECTED);
+		m_panel.showConnectionState(state, manager.getMessage());
+		m_panel.getTerminal().setInputEnabled(state == ConnectionManager.State.CONNECTED);
 
 		Console console = manager.getConsole();
 		if(console != null) {
 			//-- The consoles disagree about line endings, so the terminal is told which one it is
 			//-- looking at every time that changes.
-			m_terminal.setProfile(console.terminalProfile());
+			m_panel.getTerminal().setProfile(console.terminalProfile());
 			setTitle("PDP11GUI - " + console.name());
 		} else {
 			setTitle("PDP11GUI");
 		}
 		if(state == ConnectionManager.State.CONNECTED) {
-			m_terminal.append("[connected: " + manager.getProfile().describe() + "]\n", TerminalStyle.SYSTEM);
+			m_panel.getTerminal().append("[connected: " + manager.getProfile().describe() + "]\n", TerminalStyle.SYSTEM);
 			//-- Everything the machine says goes on the terminal, the console's own automated
 			//-- commands and their replies included. That is how a flaky console gets debugged.
-			manager.getConnection().setTerminalSink(text -> m_terminal.append(text, TerminalStyle.PDP));
-			m_terminal.focusTerminal();
+			manager.getConnection().setTerminalSink(text -> m_panel.getTerminal().append(text, TerminalStyle.PDP));
+			m_panel.getGlassTerminal().focusTerminal();
 		}
 	}
 
@@ -267,7 +233,7 @@ public final class MainWindow extends JFrame {
 	// -------------------------------------------------------------------------------------
 
 	private void showFailure(String message, Throwable cause) {
-		m_terminal.append("[" + message + (cause == null ? "" : ": " + cause.getMessage()) + "]\n",
+		m_panel.getTerminal().append("[" + message + (cause == null ? "" : ": " + cause.getMessage()) + "]\n",
 			TerminalStyle.SYSTEM);
 		JOptionPane.showMessageDialog(this,
 			message + (cause == null ? "" : "\n\n" + cause.getMessage()),
