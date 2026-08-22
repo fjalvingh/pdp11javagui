@@ -11,6 +11,7 @@ import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.core.util.OperationCancelledException;
 import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.ui.macro11.AssemblerModel;
 import to.etc.pdp11.ui.settings.ConfigDir;
 import to.etc.pdp11.ui.settings.Settings;
 import to.etc.pdp11.ui.settings.SettingsStore;
@@ -53,6 +54,14 @@ public final class AppContext {
 
 	private final CellSelection m_cellSelection = new CellSelection();
 
+	/**
+	 * The MACRO-11 program being written, shared because two windows assemble it.
+	 *
+	 * <p>Built at the end of the constructor rather than inline: it needs this context, and a
+	 * field initialiser would hand it a half-built one.</p>
+	 */
+	private final AssemblerModel m_assembler;
+
 	private final Path m_dataDir;
 
 	/** Set once a machine description has been loaded. Null before that, and after unloading. */
@@ -81,6 +90,7 @@ public final class AppContext {
 		m_scheduler = scheduler;
 		m_dataDir = dataDir;
 		m_machineState.bind(connectionManager);
+		m_assembler = new AssemblerModel(this);
 	}
 
 	/**
@@ -146,6 +156,17 @@ public final class AppContext {
 	/** Which memory cell the user is looking at, for the windows that follow the selection. */
 	public CellSelection getCellSelection() {
 		return m_cellSelection;
+	}
+
+	/**
+	 * The program being assembled: its source, its listing, and the code that came out.
+	 *
+	 * <p>Shared for the same reason {@link #getMachineState()} is - the Assembler window
+	 * assembles it and the Execution window's "New program" assembles it too, and neither knows
+	 * the other exists.</p>
+	 */
+	public AssemblerModel getAssembler() {
+		return m_assembler;
 	}
 
 	/** Where working files go: SimH's generated configuration, temporary listings. */

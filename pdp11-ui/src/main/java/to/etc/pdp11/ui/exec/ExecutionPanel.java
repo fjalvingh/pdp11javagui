@@ -8,7 +8,10 @@ import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
+import to.etc.pdp11.core.macro11.Macro11;
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.macro11.AssemblerModel;
+import to.etc.pdp11.ui.window.WindowType;
 import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.UiColors;
 
@@ -18,6 +21,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import java.awt.Font;
 import java.util.EnumSet;
@@ -66,6 +70,8 @@ public final class ExecutionPanel extends JPanel {
 
 	private final JButton m_setPc = new JButton("Set/show");
 
+	private final JButton m_newProgram = new JButton("New program");
+
 	private final JRadioButton m_run = new JRadioButton("RUN/ENABLE");
 
 	private final JRadioButton m_haltSwitch = new JRadioButton("HALT");
@@ -78,7 +84,7 @@ public final class ExecutionPanel extends JPanel {
 	private final JLabel m_state = new JLabel();
 
 	public ExecutionPanel(AppContext context) {
-		super(new MigLayout("fill, insets 8", "[][]12[][]12[grow]", "[][][][][grow]"));
+		super(new MigLayout("fill, insets 8", "[][]12[][]12[grow]", "[][][][][][grow]"));
 		m_context = context;
 
 		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_startPc.getFont().getSize());
@@ -100,6 +106,10 @@ public final class ExecutionPanel extends JPanel {
 		add(m_continue, "cell 2 2");
 		add(m_halt, "cell 3 2, wrap");
 
+		m_newProgram.setToolTipText("Assemble the program in the Assembler window, load it into the"
+			+ " machine, reset, and set the PC to where it starts");
+		add(m_newProgram, "cell 2 3, spanx 2, growx, wrap");
+
 		ButtonGroup group = new ButtonGroup();
 		group.add(m_run);
 		group.add(m_haltSwitch);
@@ -107,10 +117,10 @@ public final class ExecutionPanel extends JPanel {
 		m_switchPanel.add(m_run);
 		m_switchPanel.add(m_haltSwitch);
 		m_switchPanel.add(m_switchInfo, "growx");
-		add(m_switchPanel, "cell 0 3, spanx, growx, wrap");
+		add(m_switchPanel, "cell 0 4, spanx, growx, wrap");
 
 		m_state.setForeground(UiColors.SECONDARY_TEXT);
-		add(m_state, "cell 0 4, spanx, growx");
+		add(m_state, "cell 0 5, spanx, growx");
 
 		m_reset.addActionListener(e -> doResetAndSetPc());
 		m_resetAndStart.addActionListener(e -> doResetAndStart());
@@ -118,6 +128,7 @@ public final class ExecutionPanel extends JPanel {
 		m_halt.addActionListener(e -> doHalt());
 		m_singleStep.addActionListener(e -> doSingleStep());
 		m_setPc.addActionListener(e -> doSetPc());
+		m_newProgram.addActionListener(e -> doNewProgram());
 		m_run.addActionListener(e -> setRunMode(ConsoleRunMode.RUN));
 		m_haltSwitch.addActionListener(e -> setRunMode(ConsoleRunMode.HALT));
 
@@ -158,6 +169,10 @@ public final class ExecutionPanel extends JPanel {
 		//-- the CPU runs produces a confusing nothing rather than an error. The Pascal learned
 		//-- this the same way ({@code :382-385}).
 		m_setPc.setEnabled(connected && !running);
+		//-- Compile, load and reset. Needs a machine to load into, a program to load, and the
+		//-- external assembler to make one with.
+		m_newProgram.setEnabled(connected && !running && m_context.getAssembler().canAssemble()
+			&& Macro11.isAvailable());
 
 		boolean hasSwitch = features.contains(ConsoleFeature.SWITCH_ENABLE_OR_HALT);
 		m_switchPanel.setVisible(hasSwitch);
@@ -282,6 +297,42 @@ public final class ExecutionPanel extends JPanel {
 			case RUN -> "Halt the CPU by moving the physical RUN/HALT switch to HALT";
 			case UNKNOWN -> "Set the RUN/HALT switch to match the machine before halting";
 		};
+	}
+
+	/**
+	 * Assemble the current program, load it into the machine, reset, and set the PC.
+	 *
+	 * <p>Ported from {@code NewPgmButtonClick} ({@code FormExecuteU.pas:166-188}), which does it
+	 * by reaching across and pressing another window's buttons -
+	 * {@code FormMain.FormMacro11Source.Show}, then {@code CompileButtonClick(nil)}, then
+	 * {@code FormMain.FormMacro11Listing.DepositAllButtonClick(nil)}. That needs both assembler
+	 * windows to exist and to be showing. Here the program is {@link AppContext#getAssembler()},
+	 * which is state rather than a window, so this works with no assembler window open at all -
+	 * though one is opened anyway, because watching a program assemble is the point of pressing
+	 * this.</p>
+	 *
+	 * <p>The three steps are chained through callbacks rather than run in sequence: each of them
+	 * happens on a different thread from this one - the assembler on a worker, the deposit on the
+	 * command thread - and waiting for either from the event thread would freeze the window at
+	 * best and deadlock it at worst.</p>
+	 */
+	private void doNewProgram() {
+		Address start = parse(m_startPc, "start PC");
+		if(start == null || !checkRunMode())
+			return;
+		AssemblerModel assembler = m_context.getAssembler();
+		if(!assembler.canAssemble()) {
+			m_context.reportFailure("Open a MACRO-11 source in the Assembler window first", null);
+			m_context.getWindowManager().open(WindowType.ASSEMBLER);
+			return;
+		}
+		//-- Raised before rather than after: the assembler is where an error will be shown.
+		m_context.getWindowManager().open(WindowType.ASSEMBLER);
+		assembler.assemble(outcome -> {
+			if(!outcome.ok())
+				return;                                      // the assembler window says why
+			assembler.deposit(SwingUtilities.getWindowAncestor(this), this::doResetAndSetPc);
+		});
 	}
 
 	/** Write the Current PC field into the machine. {@code SetPcButtonClick} ({@code :237-247}). */

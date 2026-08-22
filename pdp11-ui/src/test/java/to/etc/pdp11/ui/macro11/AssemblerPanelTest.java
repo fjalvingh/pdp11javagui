@@ -1,0 +1,406 @@
+package to.etc.pdp11.ui.macro11;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.macro11.Macro11;
+import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.Edt;
+import to.etc.pdp11.ui.TestContext;
+import to.etc.pdp11.ui.UiRenderer;
+import to.etc.pdp11.ui.exec.ExecutionPanel;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.function.BooleanSupplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+/**
+ * The Assembler window: source in one tab, the listing in the second, the code in the third.
+ *
+ * <p>The listing format itself is {@code Macro11ListingParserTest}'s problem, and running the
+ * assembler for real is {@code Macro11IT}'s. What is checked here is the window: that the editor
+ * and the model stay in step, that a listing loaded from disk fills the code grid, that the
+ * error and PC markers land on the right lines, and that depositing writes the program into a
+ * machine.</p>
+ *
+ * <p>Most of it needs no {@code macro11} at all - a listing is a text file, and reading one is
+ * the durable half of an assembly. The tests that do run the tool say so and skip themselves.</p>
+ */
+class AssemblerPanelTest {
+	private static final long TIMEOUT_MS = 30_000;
+
+	/** Real {@code macro11} output for a three-instruction program at 1000. */
+	private static final String LISTING = String.join("\n",
+		"       1                                \t.asect",
+		"       2 001000                         \t.=1000",
+		"       3 001000 012706  000400          start:\tmov\t#400,sp",
+		"       4 001004 005000                  \tclr\tr0",
+		"       5 001006 000000                  \thalt",
+		"       6                                \t.end",
+		"");
+
+	@BeforeAll
+	static void lookAndFeel() {
+		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
+	}
+
+	private static Path write(Path dir, String name, String content) throws Exception {
+		Path f = dir.resolve(name);
+		Files.writeString(f, content, StandardCharsets.ISO_8859_1);
+		return f;
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The editor and the model
+	// -------------------------------------------------------------------------------------
+
+	@Test
+	void theThreeTabsAreThereAndTheLayoutHolds(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		UiRenderer.layOut(panel, 1000, 700);
+
+		assertEquals(3, panel.getTabs().getTabCount());
+		assertEquals("Source", panel.getTabs().getTitleAt(0));
+		assertEquals("Listing", panel.getTabs().getTitleAt(1));
+		assertEquals("Code", panel.getTabs().getTitleAt(2));
+		//-- Nothing loaded, so there is nothing to assemble and nothing to deposit.
+		assertFalse(panel.getCompileButton().isEnabled());
+		assertFalse(panel.getDepositAllButton().isEnabled());
+	}
+
+	/** Typing reaches the model, which is what makes the Execution window's button work. */
+	@Test
+	void whatIsTypedReachesTheModel(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(() -> panel.getSourceArea().setText("\thalt\n"));
+		assertEquals("\thalt\n", ctx.getAssembler().getSourceText());
+		assertTrue(ctx.getAssembler().isChanged());
+	}
+
+	/** Loading a source file fills the editor and stops it looking changed. */
+	@Test
+	void loadingASourceFillsTheEditor(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\n\thalt\n");
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		assertTrue(panel.getSourceArea().getText().contains(".=1000"));
+		assertFalse(ctx.getAssembler().isChanged());
+		assertTrue(panel.getSourceStatusText().contains("p.mac"), panel.getSourceStatusText());
+	}
+
+	/**
+	 * Tabs are not expanded on load.
+	 *
+	 * <p>The Pascal detabs to eight on the way in and re-tabs on the way out, which rewrites a
+	 * file the user did not edit. Its own comment on the entab reads "unnecessary, and broken?".
+	 */
+	@Test
+	void aSourceIsSavedBackExactlyAsItWasRead(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		Edt.call(() -> new AssemblerPanel(ctx));
+		String text = "start:\tmov\t#400,sp\t; tabs, not spaces\n";
+		Path src = write(dir, "p.mac", text);
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+				ctx.getAssembler().saveSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		assertEquals(text, Files.readString(src, StandardCharsets.ISO_8859_1));
+	}
+
+	/** New empties the editor and the code with it, so nothing stale can be deposited. */
+	@Test
+	void newClearsTheCodeAsWellAsTheEditor(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path lst = write(dir, "p.lst", LISTING);
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadListing(lst);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		assertEquals(4, ctx.getAssembler().getGroup().size());
+
+		Edt.run(() -> panel.getNewButton().doClick());
+		assertTrue(ctx.getAssembler().getGroup().isEmpty(), "the Code tab is emptied too");
+		assertEquals("", panel.getSourceArea().getText());
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The listing
+	// -------------------------------------------------------------------------------------
+
+	/** A listing on disk is a whole program: no source and no assembler needed. */
+	@Test
+	void aListingLoadedFromDiskFillsTheCodeTab(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path lst = write(dir, "p.lst", LISTING);
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadListing(lst);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		assertEquals(4, ctx.getAssembler().getGroup().size());
+		assertEquals("001000", panel.getStartAddressField().getText());
+		assertTrue(panel.getListingArea().getText().contains("start:"));
+		assertTrue(panel.getCodeStatusText().contains("4 words at 001000"), panel.getCodeStatusText());
+		//-- The grid shows the group, laid out by address.
+		assertEquals(ctx.getAssembler().getGroup(), panel.getGrid().getGroup());
+	}
+
+	/**
+	 * The error marker lands on the source line the assembler named, and on every listing line
+	 * that line produced.
+	 */
+	@Test
+	void anErrorMarksTheSourceLineAndItsListingLines(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		//-- Source and listing together, so the marker has somewhere to land in both.
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\n\t.byte\t1\n\tmov\t#1,r0\n\t.end\n");
+		Path lst = write(dir, "p.lst", String.join("\n",
+			"       1                                \t.asect",
+			"       2 001000                         \t.=1000",
+			"       3 001000    001                  \t.byte\t1",
+			"p.mac:4: ***ERROR Instruction on odd address",
+			"       4 001001 012700  000001          \tmov\t#1,r0",
+			""));
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+				ctx.getAssembler().loadListing(lst);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+
+		assertFalse(ctx.getAssembler().isTranslated());
+		assertTrue(panel.getListingStatusText().contains("Instruction on odd address"),
+			panel.getListingStatusText());
+		assertTrue(panel.getSourceStatusText().contains("line 4"), panel.getSourceStatusText());
+		//-- Line 4 of the source, which is index 3, is the one marked.
+		assertEquals(3, singleMarkedLine(panel.getSourceMarkedLines()));
+		//-- In the listing both lines belonging to source line 4 are marked: the diagnostic
+		//-- itself, at index 3, and the instruction it is about, at index 4. Marking only one of
+		//-- them would leave either the message or the code it refers to uncoloured.
+		assertEquals(java.util.List.of(3, 4), panel.getListingMarkedLines());
+	}
+
+	/**
+	 * The PC marker follows the machine, and only while the listing describes what is in it.
+	 *
+	 * <p>Nothing tells this panel where the PC is; it watches {@code MachineState}, like every
+	 * other window that cares. The Pascal is told, by name, from {@code SetAndShowPc}.</p>
+	 */
+	@Test
+	void thePcMarkerFollowsTheMachine(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\nstart:\tmov\t#400,sp\n\tclr\tr0\n\thalt\n\t.end\n");
+		Path lst = write(dir, "p.lst", LISTING);
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+				ctx.getAssembler().loadListing(lst);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+
+		//-- Stopped at 001004, which the listing says is the clr on its line index 3.
+		Edt.run(() -> ctx.getMachineState().stopped(Address.of(MemoryAddressType.VIRTUAL, 001004)));
+		assertEquals(3, singleMarkedLine(panel.getListingMarkedLines()));
+		//-- And the source line that made it, which the listing's own numbering says is line 4.
+		assertEquals(3, singleMarkedLine(panel.getSourceMarkedLines()));
+
+		//-- A PC outside the program marks nothing rather than marking the nearest thing.
+		Edt.run(() -> ctx.getMachineState().stopped(Address.of(MemoryAddressType.VIRTUAL, 020000)));
+		assertEquals(-1, singleMarkedLine(panel.getListingMarkedLines()));
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The machine
+	// -------------------------------------------------------------------------------------
+
+	@Test
+	void depositingWritesTheProgramIntoTheMachine(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path lst = write(dir, "p.lst", LISTING);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			Edt.run(() -> {
+				try {
+					ctx.getAssembler().loadListing(lst);
+				} catch(Exception x) {
+					throw new IllegalStateException(x);
+				}
+			});
+			assertTrue(panel.getDepositAllButton().isEnabled());
+			Edt.run(() -> panel.getDepositAllButton().doClick());
+			until("the deposit to finish", () -> !ctx.getAssembler().getGroup().cell(0).isEdited());
+
+			var m = ctx.getConnectionManager();
+			var value = m.getConnection().call(() -> m.getConsole().examine(
+				Address.of(m.getConsole().physicalAddressType(), 01000)));
+			assertEquals(012706, value.word());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * "New program" on the Execution window assembles, loads and resets - with no assembler
+	 * window open anywhere.
+	 *
+	 * <p>That is the whole reason the program is state on the context rather than the contents
+	 * of a window. Needs the real assembler, so it skips without one.</p>
+	 */
+	@Test
+	void theExecutionWindowCanAssembleLoadAndResetOnItsOwn(@TempDir Path dir) throws Exception {
+		assumeTrue(Macro11.isAvailable(), "macro11 is not on the PATH");
+		AppContext ctx = TestContext.create(dir);
+		ExecutionPanel execution = Edt.call(() -> new ExecutionPanel(ctx));
+		Edt.run(execution::attach);
+		//-- No AssemblerPanel is built here on purpose.
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\n\tmov\t#400,sp\n\tclr\tr0\n\thalt\n\t.end\n");
+
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			Edt.run(() -> {
+				try {
+					ctx.getAssembler().loadSource(src);
+				} catch(Exception x) {
+					throw new IllegalStateException(x);
+				}
+			});
+			assertTrue(ctx.getAssembler().canAssemble());
+
+			Edt.run(() -> ctx.getAssembler().assemble(outcome -> {
+				assertTrue(outcome.ok(), outcome.message());
+				ctx.getAssembler().deposit(null, null);
+			}));
+			until("the program to reach the machine",
+				() -> !ctx.getAssembler().getGroup().isEmpty()
+					&& !ctx.getAssembler().getGroup().cell(0).isEdited());
+
+			var m = ctx.getConnectionManager();
+			var value = m.getConnection().call(() -> m.getConsole().examine(
+				Address.of(m.getConsole().physicalAddressType(), 01000)));
+			assertEquals(012706, value.word());
+			//-- And the program said where it starts, which the execution window is showing.
+			assertNotNull(ctx.getMachineState().getStartPc());
+			assertEquals("001000", execution.getStartPcField().getText());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/** Assembling with no source file says so rather than running the assembler on nothing. */
+	@Test
+	void assemblingWithoutAFileIsRefusedWithASentence(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		Edt.call(() -> new AssemblerPanel(ctx));
+		StringBuilder reported = new StringBuilder();
+		ctx.setFailureHandler((message, cause) -> reported.append(message));
+
+		Edt.run(() -> ctx.getAssembler().setSourceText("\thalt\n"));
+		Edt.run(() -> ctx.getAssembler().assemble(outcome -> assertFalse(outcome.ok())));
+		assertTrue(reported.toString().contains("Save the source to a file"), reported.toString());
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Odds and ends
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Each tab is rendered to a PNG so the layout can be looked at without a display.
+	 *
+	 * <p>Three images rather than one, because two of the three tabs are never painted by a
+	 * renderer that only sees the selected one - and a tab nobody looks at is where a layout
+	 * goes wrong unnoticed.</p>
+	 */
+	@Test
+	void everyTabPaintsWithNoDisplay(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\nstart:\tmov\t#400,sp\t; the stack\n"
+			+ "\tclr\tr0\n\thalt\n\t.end\n");
+		Path lst = write(dir, "p.lst", LISTING);
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+				ctx.getAssembler().loadListing(lst);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+
+		String[] names = {"assembler-source.png", "assembler-listing.png", "assembler-code.png"};
+		for(int tab = 0; tab < names.length; tab++) {
+			int index = tab;
+			Edt.run(() -> panel.getTabs().setSelectedIndex(index));
+			Path png = UiRenderer.renderToFile(panel, 1000, 700, Path.of("target", "ui-render", names[tab]));
+			assertTrue(Files.size(png) > 0);
+		}
+	}
+
+	/** The one line marked in an editor, or -1 when nothing is. */
+	private static int singleMarkedLine(java.util.List<Integer> marks) {
+		return marks.isEmpty() ? -1 : marks.get(0);
+	}
+}

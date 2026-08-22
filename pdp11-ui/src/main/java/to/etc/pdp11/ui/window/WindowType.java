@@ -13,6 +13,7 @@ public enum WindowType {
 	LOG("Log"),
 	TERMINAL("Terminal"),
 	MEMORY("Memory", true),
+	ASSEMBLER("Assembler"),
 	EXECUTION("Execution control"),
 	DISASSEMBLER("Disassembler"),
 	BITFIELDS("Bitfields"),

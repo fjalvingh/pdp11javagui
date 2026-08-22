@@ -42,6 +42,14 @@ public final class UiColors {
 
 	public static final Color PC_TEXT = new Color(0xF2, 0xDA, 0xDA);
 
+	/**
+	 * The line an assembler error is on. {@code ColorCodeErrorBkGnd}, which is {@code clRed}.
+	 *
+	 * <p>Darkened rather than taken literally: a full red band behind a line of code in a dark
+	 * editor is unreadable, and the marker exists to be read.</p>
+	 */
+	public static final Color ERROR_BACKGROUND = new Color(0x7A, 0x28, 0x28);
+
 	/** A value the machine has never been asked for. */
 	public static final Color UNKNOWN_TEXT = new Color(0x80, 0x80, 0x82);
 

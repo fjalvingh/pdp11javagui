@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, and the memory Test, Dumper and Loader. 490 tests. Still to do: the Assembler, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset". 522 tests. Still to do: the MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1232,12 +1232,67 @@ deposits them, or verifies them against what the machine already holds.
   validity flag each and only then assembled into words. A bad checksum refuses the whole load,
   because a damaged image would deposit wrong values into a machine and nothing can say which.
 
+**Outcome so far, part 6 — the Assembler.** Three windows become one, an external program
+becomes a class, and the last of the Pascal's cross-window reach-ins goes with them.
+`Macro11` runs the assembler; `Macro11ListingParser` reads what it wrote into memory cells;
+`AssemblerModel` is the program itself, on the `AppContext`; the window is three tabs over that.
+
+- **The exit code says nothing, and that is the whole shape of this.** `macro11` exits 0 whether
+  or not the source assembled — a syntax error is a line in the listing and a line on stdout, and
+  the process still succeeds. So errors are found by *parsing the listing*, which is what the
+  Pascal does too, though for a different reason: `AppControlU` cannot retrieve an exit code at
+  all, so it only ever asks whether the listing file appeared. Either way, anything here that
+  checked the status would report every broken program as a good one.
+- **An unresolved global is an error this application invents.** `000000G` in the code column
+  means the assembler emitted a hole where an address should be. MACRO-11 prints nothing, exits
+  0 and produces a listing with no diagnostic in it; the program then does not run. The original
+  spots this and so does the port — it is the single most useful thing the listing parser
+  does that the assembler does not.
+- **Two windows assemble, so the program is state rather than a window's contents.** The
+  Execution window's "New program: compile, load and reset" (`FormExecuteU.pas:166-188`) does it
+  by pressing another window's buttons — `FormMain.FormMacro11Source.CompileButtonClick(nil)`,
+  then `FormMain.FormMacro11Listing.DepositAllButtonClick(nil)` — which needs both assembler
+  windows to exist and to be showing. `AssemblerModel` is the same answer `MachineState` gave to
+  the same question, and `theExecutionWindowCanAssembleLoadAndResetOnItsOwn` holds it down: it
+  assembles, deposits and resets with no assembler window built anywhere in the process.
+- **The editor holds the truth, so "who saves it first" stops being a question.** The Pascal
+  auto-saves inside `Compile` and separately checks `Changed` before compiling from the disc-image
+  window (`FormDiscImageU.pas:997`). Here the editor pushes its text into the model and the model
+  writes it out before running the assembler; there is one place that can be wrong instead of
+  three.
+- **One marker per editor was one too few.** The Lazarus port lost JvEditor and had to re-do
+  line marking on SynEdit with a single `HighlightLine` field (`FormMacro11SourceU.pas:56-63`),
+  with its own comment noting that only one line can be marked "just like the old code". So an
+  error line and a PC line cannot both show. Here they are separate pieces of state over one
+  listing, and an error marks *every* listing line its source line produced — the diagnostic
+  itself and the instruction it is about, which are two different lines.
+- **Three bugs' worth of behaviour dropped on purpose**, each a workaround for something that no
+  longer exists: the editors clearing themselves on hide (the MDI `FormStyle` flip), the detab on
+  load and entab on save (an editor that could not draw a tab; the original's own comment on the
+  entab reads "unnecessary, and broken?"), and the modal dialog on a syntax error.
+- **RSyntaxTextArea cannot be painted headlessly without help**, which the layout rule makes a
+  problem rather than a curiosity. Its `paintComponent` refreshes font metrics on the first paint
+  using `getGraphics()` — the *component's* own — and a component not in a displayable window has
+  none, so the first paint throws `NullPointerException` inside the library. `Macro11TextArea` is
+  one override handing back a scratch image's graphics, and with it all three tabs render to PNG
+  on a machine with no screen.
+- **Not ported: the `.hex` listing is written and never read.** `macro11 -e listhex` runs, its
+  output lands beside the octal listing, and nothing in the application opens it — same as the
+  original, where it exists for reading a logic analyser's capture against by hand.
+
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
-MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,
+a MACRO-11 highlighter + external `macro11` on `PATH` via `ProcessBuilder` — two runs,
 `[src,'-l',lst]` then `['-e','listhex',…]` with the second allowed to fail, per
 `FormMacro11SourceU.pas:335-360`), Memory Loader, Memory Dumper, Memory Test, Bitfields, I/O
 Page Scanner, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and
 Remote Log windows. **Done when:** feature parity minus disc images. *Large.*
+
+**Amended: the highlighter is hand-written, not JFlex.** This section said "MACRO-11 JFlex
+mode", which is how RSyntaxTextArea's own language modes are built — but it needs a
+code-generation plugin in the build, for a language whose entire grammar is "a comment starts at
+a semicolon and everything else is a word". `AbstractTokenMaker` is the supported way to write
+one by hand, produces the same tokens, and leaves the build a plain compile.
+`Macro11TokenMaker` is ~200 lines, most of which is the instruction list.
 
 **Phase 7 — Disc images.** `MediaImageDevicesU` (1,189), `SerialXferU` (939),
 `DiscImageBadBlockU` (746), `MediaImageBufferU` (373) and `FormDiscImageU` (2,061) — ~5,300

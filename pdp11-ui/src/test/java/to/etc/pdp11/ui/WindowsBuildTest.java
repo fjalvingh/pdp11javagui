@@ -6,6 +6,7 @@ import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
+import to.etc.pdp11.ui.macro11.AssemblerWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
@@ -133,9 +134,10 @@ class WindowsBuildTest {
 		MemoryWindow.register(ctx);
 		ExecutionWindow.register(ctx);
 		DisassemblerWindow.register(ctx);
+		AssemblerWindow.register(ctx);
 		try {
 			for(WindowType type : new WindowType[] {WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION,
-				WindowType.DISASSEMBLER}) {
+				WindowType.DISASSEMBLER, WindowType.ASSEMBLER}) {
 				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
 				assertNotNull(w, type + " builds");
 				assertTrue(w.getTitle().startsWith(type.getTitle()), w.getTitle());
@@ -167,7 +169,10 @@ class WindowsBuildTest {
 			assertEquals("Memory - 2", second.getTitle());
 			assertEquals(2, ctx.getWindowManager().windowsOfType(WindowType.MEMORY).size());
 			//-- Two views, two groups on the propagation bus, so a deposit in one shows in the other.
-			assertEquals(2, ctx.getMemoryCellGroups().size());
+			//-- Counted by usage tag rather than by total: the context also holds the assembler's
+			//-- code group, which is application state and exists whether or not anything is open.
+			assertEquals(2, ctx.getMemoryCellGroups().getGroups().stream()
+				.filter(g -> "memory-view".equals(g.getUsageTag())).count());
 		} finally {
 			onEdt(() -> {
 				ctx.getWindowManager().closeAll();

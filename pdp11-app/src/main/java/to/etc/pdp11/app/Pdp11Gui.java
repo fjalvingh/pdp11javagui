@@ -15,6 +15,7 @@ import to.etc.pdp11.ui.load.MemoryLoaderWindow;
 import to.etc.pdp11.ui.memtest.MemoryTestWindow;
 import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.log.UiLogger;
+import to.etc.pdp11.ui.macro11.AssemblerWindow;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -78,6 +79,7 @@ public final class Pdp11Gui {
 		MemoryTestWindow.register(context);
 		MemoryDumperWindow.register(context);
 		MemoryLoaderWindow.register(context);
+		AssemblerWindow.register(context);
 	}
 
 	/**

@@ -38,5 +38,15 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
         </dependency>
+        <!--
+            The source editor of the Assembler window. Syntax highlighting, line numbers and
+            per-line highlighting for the error and PC markers - all of which the Pascal lost
+            when JvEditor turned out not to exist under Lazarus, and had to hand-roll again on
+            top of SynEdit (FormMacro11SourceU.pas:56-63).
+        -->
+        <dependency>
+            <groupId>com.fifesoft</groupId>
+            <artifactId>rsyntaxtextarea</artifactId>
+        </dependency>
     </dependencies>
 </project>

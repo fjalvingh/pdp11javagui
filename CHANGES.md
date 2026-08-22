@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Phase 6 part 6 — the Assembler
+
+- **Write a MACRO-11 program, assemble it, and load it into the machine**, in one window with
+  Source, Listing and Code tabs — merging `FormMacro11Source`, `FormMacro11Listing` and
+  `FormMacro11Code`, which are always about the same program and were always opened together.
+  The editor is RSyntaxTextArea with a hand-written MACRO-11 highlighter.
+- **`Macro11` and `Macro11ListingParser` are in `pdp11-core`**: the first runs `macro11` as a
+  child process (two runs, the hex listing allowed to fail, five-second timeout); the second
+  turns the listing's code column into memory cells. Both are tested headlessly, and `Macro11IT`
+  runs the real assembler when it is installed and skips when it is not.
+- **The assembler's exit code says nothing.** `macro11` reports success for a source full of
+  errors, so errors are found by parsing the listing. An unresolved global symbol — `000000G` in
+  the code column — is not an error to MACRO-11 at all, prints no diagnostic, and leaves a hole
+  where an address should be; it is reported here.
+- **Two bugs in the original's listing parser, not carried across.** An unrecognised value suffix
+  raises, which abandons the parse and throws away every word already read — here it costs one
+  word and is reported. And a byte at an odd address is ORed into the `$ffffffff` sentinel when
+  the word below it is unset, turning a single byte into `177777`.
+- **"New program: compile, load and reset" on the Execution window**, which the Pascal implements
+  by pressing two other windows' buttons. The program is now `AppContext.getAssembler()` — state,
+  like `MachineState` — so it assembles, deposits and resets with no assembler window open.
+- **The error and PC markers are separate.** The Lazarus port can mark only one line, because its
+  replacement for JvEditor's line styles is a single field; an error marks every listing line its
+  source line produced, and the PC marks the line the machine stopped on.
+- Behaviour dropped deliberately, each a workaround for something gone: the editor clearing itself
+  when the window is hidden, the detab-on-load/entab-on-save round trip (the original's own
+  comment: "unnecessary, and broken?"), and the modal dialog on every syntax error.
+
 ### Phase 6 part 5 — the Memory Loader
 
 - **Read a program out of a file and put it into the machine**, in the same four formats the

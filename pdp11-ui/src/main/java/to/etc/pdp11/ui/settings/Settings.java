@@ -42,6 +42,14 @@ public final class Settings {
 	/** The name of the profile to offer first. Null means "the first one", or the default. */
 	private String lastProfileName;
 
+	/**
+	 * The MACRO-11 source the assembler window had open last, or null.
+	 *
+	 * <p>Replaces {@code TheRegistry.Load('SourceFilename')} ({@code FormMacro11SourceU.pas:205}).
+	 * A path that no longer exists is not an error - the window opens empty and says so.</p>
+	 */
+	private String lastSourceFile;
+
 	public int getSchemaVersion() {
 		return schemaVersion;
 	}
@@ -75,6 +83,14 @@ public final class Settings {
 
 	public String getLastProfileName() {
 		return lastProfileName;
+	}
+
+	public String getLastSourceFile() {
+		return lastSourceFile;
+	}
+
+	public void setLastSourceFile(String lastSourceFile) {
+		this.lastSourceFile = lastSourceFile;
 	}
 
 	public void setLastProfileName(String lastProfileName) {
