@@ -17,8 +17,9 @@ rebuilds the UI with layout managers instead of ~69k lines of absolute-positione
 ## Status
 
 Phases 0-5 are done and phase 6 is under way. **It runs, it works against a machine, and it is
-useful**: connect, look at memory, change it, run the CPU, single-step it, watch the disassembly
-follow the program counter, and find out what is wrong with a machine whose memory is failing.
+useful**: connect, look at memory, change it, load a program into it and run it, single-step,
+watch the disassembly follow the program counter, and find out what is wrong with a machine whose
+memory is failing.
 
 What works today:
 
@@ -42,14 +43,18 @@ What works today:
   section to paste into a description of your own machine.
 - **Memory test**: data lines, address lines, data bits chip by chip, and random - the tests that
   say *which part* of a failing memory is broken.
+- **Memory loader and dumper**: read a program out of a file into the machine, or a range of the
+  machine's memory out to a file. Four formats - a binary byte stream, separate low-byte and
+  high-byte files for programming a 16-bit memory built from 8-bit chips, a readable text listing,
+  and DEC Standard Absolute Paper Tape, which is what a real PDP-11's own absolute loader reads.
 - A terminal showing the whole conversation - the console's own automated commands and their
   replies included, which is how a flaky console gets debugged - and a Log window with one
   column per channel.
 - Settings, saved connection profiles and window geometry remembered between runs.
 
-Not yet: the assembler and the remaining tools of phase 6 (memory loader, memory dumper, MMU,
-microcode, number converter, blinkenlight execution, the SimH console and remote log windows),
-the M9301/M9312 boot-ROM console, and the disc-image tooling of phase 7.
+Not yet: the assembler and the remaining tools of phase 6 (MMU, microcode, number converter,
+blinkenlight execution, the SimH console and remote log windows), the M9301/M9312 boot-ROM
+console, and the disc-image tooling of phase 7.
 
 `PLAN.md` has the phase table and, under each phase, what that phase actually found.
 
@@ -92,13 +97,13 @@ about.
 
 | Module | Contains |
 |---|---|
-| `pdp11-core` | Model, transports, console protocols, simulated machines, disassembler, machine descriptions, memory tests. Headless. |
+| `pdp11-core` | Model, transports, console protocols, simulated machines, disassembler, machine descriptions, memory tests, memory file formats. Headless. |
 | `pdp11-ui` | Swing windows, the window manager, settings binding. |
 | `pdp11-app` | `main()`, packaging, and the data resources. |
 
 **Anything that is an algorithm rather than a layout belongs in `pdp11-core`**, even when only
-one window uses it: the disassembly listing, the I/O page scan and the four memory tests all live
-there, and all three are tested against simulated machines with no display in sight.
+one window uses it: the disassembly listing, the I/O page scan, the four memory tests and the
+memory file formats all live there, and every one of them is tested with no display in sight.
 `pdp11-core` must not depend on Swing or AWT — that is what keeps the console protocol layer
 testable against the ported fake PDP-11s with no display. The rule is enforced twice: the
 module compiles with `--limit-modules java.base`, so an offending import is a compile error,
@@ -124,6 +129,10 @@ The simulated machines can be **broken on purpose** — `FakePdp11.setStuckDataL
 `setDeadAddressLine` — which is how the memory tests are checked: tie a data line high and the
 test that looks for a stuck data line has to say so. A diagnostic nobody has shown a real fault
 to is a guess.
+
+Anything with a reader and a writer is tested by **round trip**, in one test that does both. That
+is how two bugs in the original's split-byte format were found: its writer produces an all-zero
+high byte file and its reader takes half the words, and each of those hides the other.
 
 ## External tools
 

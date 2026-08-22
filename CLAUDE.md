@@ -66,7 +66,8 @@ silently diverging.
   show back with `AppContext.onUi`. Long operations take a `ProgressDialog`, which is the UI's
   implementation of the core's `ProgressMonitor`.
 - **No window tells another window anything.** Shared machine state - is it running, where is the
-  PC - lives on `MachineState`, and which cell the user is looking at lives on `CellSelection`.
+  PC, where does a just-loaded program start - lives on `MachineState`, and which cell the user is
+  looking at lives on `CellSelection`.
   Windows watch them. This is what replaces the Pascal's `TFormExecute.SetAndShowPc` naming five
   other forms one by one, and every grid calling `FormMain.SyncBitfieldForm`; a window that is not
   open hears nothing and needs to hear nothing, and adding a window changes no existing one. See
@@ -131,6 +132,11 @@ silently diverging.
   with `TransportKind.SIMULATED` drives the whole application against one.
 - **A test that needs an external program skips rather than fails** when it is missing — see
   `SimhConsoleIT`. CI has no SimH, no `macro11` and no Free Pascal, and is not getting them.
+- **Anything with a reader and a writer is tested by round trip**, in one test that does both.
+  Two bugs in the original's split-byte format survived for years because each hides the other:
+  the writer produces an all-zero high byte file, the reader takes half the words, and reading
+  back what it wrote looks like a corrupt file rather than like two mistakes. A test that only
+  writes, or only reads, cannot see either.
 - **A diagnostic must be shown the fault it exists to find.** The fakes can be broken on purpose
   - `FakePdp11.setStuckDataLines`, `setDeadAddressLine` - so the memory tests are checked against
   a stuck data line and a dead address line rather than against working memory. The original's
@@ -155,6 +161,24 @@ The PDP-11/70 front panel (`FormPdp1170PanelU` and all of `pdp1170panel/`) is de
 ported; its IO-Warrior USB binding is already inert on Linux. Note that
 `FormExecuteBlinkenlightU`/`BlinkenlightInstructionsU` are *not* the panel — they generate
 instructions for keying memory in on a real front panel — and are in scope.
+
+## What a memory cell's two values mean
+
+Every window that shows memory shows `MemoryCell`, which carries a **machine value** (what the
+PDP-11 last said) and an **edit value** (what should be there instead). The difference is the
+window's whole vocabulary and is worth stating once:
+
+- an **examine** sets both, so nothing shows as changed;
+- **typing**, and **loading a file**, set only the edit value, so every affected word shows as
+  changed until it has been deposited - which is what makes the Deposit button mean something;
+- a **verify** sets only the machine value, so the file's values stay put and the disagreements
+  colour themselves. This only works because those groups have `pdpOverwritesEdit` off; with it
+  on, the read would silently replace what the user is about to write.
+
+A cell whose value was never read is `CellValue.UNKNOWN`, and that is not zero. When a positional
+file format has to write something for one, write zero and **report how many** - the Pascal writes
+its `$ffffffff` sentinel truncated to `0177777`, which is a real value, quietly, in the middle of
+something about to be burned into a ROM.
 
 ## Machine descriptions
 
