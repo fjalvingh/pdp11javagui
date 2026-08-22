@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Phase 6 part 4 — the Memory Dumper
+
+- **Read a range off a machine and write it to a file**, in four formats: a binary byte stream,
+  separate low-byte and high-byte files (for programming a 16-bit memory built from 8-bit chips),
+  a readable text listing, and DEC Standard Absolute Paper Tape — the thing a real PDP-11's
+  absolute loader reads, blocks and checksums and all. `MemoryDumper` and `MemoryFileFormat` are
+  in `pdp11-core` and are shared with the Memory Loader when it arrives.
+- **A bug in the original, not carried across.** The split-byte format writes `byte_h := w shl 8`
+  where every other line in the unit shifts right, so the high byte file it produces is all
+  zeros. Its own `Load` gets it right. Nobody notices until a ROM does not work.
+- **A word that was never read is counted, not silently invented.** The Pascal writes its
+  `$ffffffff` sentinel truncated to `0177777` — a real value, quietly, in the middle of a dump.
+  Here the positional formats write zero and report how many, and the window says so; the text and
+  paper tape formats leave them out, which they can because both carry their addresses.
+- The file name rows are built from the format's own list of what it needs, rather than five
+  loader objects sharing one set of widgets that get shown and hidden. Writing needs cells, not a
+  connection: a dump read earlier can still be written after the machine has gone.
+
 ### Phase 6 part 3 — the Memory Test
 
 - **Four memory diagnostics**, ported from `FormMemoryTestU` into `MemoryTester` in `pdp11-core`:

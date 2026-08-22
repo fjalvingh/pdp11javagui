@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner and the Memory Test. 448 tests. Still to do: the Assembler, Memory Loader, Memory Dumper, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the Memory Test and the Memory Dumper. 468 tests. Still to do: the Assembler, Memory Loader, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1175,6 +1175,34 @@ a chip size, four buttons and a log.
 - **Invalidating the range on a keystroke became a document listener**, which catches a pasted
   range too — with the usual guard so the panel writing its own corrected values back into the
   fields does not read as the user editing them.
+
+**Outcome so far, part 4 — the Memory Dumper.** Read a range off a machine and write it to a
+file, in any of four formats. The formats are `MemoryDumper` and `MemoryFileFormat` in
+`pdp11-core`, shared with the Memory Loader when that arrives — it is the same five classes in
+`MemoryLoaderU.pas`, one `Load` and one `Save` apiece.
+
+- **A bug in the original not carried across.** `TMemoryLoader_LowByteFileHighByteFile.Save`
+  writes `byte_h := w shl 8` (`:364`) where every other line in the unit shifts right. Assigning
+  a left-shifted word to a byte keeps the low eight bits, which after that shift are always zero,
+  so the high byte file it produces is entirely zeros. Its own `Load` gets it right, which is what
+  makes it a typo rather than a convention — and it is the sort of thing nobody notices until a
+  ROM does not work.
+- **An unknown word is not zero, and it is not `0177777` either.** A dump is made of cells read
+  back from a machine, and one that was never read has no value. The positional formats have to
+  put *something* there; this writes zero and returns how many, so the window can say so. The
+  Pascal writes its `$ffffffff` sentinel truncated to sixteen bits, which is a real value, quietly,
+  in the middle of something about to be burned into a ROM. Text and paper tape leave unknown
+  words out entirely, which they can because both carry their addresses.
+- **The file controls are built from the format, not shown and hidden.** The original creates one
+  loader object per format and hands all five of them *the same three widgets*, then toggles
+  visibility (`FormMemoryDumperU.pas:167-233`). Here a format says how many files it needs and
+  what to call them, so adding one is an enum entry.
+- **Writing does not need the machine.** A dump read earlier is still a dump, and reading 4 KB off
+  a real PDP-11 over a serial line is not something to repeat because a cable came out.
+- **Not ported yet: the blinkenlight instructions format**, which is marked "only .Save" in the
+  original and generates a page of "set these switches, press LOAD ADDR" from a memory image. It
+  needs `BlinkenlightInstructionsU`, which is its own window in this phase; it will join the enum
+  with the generator rather than sit in the list as an entry that does not work.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

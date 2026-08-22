@@ -10,6 +10,7 @@ import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
+import to.etc.pdp11.ui.dump.MemoryDumperWindow;
 import to.etc.pdp11.ui.memtest.MemoryTestWindow;
 import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.log.UiLogger;
@@ -74,6 +75,7 @@ public final class Pdp11Gui {
 		BitfieldsWindow.register(context);
 		IoPageScannerWindow.register(context);
 		MemoryTestWindow.register(context);
+		MemoryDumperWindow.register(context);
 	}
 
 	/**
