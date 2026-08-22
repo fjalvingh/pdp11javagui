@@ -15,6 +15,10 @@ windows, replaces the single-threaded `Application.ProcessMessages` I/O model wi
 threads, and rebuilds the UI with layout managers instead of ~69k lines of absolute-positioned
 `.dfm`.
 
+Three modules: `pdp11-core` (model, transports, console protocols, the simulated machines —
+headless, and enforced so), `pdp11-ui` (windows, window manager, settings), `pdp11-app`
+(`main()`, wiring, resources). The dependency runs core ← ui ← app and never the other way.
+
 ## Read the plan first
 
 **`PLAN.md` in this directory is the authoritative design and phasing document.** Read it
@@ -47,12 +51,32 @@ silently diverging.
   future from the EDT.** All console work is submitted to the single-threaded command
   executor, whose results are marshalled back to the EDT with `SwingUtilities.invokeLater`. A
   single blocking call on the EDT deadlocks the app. See PLAN.md §1.
+  `ConsoleConnection.call()` is how the work gets onto the command thread, and it throws rather
+  than deadlocking if it is called from that thread itself. `ConnectionManager.connect()` blocks
+  too, for as long as launching SimH takes — the main window runs it on a worker.
+- **A window is handed what it needs; it never reaches for it.** Everything shared lives on
+  `AppContext`, which is constructed once in `Pdp11Gui.main` and passed down. There is no static
+  instance and there must not be one. This is what makes lazy window creation work at all — see
+  PLAN.md §5 on the ~120 `FormMain.X` reads in the Pascal that have no target here.
+- **UI logic goes in a `JPanel`, not in the `JFrame`.** A panel can be sized, laid out and
+  painted into an image with no display; a frame cannot. So a window is a thin frame around a
+  panel (`MainPanel`, `LogPanel`), and the layout is checked headlessly by `UiRenderer` and
+  rendered to `target/ui-render/*.png` on every build. Anything put directly on a frame is
+  untestable on CI and unlookable-at without borrowing somebody's screen.
+- **All Swing work on the event thread, including in tests.** Laying out a component tree takes
+  the AWT tree lock and then a text component's document lock; appending to a terminal takes
+  them in the opposite order. Doing those on two threads deadlocks reliably, and it presents as
+  a hang rather than as an error. `UiRenderer` marshals for this reason.
 - **The protocol layer is byte-oriented, not text.** Keep `byte[]` / ISO-8859-1 below the
   terminal; never let a default-charset conversion near it.
 - **Octal throughout.** All PDP-11 addresses and values are octal in user-facing I/O, per
   PDP-11 convention.
 - **Use `java.nio.file.Path` for all path handling.** The Pascal has hardcoded `\` separators
   and a drive-letter-aware `CorrectPath`; none of that is ported.
+- **Nothing in settings may stop the application starting.** A settings file can be missing,
+  empty, truncated, hand-edited into nonsense or written by a newer version. Every one of those
+  carries on with defaults and says so; a program that will not start because it cannot remember
+  where its windows were is worse than one that forgets.
 
 ## Porting conventions
 
@@ -73,6 +97,20 @@ silently diverging.
   build by unit-name collision. `common/JH_Utilities.pas` is a 2,659-line junk drawer —
   cherry-pick only the functions with real callers.
 
+## Testing conventions
+
+- **Everything must run headless**, including the layout tests. A test that needs a display is a
+  test CI cannot run.
+- **Test against the fakes, not against mocks.** `core.fake` has a simulated machine for every
+  console protocol; they exercise the real protocol code end to end, and a `ConnectionProfile`
+  with `TransportKind.SIMULATED` drives the whole application against one.
+- **A test that needs an external program skips rather than fails** when it is missing — see
+  `SimhConsoleIT`. CI has no SimH, no `macro11` and no Free Pascal, and is not getting them.
+- **Where a fake is extended beyond what the Pascal's does, say so in the source and say what
+  the evidence was.** The 11/44 fakes answer `H`, `N` and `C` because the shipped driver sends
+  them; the reply format came from the Pascal's parser and so from real hardware, but the
+  acceptance is inferred. That distinction matters when reading the test later.
+
 ## Changelog
 
 New functionality must be recorded in `CHANGES.md` in this directory. Add a short entry
@@ -88,8 +126,10 @@ instructions for keying memory in on a real front panel — and are in scope.
 ## External tools
 
 `macro11` (MACRO-11 assembler) and SimH's `pdp11` are invoked as external processes and must
-be on `PATH`; both are present at `/home/jal/bin/`. The app should detect their absence at
-startup and say so clearly rather than failing at first use. `m4` is *not* a runtime
+be on `PATH` **to be used**; both are present at `/home/jal/bin/`. Neither is needed to build,
+to run the tests, or to drive a simulated machine — `TransportKind.SIMULATED` needs nothing at
+all, which is why the tests and the first-run experience both lean on it. The app should detect
+their absence when something asks for them and say so clearly rather than failing obscurely. `m4` is *not* a runtime
 dependency of the Java version — machine-description preprocessing is reimplemented in Java
 (see PLAN.md §7, which also records that this feature is currently broken on Linux in the
 Pascal build).

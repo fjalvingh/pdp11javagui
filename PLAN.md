@@ -34,9 +34,9 @@ reference implementation throughout the port.
 | 0 — Scaffolding | **Done** | 3 Maven modules, wrapper on 3.9.11, FlatLaf shell, CI on all three platforms. Machine `.ini` files recovered from the MSI; the m4 subset they use is measured and tiny. |
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
-| 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 80 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
-| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
-| 5 — First usable app | **Partly done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window and Log window. It starts, connects to any of the seven protocols against a simulated machine, and shows the conversation. 331 tests. **Still to do: the Settings dialog, Memory view, Execution Control and Disassembler.** |
+| 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
+| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
+| 5 — First usable app | **Partly done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window and Log window. It starts, connects to any of the seven protocols against a simulated machine, and shows the conversation. 341 tests. **Still to do: the Settings dialog, Memory view, Execution Control and Disassembler.** |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
@@ -691,7 +691,7 @@ to hand-written byte sequences in tests. *Medium–large.*
 **Outcome.** All four transports are in and tested, and every fake is ported: ODT in both
 dialects, the 11/44 and its V3.40C firmware, the M9312 and the M9301 - plus `FakeSimh`, which
 has no Pascal counterpart and exists because the Pascal tests its SimH console against SimH,
-which CI cannot do. 80 tests over the four ported fakes, all headless; `FakeSimh` is driven by
+which CI cannot do. 82 tests over the four ported fakes, all headless; `FakeSimh` is driven by
 the SimH console's own tests rather than having a set of its own.
 
 - **The K1630 fake needed no port at all.** `FakePDP11ODTK1630U` is four lines: an 18-bit ODT
