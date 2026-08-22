@@ -17,7 +17,7 @@ import java.util.List;
  */
 public enum MemoryFileFormat {
 	/** Words as little-endian byte pairs, nothing else. The format a ROM burner wants. */
-	BYTE_STREAM("Binary byte stream", false, false, List.of("Byte stream file")),
+	BYTE_STREAM("Binary byte stream", false, false, false, List.of("Byte stream file")),
 
 	/**
 	 * Two files: every word's low byte in one and its high byte in the other.
@@ -25,11 +25,11 @@ public enum MemoryFileFormat {
 	 * <p>Which is how a 16-bit memory built out of 8-bit chips is programmed - one file per
 	 * device.</p>
 	 */
-	LOW_HIGH_BYTE_FILES("Separate low byte / high byte binary files", false, false,
+	LOW_HIGH_BYTE_FILES("Separate low byte / high byte binary files", false, false, false,
 		List.of("Low byte file", "High byte file")),
 
 	/** {@code "addr: value value value ..."}, eight values a line. Readable, and diffable. */
-	TEXT_ONE_ADDR_PER_LINE("Text file, one octal address and its values per line", true, false,
+	TEXT_ONE_ADDR_PER_LINE("Text file, one octal address and its values per line", true, false, true,
 		List.of("Text file")),
 
 	/**
@@ -39,7 +39,7 @@ public enum MemoryFileFormat {
 	 * block whose address is where to start executing - which is why this format has an entry
 	 * address and the others do not.</p>
 	 */
-	ABSOLUTE_PAPERTAPE("DEC standard absolute paper tape", false, true, List.of("Image file"));
+	ABSOLUTE_PAPERTAPE("DEC standard absolute paper tape", false, true, true, List.of("Image file"));
 
 	private final String m_label;
 
@@ -47,12 +47,16 @@ public enum MemoryFileFormat {
 
 	private final boolean m_entryAddress;
 
+	private final boolean m_ownAddresses;
+
 	private final List<String> m_filePrompts;
 
-	MemoryFileFormat(String label, boolean text, boolean entryAddress, List<String> filePrompts) {
+	MemoryFileFormat(String label, boolean text, boolean entryAddress, boolean ownAddresses,
+		List<String> filePrompts) {
 		m_label = label;
 		m_text = text;
 		m_entryAddress = entryAddress;
+		m_ownAddresses = ownAddresses;
 		m_filePrompts = filePrompts;
 	}
 
@@ -68,6 +72,18 @@ public enum MemoryFileFormat {
 	/** Whether the format records where to start executing. */
 	public boolean hasEntryAddress() {
 		return m_entryAddress;
+	}
+
+	/**
+	 * Whether the file says where its data goes.
+	 *
+	 * <p>{@code StartAddrDefined} ({@code MemoryLoaderU.pas:68}). A byte stream is just bytes and
+	 * has to be told where to load; a text listing and a paper tape carry their own addresses, so
+	 * a start address entered beside them would be ignored - and a field that is ignored should
+	 * not be offered.</p>
+	 */
+	public boolean definesOwnAddresses() {
+		return m_ownAddresses;
 	}
 
 	/** One prompt per file this format needs; most need one, the byte-split format needs two. */

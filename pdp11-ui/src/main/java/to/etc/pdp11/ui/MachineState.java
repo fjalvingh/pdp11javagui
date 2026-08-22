@@ -49,6 +49,18 @@ public final class MachineState {
 	/** Where the machine stopped, as a virtual address, or null if nothing has said. */
 	private volatile Address m_pc;
 
+	/**
+	 * Where a program that has just been loaded starts, or null.
+	 *
+	 * <p>This is the other half of {@code TFormMemoryLoader.UpdateExecuteAddress}
+	 * ({@code FormMemoryLoaderU.pas:275-282}), which reaches into the execution window and writes
+	 * its Start PC field - {@code FormMain.FormExecute.StartPCEdit.Text := ...} - and then calls
+	 * that field's own change handler by hand. A paper tape image says where to start executing,
+	 * and the window that knows how to start things is a different window; so the loader says it
+	 * here, and the execution window shows it.</p>
+	 */
+	private volatile Address m_startPc;
+
 	public ExecutionState getState() {
 		return m_state;
 	}
@@ -99,6 +111,22 @@ public final class MachineState {
 	/** The user typed a PC and deposited it. */
 	public void setPc(Address pc) {
 		set(m_state, pc);
+	}
+
+	/** Where a newly loaded program starts, or null if nothing has said. */
+	public Address getStartPc() {
+		return m_startPc;
+	}
+
+	/**
+	 * Say where a program starts - because a file said so.
+	 *
+	 * <p>Not cleared when the machine goes away: which program you loaded is a fact about your
+	 * session, not about the connection.</p>
+	 */
+	public void setStartPc(Address startPc) {
+		m_startPc = startPc;
+		fire();
 	}
 
 	private void set(ExecutionState state, Address pc) {

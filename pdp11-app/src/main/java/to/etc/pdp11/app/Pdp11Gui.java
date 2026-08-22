@@ -11,6 +11,7 @@ import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.dump.MemoryDumperWindow;
+import to.etc.pdp11.ui.load.MemoryLoaderWindow;
 import to.etc.pdp11.ui.memtest.MemoryTestWindow;
 import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.log.UiLogger;
@@ -76,6 +77,7 @@ public final class Pdp11Gui {
 		IoPageScannerWindow.register(context);
 		MemoryTestWindow.register(context);
 		MemoryDumperWindow.register(context);
+		MemoryLoaderWindow.register(context);
 	}
 
 	/**

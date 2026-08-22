@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the Memory Test and the Memory Dumper. 468 tests. Still to do: the Assembler, Memory Loader, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, and the memory Test, Dumper and Loader. 490 tests. Still to do: the Assembler, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1203,6 +1203,34 @@ file, in any of four formats. The formats are `MemoryDumper` and `MemoryFileForm
   original and generates a page of "set these switches, press LOAD ADDR" from a memory image. It
   needs `BlinkenlightInstructionsU`, which is its own window in this phase; it will join the enum
   with the generator rather than sit in the list as an entry that does not work.
+
+**Outcome so far, part 5 — the Memory Loader.** The other half of the file formats, and the end
+of the loader/dumper/test group. `MemoryFileLoader` reads a file into a group of cells; the window
+deposits them, or verifies them against what the machine already holds.
+
+- **The round trip is what found the bugs.** Writing a format and reading it back is one test,
+  and the Pascal's split-byte class fails it in both directions at once — which is exactly why
+  neither half was ever noticed. Its `Save` writes `w shl 8` into a byte and produces an all-zero
+  high byte file; its `Load` then takes `stream_l.Size div 2` words out of a file holding one byte
+  per word, and reads half of them. Each bug hides the other: load what that save wrote and you
+  get half a program of low bytes, which looks like a corrupt file rather than like two bugs.
+- **A loaded word is an edit, not something the machine said.** The file says what memory *should*
+  contain; the machine has not been told. So the value goes in as the edit value and the machine
+  value stays unknown, which is what makes every word show as changed and the Deposit button
+  worth pressing. It is also why the group has `pdpOverwritesEdit` off: a verify fills in what the
+  machine holds *beside* the file's values rather than replacing them, and the disagreements
+  colour themselves.
+- **`MachineState.setStartPc` replaces the last reach-in in this group.**
+  `TFormMemoryLoader.UpdateExecuteAddress` writes `FormMain.FormExecute.StartPCEdit.Text` and then
+  calls that field's own change handler by hand (`FormMemoryLoaderU.pas:275-282`). A paper tape
+  image knows where the program starts and the window that starts things is a different window;
+  the loader says so, the execution window shows it, and neither knows the other exists.
+- **A field that would be ignored is not offered.** Two formats carry their own addresses and two
+  do not (`StartAddrDefined`), so the "Load at" field appears only for the two that need it.
+- **The paper tape reader keeps the original's byte buffer**, and it has to: a block can start at
+  an odd address and two blocks can meet inside one word, so the bytes are collected with a
+  validity flag each and only then assembled into words. A bad checksum refuses the whole load,
+  because a damaged image would deposit wrong values into a machine and nothing can say which.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

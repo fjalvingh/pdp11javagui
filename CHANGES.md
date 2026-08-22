@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Phase 6 part 5 — the Memory Loader
+
+- **Read a program out of a file and put it into the machine**, in the same four formats the
+  dumper writes. Loading fills the grid and touches nothing else; depositing is a separate button
+  and a separate decision, and Verify reads the machine back *beside* what was loaded so the
+  disagreements colour themselves.
+- **A second bug in the Pascal's split-byte class, and the round trip is what found it.** Its
+  `Load` takes `stream_l.Size div 2` words from a file holding one byte per word, so it reads half
+  of them — and its `Save`, fixed in the previous commit, wrote an all-zero high byte file. Each
+  bug hides the other: load what that save wrote and you get half a program of low bytes, which
+  looks like a corrupt file rather than like two bugs.
+- A loaded word is an **edit value** with the machine value unknown, which is what makes every
+  word show as changed until it has been deposited.
+- `MachineState.setStartPc` replaces the last reach-in in this group: a paper tape image knows
+  where its program starts, and the execution window shows it without either window knowing the
+  other exists.
+- The "Load at" field appears only for the two formats that do not carry their own addresses.
+
 ### Phase 6 part 4 — the Memory Dumper
 
 - **Read a range off a machine and write it to a file**, in four formats: a binary byte stream,

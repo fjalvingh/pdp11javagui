@@ -139,6 +139,11 @@ public final class ExecutionPanel extends JPanel {
 		Address pc = m_context.getMachineState().getPc();
 		if(pc != null && !m_currentPc.isFocusOwner())
 			m_currentPc.setText(pc.toOctal());
+		//-- A loaded program says where it starts, and this is the window that starts things.
+		//-- Not while the field has focus: the user is mid-way through typing something else.
+		Address startPc = m_context.getMachineState().getStartPc();
+		if(startPc != null && !m_startPc.isFocusOwner())
+			m_startPc.setText(startPc.toOctal());
 
 		//-- Only what the console can do, and then only what makes sense where the machine is.
 		m_reset.setEnabled(connected && !running && features.contains(ConsoleFeature.ACTION_RESET_MACHINE));

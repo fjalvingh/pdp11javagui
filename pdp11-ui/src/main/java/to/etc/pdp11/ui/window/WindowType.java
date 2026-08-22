@@ -18,6 +18,7 @@ public enum WindowType {
 	BITFIELDS("Bitfields"),
 	MEMORY_TEST("Memory test"),
 	MEMORY_DUMPER("Memory dumper"),
+	MEMORY_LOADER("Memory loader"),
 	IO_PAGE_SCANNER("I/O page scanner"),
 	REGISTER_GROUP("Registers", true),
 	SIMH_CONSOLE("SimH console"),

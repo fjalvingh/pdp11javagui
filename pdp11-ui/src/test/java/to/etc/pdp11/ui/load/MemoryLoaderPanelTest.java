@@ -1,0 +1,250 @@
+package to.etc.pdp11.ui.load;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.mem.CellValue;
+import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.core.memfile.MemoryDumper;
+import to.etc.pdp11.core.memfile.MemoryFileFormat;
+import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.Edt;
+import to.etc.pdp11.ui.TestContext;
+import to.etc.pdp11.ui.UiRenderer;
+import to.etc.pdp11.ui.exec.ExecutionPanel;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.function.BooleanSupplier;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The Memory Loader window: read a program out of a file and put it into a machine.
+ *
+ * <p>The file formats are checked in {@code MemoryFileLoaderTest}, round-tripped through the
+ * dumper. What matters here is the window: that loading fills the grid without touching the
+ * machine, that depositing then writes what was loaded, and that a format carrying an entry
+ * address tells the execution window - which is a different window and does not know this one
+ * exists.</p>
+ */
+class MemoryLoaderPanelTest {
+	private static final long TIMEOUT_MS = 30_000;
+
+	@BeforeAll
+	static void lookAndFeel() {
+		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
+	}
+
+	/** A text listing, which is the format that is easiest to write by hand. */
+	private static Path textFile(Path dir, String content) throws Exception {
+		Path f = dir.resolve("program.txt");
+		Files.writeString(f, content, StandardCharsets.US_ASCII);
+		return f;
+	}
+
+	@Test
+	void theStartAddressIsOnlyOfferedForAFormatThatNeedsIt(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		UiRenderer.layOut(panel, 980, 520);
+
+		//-- A byte stream is just bytes; it has to be told where to go.
+		Edt.run(() -> panel.getFormatCombo().setSelectedItem(MemoryFileFormat.BYTE_STREAM));
+		assertTrue(panel.getStartField().isVisible());
+		assertFalse(panel.getEntryField().isVisible());
+
+		//-- A paper tape image says where every word goes, so a start address would be ignored -
+		//-- and a field that is ignored should not be offered.
+		Edt.run(() -> panel.getFormatCombo().setSelectedItem(MemoryFileFormat.ABSOLUTE_PAPERTAPE));
+		assertFalse(panel.getStartField().isVisible());
+		assertTrue(panel.getEntryField().isVisible());
+	}
+
+	@Test
+	void loadingFillsTheGridAndTouchesNothingElse(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Path file = textFile(dir, "001000: 012701 000200 000000\n");
+
+		Edt.run(() -> {
+			panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE);
+			panel.getFileField(0).setText(file.toString());
+			panel.getLoadButton().doClick();
+		});
+
+		assertEquals(3, panel.getGroup().size());
+		assertEquals(012701, panel.getGroup().cell(0).getEditValue().word());
+		//-- Every word shows as changed, because the machine has not been told any of this.
+		assertTrue(panel.getGroup().cell(0).isEdited());
+		assertFalse(panel.getGroup().cell(0).getPdpValue().isKnown());
+		assertTrue(panel.getStatusText().contains("Nothing has been written to the machine yet"),
+			panel.getStatusText());
+	}
+
+	@Test
+	void depositingWritesWhatWasLoadedIntoTheMachine(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			Path file = textFile(dir, "001000: 012701 000200\n");
+			Edt.run(() -> {
+				panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE);
+				panel.getFileField(0).setText(file.toString());
+				panel.getLoadButton().doClick();
+			});
+			assertTrue(panel.getDepositAllButton().isEnabled());
+			Edt.run(() -> panel.getDepositAllButton().doClick());
+			until("the deposit to finish", () -> !panel.getGroup().cell(0).isEdited());
+
+			//-- And the machine really has it.
+			var m = ctx.getConnectionManager();
+			var value = m.getConnection().call(() -> m.getConsole().examine(
+				Address.of(m.getConsole().physicalAddressType(), 01000)));
+			assertEquals(012701, value.word());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * The Pascal writes the execution window's Start PC field directly and then calls that
+	 * field's own change handler by hand. Here the loader says where the program starts and the
+	 * execution window shows it, without either knowing about the other.
+	 */
+	@Test
+	void aPaperTapeEntryAddressReachesTheExecutionWindow(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel loader = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		ExecutionPanel execution = Edt.call(() -> new ExecutionPanel(ctx));
+		Edt.run(execution::attach);
+
+		//-- A paper tape image with an entry address, written by the dumper.
+		MemoryCellGroup source = new MemoryCellGroups().addGroup(MemoryAddressType.PHYSICAL16, "src");
+		source.add(01000, 2);
+		source.cell(0).setEditValue(CellValue.of(012701));
+		source.cell(1).setEditValue(CellValue.of(0200));
+		Path tape = dir.resolve("program.ptap");
+		MemoryDumper.save(MemoryFileFormat.ABSOLUTE_PAPERTAPE, source, List.of(tape),
+			Address.of(MemoryAddressType.PHYSICAL16, 01000));
+
+		Edt.run(() -> {
+			loader.getFormatCombo().setSelectedItem(MemoryFileFormat.ABSOLUTE_PAPERTAPE);
+			loader.getFileField(0).setText(tape.toString());
+			loader.getLoadButton().doClick();
+		});
+
+		assertEquals("001000", loader.getEntryField().getText());
+		assertEquals("001000", execution.getStartPcField().getText(),
+			"the execution window is told, and does not know the loader exists");
+		assertEquals(01000, ctx.getMachineState().getStartPc().val());
+	}
+
+	@Test
+	void verifyingComparesTheMachineWithTheFileRatherThanReplacingIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			Path file = textFile(dir, "001000: 012701 000200\n");
+			Edt.run(() -> {
+				panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE);
+				panel.getFileField(0).setText(file.toString());
+				panel.getLoadButton().doClick();
+			});
+
+			//-- Nothing deposited yet, so the machine holds zeros and everything disagrees.
+			Edt.run(() -> panel.getVerifyButton().doClick());
+			until("the verify to finish", () -> panel.getStatusText().contains("differ from the file")
+				|| panel.getStatusText().contains("exactly what was loaded"));
+			assertTrue(panel.getStatusText().contains("differ from the file"), panel.getStatusText());
+			//-- The file's values are still there: the read filled in what the machine has, it did
+			//-- not replace what was loaded.
+			assertEquals(012701, panel.getGroup().cell(0).getEditValue().word());
+
+			//-- Deposit, verify again, and now they agree.
+			Edt.run(() -> panel.getDepositAllButton().doClick());
+			until("the deposit", () -> !panel.getGroup().cell(0).isEdited());
+			Edt.run(() -> panel.getVerifyButton().doClick());
+			until("the second verify",
+				() -> panel.getStatusText().contains("exactly what was loaded"));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	@Test
+	void loadingWithNoFileNameIsRefused(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		StringBuilder failures = new StringBuilder();
+		ctx.setFailureHandler((message, cause) -> failures.append(message));
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Edt.run(() -> panel.getLoadButton().doClick());
+		assertTrue(failures.toString().contains("Choose a"), failures.toString());
+	}
+
+	@Test
+	void aFileThatCannotBeReadIsReportedAndChangesNothing(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		StringBuilder failures = new StringBuilder();
+		ctx.setFailureHandler((message, cause) -> failures.append(message));
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Edt.run(() -> {
+			panel.getFileField(0).setText(dir.resolve("nope.bin").toString());
+			panel.getLoadButton().doClick();
+		});
+		assertTrue(failures.toString().contains("Could not read"), failures.toString());
+		assertTrue(panel.getGroup().isEmpty());
+	}
+
+	@Test
+	void renderToAFileForLookingAt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		StringBuilder text = new StringBuilder();
+		int v = 012701;
+		for(int line = 0; line < 8; line++) {
+			text.append(String.format("%06o:", 01000 + line * 020));
+			for(int i = 0; i < 8; i++) {
+				text.append(String.format(" %06o", v));
+				v = (v + 0311) & 0xFFFF;
+			}
+			text.append('\n');
+		}
+		Path file = textFile(dir, text.toString());
+		Edt.run(() -> {
+			panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE);
+			panel.getFileField(0).setText(file.toString());
+			panel.getLoadButton().doClick();
+		});
+		Path png = UiRenderer.renderToFile(panel, 980, 460, Path.of("target", "ui-render", "memory-loader.png"));
+		assertTrue(Files.size(png) > 0);
+	}
+}
