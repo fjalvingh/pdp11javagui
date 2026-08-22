@@ -151,6 +151,18 @@ public final class Pdp1144Console extends AbstractConsole {
 			ConsoleFeature.ACTION_SINGLE_STEP);
 	}
 
+	/**
+	 * Ported from {@code getTerminalSettings} ({@code ConsolePDP1144U.pas:158-165}).
+	 *
+	 * <p>The opposite of ODT, and the reason a profile exists at all: this console ends a line
+	 * with a <b>lone CR</b> and its LFs are to be ignored. Handing that stream to a conforming
+	 * VT100 emulator would overwrite every line with the next one.</p>
+	 */
+	@Override
+	public TerminalProfile terminalProfile() {
+		return TerminalProfile.of(true, false);
+	}
+
 	@Override
 	protected ConsoleScanner<?> getScanner() {
 		return m_scanner;

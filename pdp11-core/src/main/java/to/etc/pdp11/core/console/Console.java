@@ -120,6 +120,14 @@ public interface Console {
 		return null;
 	}
 
+	/**
+	 * What a terminal needs to know to display this console's output sensibly.
+	 *
+	 * <p>Ported from {@code getTerminalSettings}. The consoles genuinely disagree about line
+	 * endings, so this is not a formality - see {@link TerminalProfile}.</p>
+	 */
+	TerminalProfile terminalProfile();
+
 	/** Told when the machine stops, on the command thread. At most one. */
 	void setExecutionStopListener(ExecutionStopListener listener);
 }

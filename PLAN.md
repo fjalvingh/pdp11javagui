@@ -35,8 +35,8 @@ reference implementation throughout the port.
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 80 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
-| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. 282 tests. **Still to do: the M9301/M9312 boot-ROM console.** |
-| 5 — First usable app | | |
+| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
+| 5 — First usable app | **Partly done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window and Log window. It starts, connects to any of the seven protocols against a simulated machine, and shows the conversation. 331 tests. **Still to do: the Settings dialog, Memory view, Execution Control and Disassembler.** |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
@@ -960,6 +960,52 @@ sibling reach-ins (`FormDiscImageU.pas:389, 1038, 1043`; `FormMemoryLoaderU.pas:
 `ConnectionManager`, `MemoryCellGroups`, `MachineDescription`, `WindowManager`,
 `SettingsStore`, `Logger`, `dataDir()` and the shared failure handler. Retrofitting it in a
 later phase means reworking every window built before it.
+
+**Outcome so far — the shell that connects.** It runs: `java -jar pdp11gui.jar` gives a window
+with a terminal, a connection status bar and a Windows menu, and connecting to a simulated
+machine of any of the seven protocols works from a menu item with nothing installed. What is not
+there yet is the Settings dialog and the three windows that make it *useful* - Memory view,
+Execution Control, Disassembler.
+
+- **`AppContext` was built first, and it was the right call.** Nothing reaches for a service; a
+  window is handed what it needs and there is no static instance to reach for. That is cheap now
+  and would have been a rewrite of every window later, which is exactly what this section
+  predicted.
+- **Decomposing the connection removed the cross product twice, not once.** §3 says to replace
+  `FormSettingsU`'s 24 flat combo entries with {protocol} × {transport}. It also removes the
+  *second* doubling nobody had counted: `TConsoleType` lists every console twice, once real and
+  once `consoleSelftest*` ({@code ConsoleGenericU.pas:55-74}). Making the simulated machine a
+  **transport** collapses that too - seven protocols and four transports, and the fakes cost one
+  entry instead of seven. It also means the whole application can be driven with no hardware, no
+  SimH and no serial port, which is what `ConnectionManagerTest` does for every protocol.
+- **The terminal pre-filter earned its place immediately, and diverges from the Pascal.**
+  `TerminalProfile` is applied in front of the view, as §3 requires, because ODT means its LF and
+  the 11/44 means a lone CR. The divergence: the Pascal treats CR and LF independently, and SimH
+  sets *both* flags and sends them together - so its transcript double-spaces
+  ({@code FormTerminalU.pas:248-253, 278-279}). A CR LF pair is one line ending here. The
+  terminal redesign is an agreed decision and every terminal ever built collapses the pair.
+- **Multi-monitor clamping does not exist in the Pascal and now does.** A window restored onto a
+  monitor that is no longer there is a window the user cannot reach or close. The rule is a pure
+  function over a list of screen rectangles, so all of it is testable on a build machine with one
+  screen and no display.
+- **The phase-3 warning is discharged.** "Something must read SimH's console channel" - something
+  does: `ConnectionManager` drains it and keeps the last 256 KB, so the SimH Console window in
+  phase 6 will find a transcript waiting rather than a bug to fix.
+- **Gson, not Jackson**, for settings: one jar with no transitive dependencies, records supported,
+  and nothing here needs the configurability of the larger binder. Writes go through a temporary
+  file and an atomic move, a file from a newer schema is left alone rather than silently
+  truncated, and nothing about a bad settings file can stop the application starting.
+- **One bug caught by writing the test first.** `SettingsStore.getLastProblem()` returned null
+  before anything had been loaded - and the only caller asks on the way up, before anything has
+  touched the settings, so an unreadable settings file would have been silently ignored forever.
+  It loads first now.
+- **JediTerm is still deferred, deliberately.** §3 calls it the riskiest dependency in the stack;
+  `TerminalView` exists and `GlassTerminalView` implements it, which is the fallback §3 describes
+  as more attractive than it sounds. The consoles are dumb TTYs and none of the protocols emit an
+  escape sequence; full ANSI only matters for programs *running on* the PDP-11.
+- **Known gap: settings are saved when the main window closes, and only then.** Killing the
+  process loses them. The Pascal is the same. A shutdown hook would cover it and has not been
+  added, because a save on the way out of a crash is not obviously the right thing to want.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

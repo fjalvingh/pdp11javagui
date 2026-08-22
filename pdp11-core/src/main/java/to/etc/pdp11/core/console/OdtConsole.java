@@ -122,6 +122,18 @@ public final class OdtConsole extends AbstractConsole {
 		return set;
 	}
 
+	/**
+	 * Ported from {@code getTerminalSettings} ({@code ConsolePDP11ODTU.pas:312-321}).
+	 *
+	 * <p>ODT sends CR <i>and</i> LF and means the LF, so the CR is ignored. It never erases -
+	 * the comment says so plainly, "PDP-11/ODT loescht nie" - which is what a printing terminal
+	 * does, since ink does not come off paper.</p>
+	 */
+	@Override
+	public TerminalProfile terminalProfile() {
+		return TerminalProfile.of(false, true);
+	}
+
 	@Override
 	protected ConsoleScanner<?> getScanner() {
 		return m_scanner;

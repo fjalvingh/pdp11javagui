@@ -58,6 +58,12 @@
         <miglayout.version>11.4.3</miglayout.version>
         <rsyntaxtextarea.version>4.0.1</rsyntaxtextarea.version>
         <jserialcomm.version>2.11.4</jserialcomm.version>
+        <!--
+            Settings are JSON in a platform config dir (PLAN.md section 4). Gson rather than
+            Jackson: one jar with no transitive dependencies, records supported natively, and
+            nothing here needs the configurability the larger binder is bought for.
+        -->
+        <gson.version>2.13.2</gson.version>
         <jdt.annotation.version>2.4.100</jdt.annotation.version>
 
         <!-- Test dependencies -->
@@ -126,6 +132,11 @@
                 <groupId>com.miglayout</groupId>
                 <artifactId>miglayout-swing</artifactId>
                 <version>${miglayout.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.code.gson</groupId>
+                <artifactId>gson</artifactId>
+                <version>${gson.version}</version>
             </dependency>
             <!-- Phase 6: the MACRO-11 editor. -->
             <dependency>

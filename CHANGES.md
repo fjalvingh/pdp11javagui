@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### Phase 5 — the shell that connects
+
+- **It runs.** `java -jar pdp11gui.jar` opens a window with a terminal, a connection status bar
+  and a Windows menu, and connects to a simulated machine of any of the seven console protocols
+  from a menu item, with nothing installed.
+- `AppContext` first, as PLAN.md §5 insists: every window is handed the services it needs and
+  there is no static instance to reach for. Doing this before any window exists is cheap; doing
+  it afterwards is a rewrite of every window.
+- `to.etc.pdp11.core.conn`: `ConsoleProtocol` × `TransportKind` replaces the 24 flat combo
+  entries in `FormSettingsU` — and the *second* cross product nobody had counted, `TConsoleType`
+  listing every console twice, once real and once `consoleSelftest*`. Making the simulated
+  machine a **transport** collapses both: seven protocols, four transports, and the fakes cost
+  one entry rather than seven. `ConnectionManager` turns a profile into a live console;
+  `ConnectionManagerTest` drives every protocol against its own simulated machine, end to end.
+- `TerminalProfile` on the `Console` interface, applied as a pre-filter in front of the terminal
+  rather than as emulator configuration — because ODT means its LF and the 11/44's console means
+  a lone CR, and a conforming VT100 fed the latter overwrites every line with the next.
+  **Divergence:** SimH sets both flags and sends CR LF together, which the Pascal double-spaces;
+  a pair is one line ending here.
+- Settings as versioned JSON under the platform config dir (Gson: one jar, no transitives).
+  Atomic writes, a newer-schema file left alone rather than truncated, and nothing about a bad
+  settings file can stop the application starting.
+- `WindowKey`/`ToolWindow`/`WindowManager`: typed keys and lazy creation replacing creation of
+  all ~26 windows at startup and lookup by caption. Geometry is per key in screen coordinates,
+  and **is clamped back onto a screen that exists** — which the Pascal does not do, and without
+  which unplugging a monitor loses a window for good.
+- `TerminalView` with a `GlassTerminalView` behind it — the fallback PLAN.md §3 describes.
+  JediTerm stays deferred; it is the riskiest dependency in the stack and these consoles are dumb
+  TTYs.
+- The Log window keeps the Pascal's one-column-per-channel layout, which is what makes a console
+  conversation readable, with the byte-level channels off unless asked for.
+- **The phase-3 warning is discharged:** something now reads SimH's console channel.
+  `ConnectionManager` drains it and keeps the last 256 KB, so the SimH Console window in phase 6
+  finds a transcript rather than a bug.
+- One bug caught by writing the test first: `SettingsStore.getLastProblem()` answered "nothing"
+  before anything had been loaded, and its only caller asks on the way up — so an unreadable
+  settings file would have been silently ignored. It loads first now.
+
 ### Phase 4 — console layer (SimH first)
 
 - `to.etc.pdp11.core.console`: the threading model of PLAN.md §1, made real.

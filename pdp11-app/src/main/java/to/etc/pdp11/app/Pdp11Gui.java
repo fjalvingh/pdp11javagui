@@ -1,7 +1,11 @@
 package to.etc.pdp11.app;
 
 import com.formdev.flatlaf.FlatLightLaf;
+import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MainWindow;
+import to.etc.pdp11.ui.log.LogWindow;
+import to.etc.pdp11.ui.log.UiLogger;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -16,6 +20,11 @@ import java.awt.EventQueue;
  * script ({@code Pdp11gui/run.sh}) to compute {@code QT_SCALE_FACTOR} and pin
  * {@code QT_FONT_DPI} around a Qt5/X11 double-scaling bug; Swing needs no such thing, which
  * is one of the reasons for the rewrite.</p>
+ *
+ * <p>Wiring lives here too, and only here: this builds the {@link AppContext}, registers the
+ * window types with it and opens the main window. No window reaches for a service it was not
+ * given, which is the rule PLAN.md §5 asks for and the reason lazy window creation works at
+ * all.</p>
  */
 public final class Pdp11Gui {
 	private Pdp11Gui() {
@@ -24,15 +33,18 @@ public final class Pdp11Gui {
 	public static void main(String[] args) {
 		configurePlatform();
 
+		UiLogger logger = new UiLogger();
 		//-- Covers the reader and command threads of PLAN.md section 1, which is where an
-		//-- escaping exception would otherwise vanish silently. It does NOT cover the EDT:
-		//-- EventDispatchThread catches Throwable itself and just prints it. Catching EDT
-		//-- exceptions needs a custom EventQueue, which arrives with the Log window in phase 5.
-		Thread.setDefaultUncaughtExceptionHandler((t, x) -> reportFatal(t, x));
+		//-- escaping exception would otherwise vanish silently.
+		Thread.setDefaultUncaughtExceptionHandler((t, x) -> reportFatal(logger, t, x));
 
 		EventQueue.invokeLater(() -> {
 			installLookAndFeel();
-			new MainWindow().setVisible(true);
+			AppContext context = AppContext.create(logger);
+			LogWindow.register(context);
+			logger.log(LogChannel.OTHER, "PDP11GUI starting on Java " + Runtime.version());
+			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
+			new MainWindow(context).setVisible(true);
 		});
 	}
 
@@ -65,7 +77,8 @@ public final class Pdp11Gui {
 		return System.getProperty("os.name", "").toLowerCase().contains("mac");
 	}
 
-	private static void reportFatal(Thread thread, Throwable x) {
+	private static void reportFatal(UiLogger logger, Thread thread, Throwable x) {
+		logger.log(LogChannel.OTHER, "Uncaught exception on thread '" + thread.getName() + "': " + x);
 		System.err.println("Uncaught exception on thread '" + thread.getName() + "':");
 		x.printStackTrace();
 		SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,

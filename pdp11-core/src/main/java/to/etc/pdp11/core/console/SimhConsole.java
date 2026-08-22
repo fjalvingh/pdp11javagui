@@ -190,6 +190,19 @@ public final class SimhConsole extends AbstractConsole {
 			ConsoleFeature.ACTION_SINGLE_STEP);
 	}
 
+	/**
+	 * Ported from {@code getTerminalSettings} ({@code ConsolePDP11SimHU.pas:325-334}).
+	 *
+	 * <p>SimH is the one console here that behaves like a modern stream: our Enter sends CR,
+	 * telnet wraps lines with LF, and both end a line. It is also the only one with a working
+	 * backspace and tab stops, because it is a program on a host rather than a printing
+	 * terminal.</p>
+	 */
+	@Override
+	public TerminalProfile terminalProfile() {
+		return new TerminalProfile(true, true, (char) 8, 8);
+	}
+
 	public CpuState getCpuState() {
 		return m_cpuState;
 	}
