@@ -34,8 +34,8 @@ reference implementation throughout the port.
 | 0 — Scaffolding | **Done** | 3 Maven modules, wrapper on 3.9.11, FlatLaf shell, CI on all three platforms. Machine `.ini` files recovered from the MSI; the m4 subset they use is measured and tiny. |
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
-| 3 — Transports and fakes | **Partly done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; `FakePdp11` + ODT (both dialects), 42 tests. **Still to port: the 11/44, 11/44 v340c, M9301 and M9312 fakes** - phase 4 needs each one as it reaches that console. |
-| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH) and ODT in both dialects. 208 tests. **Still to do: the M9301/M9312 and 11/44 consoles**, and the phase-3 fakes each of them needs. |
+| 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 80 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
+| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH) and ODT in both dialects. 259 tests. **Still to do: the M9301/M9312 and 11/44 consoles** - phase 3 is finished, so every fake they need is already in. |
 | 5 — First usable app | | |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
@@ -688,10 +688,46 @@ table at `FakePDP11ODTU.pas:60-83` and the real-hardware behaviour notes at `:86
 semantics) — those comments are test specifications. **Done when:** a fake responds correctly
 to hand-written byte sequences in tests. *Medium–large.*
 
-**Outcome so far.** All four transports are in and tested, and the ODT fake carries both
-dialects with one test per row of the hardware transcript. **The remaining fakes — 11/44,
-11/44 v340c, M9301, M9312, ~1,700 lines — are not ported yet**; phase 4 orders its consoles
-SimH → ODT → M9301/M9312 → 11/44 → K1630, so each can be ported as its console is reached.
+**Outcome.** All four transports are in and tested, and every fake is ported: ODT in both
+dialects, the 11/44 and its V3.40C firmware, the M9312 and the M9301 - plus `FakeSimh`, which
+has no Pascal counterpart and exists because the Pascal tests its SimH console against SimH,
+which CI cannot do. 80 tests over the four ported fakes, all headless; `FakeSimh` is driven by
+the SimH console's own tests rather than having a set of its own.
+
+- **The K1630 fake needed no port at all.** `FakePDP11ODTK1630U` is four lines: an 18-bit ODT
+  with `isK1630 := true`. Making the dialect a constructor argument rather than a mutable flag
+  had already absorbed it, which is the second time that decision has paid - the console layer's
+  `OdtDialect` is the first.
+- **The two 11/44 fakes are one class and a subclass.** The Pascal duplicates the whole 450-line
+  unit for the V3.40C firmware; roughly a hundred lines differ, and every one of them is
+  something a console driver has to be told about - console/program mode, backspace instead of
+  RUBOUT, worded errors instead of numbered ones, an address space class printed with every
+  examine, addresses masked rather than rejected. As a subclass those hundred lines *are* the
+  class, and the shared 350 have one copy.
+- **Three Pascal bugs, none reproduced.**
+  - `TFakePDP1144.SerialReadByte` prints a pending error by *replacing* the output buffer rather
+    than appending to it, so anything printed and not yet read is lost. The path turns out to be
+    unreachable - the only things that set that error run inside the carriage-return handler, and
+    the prompt at the end of it always clears the error first.
+  - `TFakePDP11M9312.doSTART` calls `doConsoleEmulatorErrorHALT` for an invalid address and then
+    runs the machine anyway: no `Exit`. So a bad start prints two halt messages and starts
+    regardless.
+  - `isLoadedAddrValid` guards the register space with `< 177700 + 7`, so R7 at `177707` is not
+    caught where the other seven are. **Kept**, and commented: nothing here knows what the real
+    emulator does, and a driver that examines R7 through this would break if it were "fixed".
+- **A trap in our own `MemoryAddressType.getMaxAddress()`**, found by a test. It is the highest
+  *word* address - `2^bits - 2` - which is right for what it is named after and wrong as an
+  address mask: masking with it clears the low bit that tells one byte-spaced global register
+  from the next, so `D/G 1` wrote to R0. The 11/44 fake has its own `ADDRESS_SPACE_MASK`, and the
+  same care is needed anywhere else that reaches for it.
+- **The M9312 validates as you type, which is unusual and load-bearing.** The first character
+  after a prompt is always accepted; the *second* decides whether the line can still become
+  something, and if it cannot the line is thrown away then and there with a register dump. That
+  is why `DL` is a boot command and not a malformed deposit - and why a driver cannot batch
+  characters at it and read the answer afterwards.
+- **The M9301 is the M9312 with a `$` prompt followed by a NUL** - an M9301-YA sends the fill
+  character and an M9301-YF does not. The Pascal's comment is "With NUL it is more difficult to
+  parse!" That fake is the one that proves the scanners' NUL filtering works.
 
 **The SimH-direct handshake, established live.** Four things have to be right before SimH's
 remote console will answer anything, and each was found by it silently not working. Phase 4
@@ -786,6 +822,45 @@ thread refuses.
   without drifting. **The general lesson is worth carrying to the other consoles:** when a
   protocol repeats itself, synchronise on the token that is unique to this exchange, not on the
   one that merely tends to arrive next.
+- **Two things the echo anchor needed before it was actually reliable**, both found by running
+  the suite repeatedly rather than by reading the code.
+  - **The first `^E` can arrive before anyone is listening.** A connected socket does not mean
+    SimH's remote console session is ready, and a `^E` that lands early is simply gone. The
+    Pascal covers this by sleeping a flat second in `Init` before doing anything, which is a
+    guess that costs a second on every connection. Asking again is better than waiting longer:
+    `resync` now sends `^E` up to four times within the same budget, and a repeat is harmless -
+    outside a run it draws another `Unknown command`, and inside one the first stops the
+    simulation and the prompt ends the loop.
+  - **The echo has to be matched on the end of a line, not on the whole of it.** SimH prints
+    "Simulator Running..." with no line ending, so a command sent while that fragment is still
+    unconsumed comes back as `Simulator Running...E PC`. Requiring equality loses the anchor and
+    the command waits out its full eight seconds for an echo that had already arrived. This is
+    the *same* property the decoder already handles for the prompt, and missing it in the second
+    place cost a five-second intermittent failure that only appeared when the class ran as a
+    whole. Anything unterminated in the buffer breaks framing for whatever follows it; that is
+    worth remembering for the consoles still to come.
+- **An open item, stated rather than glossed: SimH occasionally does not come up.** Roughly one
+  launch in thirty ends with SimH having accepted both telnet connections and sent its remote
+  console banner, and then saying nothing whatsoever - no prompt, no echo, no master-mode
+  notice, nothing on the emulated machine's own console either, both channels still open and its
+  own stdout empty. It never enters master mode, and no amount of `^E` rescues it. What is known:
+  - **It is not the protocol.** A probe that launched SimH fifteen times over and did the
+    handshake got a prompt every time, both with a `^E` and with nothing sent at all.
+  - **`^E` is not usually what produces the prompt.** `set remote master` plus both channels
+    connected gets one on its own, fifteen out of fifteen. The `^E` is there for a plain telnet
+    connection to a SimH somebody else started, which has no such configuration.
+  - A theory that a bare `^E` sits unread in a line-buffered single-command mode was tested and
+    **disproved**: terminating it with a return changes nothing.
+  - The suspicion is a race in SimH's own startup - `set remote master` is the last line of the
+    generated configuration, and it is the line that has to see a remote connection - but that
+    has not been confirmed, and confirming it means reading SimH's source rather than guessing
+    at it again.
+
+  The console layer's behaviour in that case is already right: `resync` reports a console that
+  will not answer instead of pretending otherwise, which in the application is the "no console
+  prompt" a user reconnects from. `SimhConsoleIT` launches once more when it happens, prints the
+  first attempt's evidence either way, and carries on - what it is there to test is the console
+  protocol, not SimH's startup.
 - **`AnswerCollector` therefore has positions, not just "the last one of this type".** The
   Pascal's `GetLastAnswer` searches the whole list backwards, which is what let a stale prompt
   satisfy a check. Both forms are available; the SimH console uses the positional one everywhere.
@@ -831,10 +906,9 @@ had a full transcript from a real PDP-11/23 to be tested against from the first 
   matches no rule; the Pascal stops there with input still in the buffer and looks no further
   until the next byte arrives - and if that byte was the last of the reply, never. Every such
   pass consumes at least one character, so the loop still terminates.
-- **What is left of phase 4:** the M9301 and M9312 boot-ROM consoles and the 11/44, each with the
-  phase-3 fake it needs (`FakePDP11M9301U`, `FakePDP11M9312U`, `FakePDP1144U`,
-  `FakePDP1144v340cU`, ~1,700 lines). The K1630 needs no console of its own - it is a dialect of
-  this one - but `FakePDP11ODTK1630U` would give it a fake at the machine end.
+- **What is left of phase 4:** the M9301 and M9312 boot-ROM consoles and the 11/44 - the consoles
+  themselves, since phase 3 is now finished and every fake they need is in and tested. The K1630
+  needs no console of its own; it is a dialect of this one.
 
 **Phase 5 — First usable app.** Main window with terminal and connection status, Settings
 with the decomposed `ConnectionProfile` model, `WindowManager` + `ToolWindow` + geometry

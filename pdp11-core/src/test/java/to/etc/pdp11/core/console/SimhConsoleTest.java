@@ -142,6 +142,20 @@ class SimhConsoleTest {
 	}
 
 	@Test
+	void aCommandSentWhileAnUnterminatedLineIsPendingStillFindsItsEcho() throws Exception {
+		try(Rig rig = new Rig()) {
+			//-- SimH prints "Simulator Running..." with no line ending at all, so anything sent
+			//-- while that fragment is still unconsumed comes back glued to it:
+			//-- "Simulator Running...E 1000". Matching the echo on equality loses the anchor
+			//-- there and the command waits out its whole timeout for an echo that has already
+			//-- arrived - which is exactly how this was found, as a five-second flake.
+			rig.console.onSerialReceive("Simulator Running...");
+			rig.connection.run(() -> rig.console.deposit(phys(01000), 0123456));
+			assertEquals(0123456, rig.connection.call(() -> rig.console.examine(phys(01000))).word());
+		}
+	}
+
+	@Test
 	void aRejectedCommandIsReportedRatherThanSilentlyIgnored() throws Exception {
 		try(Rig rig = new Rig()) {
 			//-- A deposit produces no output when it works, so any line at all after the echo

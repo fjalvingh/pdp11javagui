@@ -25,6 +25,18 @@
   thing in the stream that cannot predate the command — and reads the prompt, the replies and
   the rejection check strictly after it. `SimhConsoleIT` now drives examine, deposit, run,
   halt and single step against a real SimH, repeatedly, without drifting out of step.
+- Two follow-ups to that, both found by running the suite repeatedly rather than by reading:
+  `resync` now repeats the `^E` up to four times rather than assuming a connected socket means
+  a listening console, and the echo is matched on the *end* of a line rather than on the whole
+  of it - "Simulator Running..." has no line ending, so a command sent while it is still
+  unconsumed comes back glued to it and an equality match loses the anchor entirely. The second
+  of those was a real five-second intermittent failure and now has a test of its own.
+- **Known: SimH occasionally does not come up.** About one launch in thirty accepts both telnet
+  connections, sends its banner and then says nothing at all - it never enters master mode, and
+  no amount of `^E` rescues it. The console layer already does the right thing (it reports a
+  console that will not answer), and `SimhConsoleIT` now launches once more when it happens,
+  printing the first attempt's evidence either way. PLAN.md phase 4 records what has been ruled
+  out. CI does not run this test.
 - `FakeSimh`, which has no Pascal counterpart: the Pascal tests its SimH console against SimH
   itself, and CI has no SimH. It reproduces the three properties the protocol layer has to
   cope with — nothing works before `^E`, every command is echoed back, and the prompt arrives
@@ -77,8 +89,23 @@
   both channels connecting, IAC stripping and the banner. Commands are phase 4's business and
   are covered by `SimhConsoleIT`. Both skip when SimH is not on `PATH`, which is the case on
   CI.
-- **Not yet ported:** the 11/44, 11/44 v340c, M9301 and M9312 fakes. Phase 4 reaches those
-  consoles after SimH and ODT, so each can follow its console.
+- `FakePdp1144` and `FakePdp1144V340c`: the 11/44's separate console processor, with its
+  line-oriented command language (`E`/`D`/`S`/`I`, stacked `/G` and `/N:count` modifiers) and
+  its daft RUBOUT, which goes on echoing the last character it deleted after there is nothing
+  left to delete. The V3.40C firmware is a subclass rather than the second copy of the unit the
+  Pascal keeps: what differs is console/program mode, backspace, worded errors, an address space
+  class on every examine, and masked rather than rejected addresses.
+- `FakePdp11M9312` and `FakePdp11M9301`: the boot ROM console emulators, the feeblest consoles
+  supported and the only ones where a mistake stops the machine - an odd address or a bus
+  timeout halts the emulator itself, and only ESC (standing in for a front-panel control-boot)
+  gets it back. They validate input as it is typed, which is why `DL` is a boot command and not
+  a malformed deposit. The M9301 differs from the M9312 by a `$` prompt with a NUL after it.
+- **`FakePDP11ODTK1630U` needed no port**: it is an 18-bit ODT with one flag set, and making the
+  dialect a constructor argument in phase 3 had already absorbed it.
+- Three Pascal bugs found and not reproduced, all recorded in PLAN.md phase 3: an error path in
+  the 11/44 fake that replaces the output buffer instead of appending to it, a missing `Exit`
+  that lets the M9312 start a program at an address it has just refused, and an off-by-one that
+  leaves R7 reachable where R0..R6 are not - that one kept deliberately.
 
 ### Phase 2 — model
 

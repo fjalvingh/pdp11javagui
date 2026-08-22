@@ -84,6 +84,9 @@ public final class SimhConsole extends AbstractConsole {
 	/** How long to wait before chasing down a stop that SimH never announced. {@code :121}. */
 	public static final long SILENT_HALT_DELAY_MS = 200;
 
+	/** How many times to say {@code ^E} before giving up on a console that will not wake. */
+	public static final int WAKEUP_ATTEMPTS = 4;
+
 	/** The longest run of addresses to put in one {@code E} command. {@code :779}. */
 	private static final int MAX_BLOCK_LEN = 100;
 
@@ -495,6 +498,15 @@ public final class SimhConsole extends AbstractConsole {
 	 * place to synchronise. Everything the caller then reads is read from the returned position
 	 * onwards.</p>
 	 *
+	 * <p>The echo is matched on the <b>end</b> of a line rather than on the whole of it, for the
+	 * same reason the decoder tests the prompt that way: SimH prints "Simulator Running..." with
+	 * no line ending, so anything sent while that fragment is still unconsumed arrives glued to
+	 * it and comes back as {@code "Simulator Running...E PC"}. Requiring equality there loses the
+	 * anchor completely and the command waits out its whole timeout for an echo that already
+	 * arrived. Matching the end cannot mistake something else for the echo: the answers were
+	 * cleared immediately before the write, so only lines decoded after it are considered at
+	 * all.</p>
+	 *
 	 * @return where the echo landed in the collected answers, or the position just before the
 	 *         first real reply if the echo never arrived - a console with echo turned off is
 	 *         degraded, not broken, and is left to the prompt check to sort out.
@@ -504,7 +516,7 @@ public final class SimhConsole extends AbstractConsole {
 		writeToPdp(command + CR);
 		String echoed = command.trim();
 		int at = getAnswers().waitForIndex(
-			p -> p instanceof AnswerPhrase.OtherLine ol && ol.text().trim().equals(echoed),
+			p -> p instanceof AnswerPhrase.OtherLine ol && ol.text().trim().endsWith(echoed),
 			0, getCommandTimeoutMillis());
 		if(at >= 0)
 			return at;
@@ -564,10 +576,7 @@ public final class SimhConsole extends AbstractConsole {
 		m_cpuState = CpuState.UNKNOWN;                      // a reconnect knows nothing about the run state
 		m_silentHaltPending = false;
 
-		writeToPdp(String.valueOf(HALT_CHAR));
-		if(getAnswers().waitFor(AnswerPhrase.Prompt.class, getCommandTimeoutMillis()) == null)
-			throw new NoConsolePromptException("SimH did not answer ^E with a prompt",
-				m_scanner.getInput(), getAnswers().snapshot());
+		enterMultipleCommandMode();
 
 		//-- Reportedly the only way to get EXAMINE at the I/O page to work ({@code :585-586}).
 		runSetupCommand("sh cpu iospace", "Could not wake up SimH");
@@ -577,6 +586,39 @@ public final class SimhConsole extends AbstractConsole {
 		runSetupCommand("deposit tti time 1300", "\"deposit tti time\" failed");
 		runSetupCommand("SET CPU HISTORY=100", "\"SET CPU HISTORY\" failed");
 		getLogger().log(LogChannel.OTHER, "SimH ready and prompting \"sim>\"");
+	}
+
+	/**
+	 * Send {@code ^E} until SimH answers with a prompt.
+	 *
+	 * <p>Once is not reliable, and the reason is not a missing delay so much as a missing
+	 * acknowledgement: a connected socket does not mean the session at the other end is ready,
+	 * and a keystroke that arrives before it is simply gone. The Pascal covers that by sleeping
+	 * a flat second in {@code Init} before doing anything at all
+	 * ({@code ConsolePDP11SimHU.pas:620-625}) - a guess, and one that costs a second on every
+	 * connection whether it is needed or not.</p>
+	 *
+	 * <p>Asking again is better than waiting longer. A repeated {@code ^E} is harmless: outside
+	 * a run it is an inert byte that draws an {@code Unknown command}, and if it does reach a
+	 * running simulation the first one stops it and the prompt that follows ends the loop.</p>
+	 *
+	 * <p><b>Note the {@code ^E} is not usually what produces the prompt at all</b> when SimH was
+	 * launched by us: {@code set remote master} plus both channels connected gets one on its own,
+	 * measured at 15 launches out of 15. It is sent because a plain telnet connection to a SimH
+	 * somebody else started has no such configuration. See PLAN.md phase 4 for the open item on
+	 * the case where neither happens.</p>
+	 */
+	private void enterMultipleCommandMode() throws ConsoleException {
+		long perAttempt = Math.max(500, getCommandTimeoutMillis() / WAKEUP_ATTEMPTS);
+		for(int attempt = 1; attempt <= WAKEUP_ATTEMPTS; attempt++) {
+			writeToPdp(String.valueOf(HALT_CHAR));
+			if(getAnswers().waitFor(AnswerPhrase.Prompt.class, perAttempt) != null)
+				return;
+			getLogger().log(LogChannel.PROTOCOL,
+				"No prompt after ^E (attempt " + attempt + " of " + WAKEUP_ATTEMPTS + "); asking again");
+		}
+		throw new NoConsolePromptException("SimH did not answer ^E with a prompt",
+			m_scanner.getInput(), getAnswers().snapshot());
 	}
 
 	private void runSetupCommand(String command, String errinfo) throws ConsoleException {

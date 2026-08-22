@@ -364,6 +364,23 @@ public abstract class FakePdp11 {
 		m_serialIn.setLength(0);
 	}
 
+	/**
+	 * Drop the last typed character.
+	 *
+	 * <p>For the consoles with an erase key - the 11/44's RUBOUT and the V3.40C firmware's
+	 * backspace, both of which echo the character they just deleted
+	 * ({@code FakePDP1144U.pas:230-248}).</p>
+	 *
+	 * @return what was removed, or {@code 0} when there was nothing left to remove
+	 */
+	protected char removeLastInput() {
+		if(m_serialIn.isEmpty())
+			return 0;
+		char c = m_serialIn.charAt(m_serialIn.length() - 1);
+		m_serialIn.deleteCharAt(m_serialIn.length() - 1);
+		return c;
+	}
+
 	protected Random getRandom() {
 		return m_random;
 	}
