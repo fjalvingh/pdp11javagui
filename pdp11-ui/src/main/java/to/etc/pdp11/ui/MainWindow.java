@@ -3,7 +3,9 @@ package to.etc.pdp11.ui;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.conn.TextChannel;
 import to.etc.pdp11.core.console.Console;
+import to.etc.pdp11.core.console.TerminalProfile;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
@@ -63,10 +65,20 @@ public final class MainWindow extends JFrame {
 		setLocationByPlatform(true);
 
 		m_panel.getTerminal().setInputListener(this::sendToMachine);
+		//-- Subscribed once and for the life of the application, rather than re-wired on every
+		//-- connect: the channel outlives any one connection, so nothing is lost between the
+		//-- transport opening and this window hearing about it.
+		context.getConnectionManager().getMachineConsole().subscribe(
+			text -> m_panel.getTerminal().append(text, TerminalStyle.PDP));
 		context.getConnectionManager().addListener((manager, state) ->
 			SwingUtilities.invokeLater(() -> onConnectionState(manager)));
 		context.setFailureHandler((message, cause) -> SwingUtilities.invokeLater(() -> showFailure(message, cause)));
 		onConnectionState(context.getConnectionManager());
+	}
+
+	/** What is in the window, for a test that wants to know what it showed. */
+	public MainPanel getPanel() {
+		return m_panel;
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -249,33 +261,54 @@ public final class MainWindow extends JFrame {
 	private void onConnectionState(ConnectionManager manager) {
 		ConnectionManager.State state = manager.getState();
 		m_panel.showConnectionState(state, manager.getMessage());
-		m_panel.getTerminal().setInputEnabled(state == ConnectionManager.State.CONNECTED);
+		//-- Typing does something only when there is a machine console to type at. On a SimH
+		//-- connection PDP11GUI did not launch there is not one, and the only wire is the sim>
+		//-- channel, which is not a place to put keystrokes.
+		m_panel.getTerminal().setInputEnabled(state == ConnectionManager.State.CONNECTED
+			&& manager.hasMachineConsole());
 
 		Console console = manager.getConsole();
 		if(console != null) {
 			//-- The consoles disagree about line endings, so the terminal is told which one it is
-			//-- looking at every time that changes.
-			m_panel.getTerminal().setProfile(console.terminalProfile());
+			//-- looking at every time that changes. With a console channel of its own the profile
+			//-- is not the console protocol's: what is on that wire is whatever the emulated
+			//-- machine prints, and an operating system ends its lines with CR LF.
+			m_panel.getTerminal().setProfile(manager.hasSeparateMachineConsole()
+				? TerminalProfile.of(true, true)
+				: console.terminalProfile());
 			setTitle("PDP11GUI - " + console.name());
 		} else {
 			setTitle("PDP11GUI");
 		}
 		if(state == ConnectionManager.State.CONNECTED) {
 			m_panel.getTerminal().append("[connected: " + manager.getProfile().describe() + "]\n", TerminalStyle.SYSTEM);
-			//-- Everything the machine says goes on the terminal, the console's own automated
-			//-- commands and their replies included. That is how a flaky console gets debugged.
-			manager.getConnection().setTerminalSink(text -> m_panel.getTerminal().append(text, TerminalStyle.PDP));
+			if(!manager.hasMachineConsole()) {
+				//-- SimH we did not launch: a sim> channel and nothing behind it. Saying so is
+				//-- better than quietly showing sim> traffic here, which is what made this
+				//-- window confusing in the first place.
+				m_panel.getTerminal().append(
+					"[this connection has no machine console; SimH's sim> channel is in the SimH Console window]\n",
+					TerminalStyle.SYSTEM);
+			}
+			//-- SimH is driven over a channel this terminal no longer shows, so the window that
+			//-- does show it opens with the connection rather than waiting to be looked for.
+			if(manager.getProfile().protocol() == ConsoleProtocol.SIMH)
+				m_context.getWindowManager().open(WindowType.SIMH_CONSOLE);
 			m_panel.getGlassTerminal().focusTerminal();
 		}
 	}
 
+	/**
+	 * What the user types here goes to the machine's console.
+	 *
+	 * <p>Which wire that is depends on the connection, and {@link ConnectionManager} is what
+	 * knows: SimH's console channel when there is one, the console protocol's own wire when
+	 * there is not - queued on the command thread in that case, so a keystroke lands between
+	 * console commands rather than in the middle of one. The Pascal drops it instead whenever
+	 * the console is busy.</p>
+	 */
 	private void sendToMachine(String text) {
-		var connection = m_context.getConnectionManager().getConnection();
-		if(connection == null)
-			return;
-		//-- Queued on the command thread, so a keystroke lands between console commands rather
-		//-- than in the middle of one. The Pascal drops it instead whenever the console is busy.
-		connection.sendUserInput(text);
+		m_context.getConnectionManager().writeToMachineConsole(text);
 	}
 
 	// -------------------------------------------------------------------------------------

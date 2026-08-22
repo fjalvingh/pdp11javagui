@@ -106,7 +106,13 @@ public final class ConsoleConnection implements AutoCloseable {
 		t.start();
 	}
 
-	/** Where a copy of everything received goes, for display. */
+	/**
+	 * Where a copy of everything received goes.
+	 *
+	 * <p>Set by {@link to.etc.pdp11.core.conn.ConnectionManager}, which fans it out to the two
+	 * channels the windows read - and set before {@link #attach}, because the console handshake
+	 * is the most interesting thing that ever crosses this wire.</p>
+	 */
 	public void setTerminalSink(ByteSink terminalSink) {
 		m_terminalSink = terminalSink;
 	}

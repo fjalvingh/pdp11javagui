@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset". 522 tests. Still to do: the MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console. 558 tests. Still to do: the MMU, Microcode, Number Converter, Blinkenlight Execution. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -495,6 +495,20 @@ injection): today the terminal shows the *entire* byte stream including the cons
 automated commands and their replies (`SerialIoHubU.pas:901-902`), which is how you debug a
 flaky console. Merging it into the main window must not mean showing less.
 
+**Amended: the terminal is the machine's console, not the transport.** The rule above is right
+for every real machine and wrong for SimH, and the difference is that SimH has two wires. On a
+PDP-11 the console *is* the serial line PDP11GUI drives, so "the whole byte stream" and "the
+machine's console" are the same thing and the automated commands belong on screen. On SimH the
+transport is the `sim>` administrative channel, which no PDP-11 ever had, and the machine's own
+console is a second socket — so following the rule literally fills the main window with `sim>`
+chatter and shows the machine nowhere. The terminal now binds to
+`ConnectionManager.getMachineConsole()`, which is the console channel when there is one and the
+transport when there is not; keystrokes go the same way. Nothing is shown less: the whole
+protocol stream, automated commands included, is `getProtocolChannel()` and is what the SimH
+Console window displays. A SimH connection PDP11GUI did not launch — the simulated machine,
+telnet to somebody else's SimH — has no machine console at all, and the terminal says so rather
+than falling back to the `sim>` channel.
+
 On macOS set `apple.laf.useScreenMenuBar=true`; the menu bar then follows the focused window,
 which is the platform-correct behaviour for a multi-window app.
 
@@ -514,8 +528,13 @@ redesign and removes a combinatorial list that grows every time either axis gain
 **Tool windows:** Assembler (Source/Listing/Code tabs — merges three), Memory view
 (unlimited), Memory Loader, Memory Dumper, Memory Test, Disassembler, Bitfields, I/O Page
 Scanner, MMU, Execution Control, Blinkenlight Execution, Microcode, Number Converter, Log,
-SimH Console, SimH Remote Console Log, dynamic register-group windows, and (last phase) Disc
-Image.
+SimH Console, dynamic register-group windows, and (last phase) Disc Image.
+
+**Amended: one SimH window, not two.** This said "SimH Console, SimH Remote Console Log",
+following the Pascal. Once the main terminal shows the machine's console — see the amendment
+under *Main window* — the Pascal's `FormSimhConsoleU` has nothing left to show, and what remains
+is `FormSimhRemoteLogU`'s job: a transcript of the `sim>` protocol. That is the one window, with
+a command line added to it.
 
 **Dialogs:** Settings, About, no-console-prompt, progress/busy.
 
@@ -1280,12 +1299,51 @@ becomes a class, and the last of the Pascal's cross-window reach-ins goes with t
   output lands beside the octal listing, and nothing in the application opens it — same as the
   original, where it exists for reading a logic analyser's capture against by hand.
 
+**Phase 6 part 7 — the SimH Console. What it found:**
+
+- **The main terminal was showing the wrong wire, and the port is what made it visible.** The
+  Pascal feeds the terminal from the physical channel whatever it is, which on SimH is the
+  `sim>` administrative channel — so the main window of a SimH session is a log of PDP11GUI
+  talking to a simulator, and the emulated machine's console is off in a tool window. Faithful,
+  and confusing enough that the first person to look at it said so. The rule is now one
+  sentence — *the main terminal is the machine's console* — and §3 carries the amendment.
+- **The split is a routing change, not new plumbing.** Both channels were already open and
+  already read: `SimhProcessTransport` connects the console channel because the remote console
+  stays mute without it, and phase 5's drain was keeping 256 KB of it for a window that did not
+  exist yet. What was missing was somewhere to put it.
+- **Subscribing to a stream has to be one operation.** Both windows read a channel that is being
+  written by a reader thread, and both can be opened long after the interesting part. Snapshot
+  and then subscribe drops whatever arrives in between, silently, which is exactly the line
+  somebody needed. `TextChannel.subscribe` hands over the backlog and adds the listener under one
+  lock, and `TextChannelTest` runs a writer against it twenty times to hold that down.
+- **Whether the protocol wire *is* the machine's console is a property of the protocol, not the
+  transport.** The first cut keyed it on "is this a launched SimH process", which quietly routed
+  the simulated SimH's `sim>` traffic back onto the main terminal — the same confusion, in the
+  one configuration used for demonstrations. ODT and the 11/44 answer on the machine's serial
+  line; SimH does not, however it is reached.
+- **A typed `sim>` command cannot desync the parser, and can still upset the machine.** Serializing
+  it through the same echo-anchored `sendCommand` as everything else closes the first hazard
+  completely — it lands between the console layer's commands, never inside one — which is what
+  the Pascal was avoiding by refusing to let anybody type at all. The second is real and
+  accepted: `go` and `dep` change the machine behind the application's back. The transcript is
+  what makes it obvious afterwards.
+- **"No prompt" is not an error here.** `go`, `run` and `cont` hand the machine control and
+  produce no prompt until it stops; a window that reported that as a failed command would be
+  wrong about the most ordinary thing anybody types. `CommandResult.prompted` says what happened
+  and the window explains it, which is also why there is a Halt button.
+- **The proof that the terminal is now the machine's console is a program that prints.**
+  `ConnectionManagerSimhIT` deposits `mov #101,@#177566`, runs it, and waits for the character on
+  the machine console channel — and separately sends a keystroke the way the terminal does, into
+  a program that waits for one. Both ways round, against real SimH. The write needs a
+  *wait for the transmitter* after it: SimH sends on a scheduled event some instructions later,
+  and halting first cancels it, which fails looking exactly like a misrouted channel.
+
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 a MACRO-11 highlighter + external `macro11` on `PATH` via `ProcessBuilder` — two runs,
 `[src,'-l',lst]` then `['-e','listhex',…]` with the second allowed to fail, per
 `FormMacro11SourceU.pas:335-360`), Memory Loader, Memory Dumper, Memory Test, Bitfields, I/O
-Page Scanner, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and
-Remote Log windows. **Done when:** feature parity minus disc images. *Large.*
+Page Scanner, MMU, Microcode, Number Converter, Blinkenlight Execution and SimH Console
+windows. **Done when:** feature parity minus disc images. *Large.*
 
 **Amended: the highlighter is hand-written, not JFlex.** This section said "MACRO-11 JFlex
 mode", which is how RSyntaxTextArea's own language modes are built — but it needs a

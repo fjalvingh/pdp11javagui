@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Phase 6 part 7 — the SimH Console, and what the main terminal shows
+
+- **The main terminal is the machine's console now, whatever the machine is.** It was the
+  *transport*, which on a real PDP-11 is the same thing — ODT and the 11/44 firmware answer on
+  the machine's serial line, and PDP11GUI drives that same line — but on SimH it meant the
+  terminal showed `sim>` commands and their replies, which is not a console any PDP-11 ever had.
+  A SimH connection's terminal now shows SimH's console channel: boot messages, the operating
+  system, program output, and what you type goes to the machine. This is a deliberate divergence
+  from the Pascal, where `SerialIoHubU.Physical_Poll` feeds the terminal from the physical
+  channel whatever it is.
+- **`ConnectionManager` owns both channels** as `TextChannel`s — one for the machine console, one
+  for the console protocol — and says which is which (`hasMachineConsole`,
+  `hasSeparateMachineConsole`). `TextChannel.subscribe` hands over the backlog and starts the
+  live stream under one lock, so a window opened after something happened still shows it and
+  misses nothing in between. The 256 KB drain of SimH's console channel that phase 5 left
+  waiting for a window is now that window's source.
+- **One SimH window where the Pascal has two.** `FormSimhConsoleU` showed the emulated machine's
+  console, which is the main terminal here, and `FormSimhRemoteLogU` showed a transcript of the
+  `sim>` protocol — so what is left is the transcript, and it has a command line on it.
+- **It is interactive**, which the Pascal refused: its comment says the `sim>` parser "was built
+  and tested only against a clean administrative channel". `SimhConsole.command()` goes through
+  the same echo-anchored `sendCommand` as every other command, so a typed command is serialized
+  on the command thread and lands *between* the console layer's own commands rather than in the
+  middle of one. Command history on the arrows, a Halt (^E) button — a command that starts the
+  machine never returns to a prompt, so there would otherwise be nowhere to type the one that
+  stops it — and neither a rejected command nor a missing prompt is treated as a failure, because
+  both are ordinary things to type.
+- **It opens with a SimH connection**, since after this change nothing else on screen shows that a
+  simulator is being driven at all.
+- **SimH we did not launch has no machine console at all** — the simulated machine, and telnet to
+  somebody else's SimH — and the terminal says so rather than quietly showing `sim>` traffic
+  instead. Typing there does nothing, deliberately: the only wire is the `sim>` channel, and a
+  keystroke on that lands in the middle of whatever the console layer is saying.
+- `ConnectionManagerSimhIT` proves the split against real SimH both ways: a program that prints a
+  character arrives on the machine console and not on the protocol channel, and a keystroke sent
+  the way the terminal sends one is read by a program running on the emulated machine.
+
 ### Phase 6 part 6 — the Assembler
 
 - **Write a MACRO-11 program, assemble it, and load it into the machine**, in one window with

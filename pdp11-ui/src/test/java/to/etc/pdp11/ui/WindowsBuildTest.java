@@ -9,6 +9,7 @@ import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.macro11.AssemblerWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
+import to.etc.pdp11.ui.simh.SimhConsoleWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowType;
 
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -72,6 +74,72 @@ class WindowsBuildTest {
 			assertFalse(w.isVisible(), "built, not shown");
 		} finally {
 			onEdt(() -> {
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * The main terminal is the machine's console, and SimH's {@code sim>} channel is not it.
+	 *
+	 * <p>Connecting to a simulated SimH is the case with no machine console at all - there is a
+	 * {@code sim>} channel and nothing behind it - so the terminal says so rather than showing
+	 * {@code sim>} traffic, and the window that does show that channel opens on its own.</p>
+	 */
+	@Test
+	void aSimhConnectionOpensTheSimhConsoleAndLeavesTheTerminalSayingWhy(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		SimhConsoleWindow.register(ctx);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			//-- Off the event thread, as the main window's own menu item does it.
+			ctx.getConnectionManager().connect(
+				to.etc.pdp11.core.conn.ConnectionProfile.simulated(
+					to.etc.pdp11.core.conn.ConsoleProtocol.SIMH));
+			onEdt(() -> null);                              // let the state change reach the window
+			ToolWindow simh = ctx.getWindowManager().find(
+				to.etc.pdp11.ui.window.WindowKey.of(WindowType.SIMH_CONSOLE));
+			assertNotNull(simh, "the SimH console opens with the connection");
+			assertTrue(simh.isVisible());
+
+			String terminal = onEdt(() -> w.getPanel().getGlassTerminal().getText());
+			assertTrue(terminal.contains("no machine console"), terminal);
+			//-- "sim>" itself appears in the note above; what must not be here is the traffic.
+			assertFalse(terminal.contains("sh cpu iospace"),
+				"no sim> traffic in it: " + terminal.replace("\n", " | "));
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/** A real console <i>is</i> the machine's console, so the terminal shows the whole wire. */
+	@Test
+	void anOdtConnectionPutsTheWholeWireOnTheTerminal(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		SimhConsoleWindow.register(ctx);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			ctx.getConnectionManager().connect(
+				to.etc.pdp11.core.conn.ConnectionProfile.simulated(
+					to.etc.pdp11.core.conn.ConsoleProtocol.ODT_18));
+			onEdt(() -> null);
+			assertNull(ctx.getWindowManager().find(
+				to.etc.pdp11.ui.window.WindowKey.of(WindowType.SIMH_CONSOLE)),
+				"nothing to open a SimH window for");
+			String terminal = onEdt(() -> w.getPanel().getGlassTerminal().getText());
+			assertTrue(terminal.contains("@"), "ODT's prompt, from its own handshake: " + terminal);
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
 				w.dispose();
 				return null;
 			});
@@ -135,9 +203,10 @@ class WindowsBuildTest {
 		ExecutionWindow.register(ctx);
 		DisassemblerWindow.register(ctx);
 		AssemblerWindow.register(ctx);
+		SimhConsoleWindow.register(ctx);
 		try {
 			for(WindowType type : new WindowType[] {WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION,
-				WindowType.DISASSEMBLER, WindowType.ASSEMBLER}) {
+				WindowType.DISASSEMBLER, WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE}) {
 				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
 				assertNotNull(w, type + " builds");
 				assertTrue(w.getTitle().startsWith(type.getTitle()), w.getTitle());

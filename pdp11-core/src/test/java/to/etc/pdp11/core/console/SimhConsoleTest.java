@@ -433,6 +433,74 @@ class SimhConsoleTest {
 	}
 
 	// ---------------------------------------------------------------------------------------
+	// Commands typed by a person - the SimH Console window
+	// ---------------------------------------------------------------------------------------
+
+	@Test
+	void aTypedCommandIsSentAndItsAnswerCollected() throws Exception {
+		try(Rig rig = new Rig()) {
+			AtomicReference<SimhConsole.CommandResult> result = new AtomicReference<>();
+			rig.connection.run(() -> result.set(rig.console.command("show cpu")));
+
+			assertTrue(rig.fake.getCommands().contains("show cpu"), "SimH was asked");
+			assertTrue(result.get().prompted(), "and prompted again afterwards");
+			assertEquals("show cpu", result.get().command());
+			assertTrue(result.get().lines().get(0).startsWith("CPU"),
+				"what SimH said: " + result.get().lines());
+		}
+	}
+
+	@Test
+	void aCommandSimhRejectsIsAnAnswerRatherThanAFailure() throws Exception {
+		//-- The remote console only accepts a whitelist, and typing something outside it is an
+		//-- ordinary thing to do. Its complaint is a line like any other; the window shows it.
+		try(Rig rig = new Rig()) {
+			AtomicReference<SimhConsole.CommandResult> result = new AtomicReference<>();
+			rig.connection.run(() -> result.set(rig.console.command("frobnicate the widget")));
+
+			assertTrue(result.get().prompted());
+			assertEquals(List.of("Unknown command"), result.get().lines());
+		}
+	}
+
+	@Test
+	void aSilentCommandAnswersNothingAndThatIsNotAnError() throws Exception {
+		try(Rig rig = new Rig()) {
+			AtomicReference<SimhConsole.CommandResult> result = new AtomicReference<>();
+			rig.connection.run(() -> result.set(rig.console.command("reset")));
+
+			assertTrue(result.get().prompted());
+			assertEquals(List.of(), result.get().lines(), "RESET says nothing when it works");
+		}
+	}
+
+	@Test
+	void anEmptyCommandIsRefusedRatherThanSent() throws Exception {
+		//-- A bare RETURN makes SimH repeat its last command, which would be one of PDP11GUI's.
+		try(Rig rig = new Rig()) {
+			assertThrows(ConsoleException.class, () -> rig.connection.run(() -> rig.console.command("   ")));
+			assertFalse(rig.fake.getCommands().contains(""), "nothing was sent");
+		}
+	}
+
+	@Test
+	void aCommandThatStartsTheMachineReportsNoPromptWithoutFailing() throws Exception {
+		//-- "go" hands the machine control, and there is no prompt until it stops again. The
+		//-- window says so; it is not an error, and it must not throw one.
+		try(Rig rig = new Rig()) {
+			rig.fake.setMem(phys(017777707L), 01000);
+			//-- Protected, and this test is in the console's own package: the wait below is the point
+			//-- of the test, and eight seconds of it is not.
+			rig.console.setCommandTimeoutMillis(300);
+			AtomicReference<SimhConsole.CommandResult> result = new AtomicReference<>();
+			rig.connection.run(() -> result.set(rig.console.command("go 1000")));
+
+			assertFalse(result.get().prompted(), "the simulation is running");
+			assertTrue(rig.fake.isRunning(), "and really is");
+		}
+	}
+
+	// ---------------------------------------------------------------------------------------
 	// Propagation
 	// ---------------------------------------------------------------------------------------
 

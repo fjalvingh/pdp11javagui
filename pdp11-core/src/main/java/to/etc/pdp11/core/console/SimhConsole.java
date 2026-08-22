@@ -646,6 +646,71 @@ public final class SimhConsole extends AbstractConsole {
 		m_silentHaltPending = false;
 	}
 
+	// -------------------------------------------------------------------------------------
+	// Commands typed by a person
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * What one hand-typed command produced.
+	 *
+	 * @param command  what was sent, trimmed.
+	 * @param lines    what SimH said before prompting again, blank lines and its echo of the
+	 *                 command removed. Empty for the commands that succeed silently, which
+	 *                 {@code DEPOSIT}, {@code RESET} and {@code SET} all do.
+	 * @param prompted whether {@code sim>} came back within the command timeout. <b>False is
+	 *                 not necessarily an error</b>: {@code go}, {@code run} and {@code cont}
+	 *                 hand the machine control and produce no prompt until it stops again.
+	 */
+	public record CommandResult(String command, List<String> lines, boolean prompted) {
+	}
+
+	/**
+	 * Send a command somebody typed at the SimH Console window, and collect the answer.
+	 *
+	 * <p>The window shows the raw channel rather than this, so what comes back here is for
+	 * deciding what happened rather than for display. It goes through {@link #sendCommand} like
+	 * every other command, which means it is serialized on the command thread and anchored on
+	 * its own echo - a typed command therefore lands <i>between</i> the console layer's own
+	 * commands and can never be mistaken for a reply to one of them. That is the hazard the
+	 * Pascal avoided by refusing to let anybody type here at all
+	 * ({@code FormSimhConsoleU.pas:5-11}: the parser "was built and tested only against a clean
+	 * administrative channel").</p>
+	 *
+	 * <p>What this cannot prevent is a command that changes the machine behind the application's
+	 * back - {@code go} and {@code dep} do exactly that. The transcript is what makes it obvious
+	 * afterwards, which is the trade the window is for.</p>
+	 *
+	 * <p>Not thrown for: a command SimH rejects (its complaint is a line like any other, and the
+	 * window shows it), and a command that never prompts again (the machine is running). Both
+	 * are ordinary things to type.</p>
+	 *
+	 * @throws ConsoleException if the command could not be sent at all, or is empty - a bare
+	 *                          RETURN repeats SimH's last command, with consequences nobody
+	 *                          asked for ({@code ConsolePDP11SimHU.pas:576-578}).
+	 */
+	public CommandResult command(String command) throws ConsoleException {
+		String cmd = command == null ? "" : command.trim();
+		if(cmd.isEmpty())
+			throw new ConsoleException("Empty command: SimH would repeat the last one");
+		getLogger().log(LogChannel.OTHER, "SimH console: " + cmd);
+		int echo = sendCommand(cmd);
+		int from = echo < 0 ? 0 : echo + 1;
+		boolean prompted = getAnswers().waitFor(AnswerPhrase.Prompt.class, from, getCommandTimeoutMillis()) != null;
+		List<String> lines = new ArrayList<>();
+		for(AnswerPhrase p : getAnswers().snapshotFrom(from)) {
+			if(p instanceof AnswerPhrase.Prompt)
+				break;
+			String text = p.rawText().trim();
+			//-- The echo, when sendCommand could not find it and started collecting from zero.
+			if(text.isEmpty() || text.equals(cmd))
+				continue;
+			lines.add(text);
+		}
+		if(!prompted)
+			getLogger().log(LogChannel.PROTOCOL, "No prompt after \"" + cmd + "\"; the machine may be running");
+		return new CommandResult(cmd, List.copyOf(lines), prompted);
+	}
+
 	/**
 	 * The address to name in a command, and the name to use if SimH has one.
 	 *

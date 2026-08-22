@@ -62,7 +62,7 @@ public final class ConnectionManager implements AutoCloseable {
 		void onConnectionState(ConnectionManager manager, State state);
 	}
 
-	/** How much of the emulated machine's own console to keep. See {@link #getConsoleChannelText}. */
+	/** How much of either channel to keep. See {@link #getMachineConsole}. */
 	private static final int MAX_CONSOLE_TEXT = 256 * 1024;
 
 	/** Long enough for a machine on the other side of a slow link, short enough to give up on a typo. */
@@ -96,7 +96,36 @@ public final class ConnectionManager implements AutoCloseable {
 
 	private volatile Thread m_consoleDrain;
 
-	private final StringBuilder m_consoleText = new StringBuilder();
+	/**
+	 * What the machine's own console says - the main window's terminal.
+	 *
+	 * <p>On SimH direct that is the separate console channel; on every other connection it is
+	 * the one wire there is, which the console protocol shares. See
+	 * {@link #hasSeparateMachineConsole()}.</p>
+	 */
+	private final TextChannel m_machineConsole = new TextChannel("machine console", MAX_CONSOLE_TEXT);
+
+	/**
+	 * What goes over the console protocol - the SimH Console window.
+	 *
+	 * <p>Everything the console layer says and hears, its own automated commands included. On a
+	 * real PDP-11 this carries the same bytes as {@link #m_machineConsole}, because there is one
+	 * serial line and PDP11GUI drives it; on SimH direct it carries the {@code sim>} admin
+	 * channel and nothing else.</p>
+	 */
+	private final TextChannel m_protocolChannel = new TextChannel("console protocol", MAX_CONSOLE_TEXT);
+
+	/** Whether the machine's console is a channel of its own. True only for SimH direct. */
+	private volatile boolean m_separateMachineConsole;
+
+	/**
+	 * Whether the wire the console protocol talks over <i>is</i> the machine's console.
+	 *
+	 * <p>True for every real console - ODT and the 11/44 firmware are what answers on the
+	 * machine's serial line - and false for SimH, whose {@code sim>} channel is an
+	 * administrative one that no PDP-11 ever had.</p>
+	 */
+	private volatile boolean m_protocolIsMachineConsole;
 
 	public ConnectionManager(MemoryCellGroups groups, Logger logger, Scheduler scheduler, Path dataDir) {
 		m_groups = groups;
@@ -166,10 +195,14 @@ public final class ConnectionManager implements AutoCloseable {
 			throw new ConsoleException(problem);
 		close();
 		m_profile = profile;
+		m_machineConsole.clear();
+		m_protocolChannel.clear();
 		setState(State.CONNECTING, profile.describe());
 		try {
 			PhysicalTransport transport = openTransport(profile);
 			m_transport = transport;
+			m_separateMachineConsole = transport instanceof SimhProcessTransport;
+			m_protocolIsMachineConsole = profile.protocol() != ConsoleProtocol.SIMH;
 			if(transport instanceof SimhProcessTransport simh)
 				startConsoleDrain(simh.getConsoleChannel());
 
@@ -177,6 +210,9 @@ public final class ConnectionManager implements AutoCloseable {
 			//-- the console's own plumbing rather than things the windows above ever call.
 			AbstractConsole console = createConsole(profile);
 			ConsoleConnection connection = new ConsoleConnection(transport, m_logger);
+			//-- Before attach(), which starts the reader: the handshake is the most interesting
+			//-- thing that ever crosses this channel and it happens in init(), below.
+			connection.setTerminalSink(this::onProtocolData);
 			m_console = console;
 			m_connection = connection;
 			connection.attach(console);
@@ -258,33 +294,127 @@ public final class ConnectionManager implements AutoCloseable {
 	}
 
 	// -------------------------------------------------------------------------------------
-	// The emulated machine's own console
+	// The two channels
 	// -------------------------------------------------------------------------------------
 
 	/**
-	 * Keep reading SimH's console channel, and keep the last of it.
+	 * What the machine's own console says: the stream the main window's terminal shows.
+	 *
+	 * <p>The rule the whole application follows is one sentence: <b>the main terminal is the
+	 * machine's console, whatever the machine is.</b> On a real PDP-11 - ODT, an 11/44, over
+	 * serial or telnet - the console is one serial line, and PDP11GUI drives that same line, so
+	 * this carries the console protocol's own commands and replies as well; that is not a leak,
+	 * it is what a scope on the wire would show.</p>
+	 *
+	 * <p>On SimH direct there are two wires and they are not the same thing at all. This one is
+	 * SimH's console channel, the emulated PDP-11's serial console: boot messages, RT-11, a
+	 * program's output. The {@code sim>} traffic goes to {@link #getProtocolChannel()} and is
+	 * shown in the SimH Console window instead, which is what "the terminal is the machine's
+	 * console" means when the simulator has an administrative channel of its own.</p>
+	 *
+	 * <p>The Pascal splits these the other way round: its main terminal shows the physical
+	 * channel whatever it is ({@code SerialIoHubU.Physical_Poll}), so on a SimH connection it
+	 * shows {@code sim>} chatter and the machine's console is off in
+	 * {@code FormSimhConsoleU}. An agreed UX change, not a port bug.</p>
+	 */
+	public TextChannel getMachineConsole() {
+		return m_machineConsole;
+	}
+
+	/**
+	 * What crosses the console protocol, the console layer's own commands included.
+	 *
+	 * <p>This is the view PLAN.md §3 insists on keeping - "the terminal shows the entire byte
+	 * stream ... that is how a flaky console gets debugged" - and it is what the SimH Console
+	 * window displays. On a connection with no separate machine console the same bytes are on
+	 * {@link #getMachineConsole()}, because there is one wire.</p>
+	 */
+	public TextChannel getProtocolChannel() {
+		return m_protocolChannel;
+	}
+
+	/**
+	 * Whether the machine's console is a channel of its own, rather than the wire the console
+	 * protocol is already using. True for SimH direct, false for everything else.
+	 */
+	public boolean hasSeparateMachineConsole() {
+		return m_separateMachineConsole;
+	}
+
+	/**
+	 * Whether there is a machine console to show at all.
+	 *
+	 * <p>False for exactly one case, and it is worth naming: <b>SimH that we did not launch</b> -
+	 * the simulated machine, and a telnet connection to somebody else's SimH. There is a
+	 * {@code sim>} channel and no console channel behind it, so the main window's terminal has
+	 * nothing to show and says so rather than quietly showing {@code sim>} traffic instead.</p>
+	 */
+	public boolean hasMachineConsole() {
+		return m_separateMachineConsole || m_protocolIsMachineConsole;
+	}
+
+	/** Everything read from the console protocol's wire, on the reader thread. */
+	private void onProtocolData(String text) {
+		m_protocolChannel.append(text);
+		if(m_protocolIsMachineConsole)
+			m_machineConsole.append(text);
+	}
+
+	/**
+	 * Something the user typed at the main terminal, on its way to the machine's console.
+	 *
+	 * <p>Two routes, because there are two kinds of console. With a channel of its own it is
+	 * written straight to that socket - it is a terminal line to the emulated machine and has
+	 * nothing to do with the command thread, which is busy talking {@code sim>} on the other
+	 * one. Without, it is the console protocol's own wire, so it is queued on the command thread
+	 * and lands between console commands rather than in the middle of one.</p>
+	 *
+	 * <p>A keystroke that cannot be delivered is logged and dropped rather than thrown: this is
+	 * called from a key listener, and there is nothing useful a terminal can do about it.</p>
+	 */
+	public void writeToMachineConsole(String text) {
+		if(text == null || text.isEmpty())
+			return;
+		if(!hasMachineConsole()) {
+			//-- SimH we did not launch. The only wire is the sim> channel, and a keystroke on
+			//-- that is a character the console layer's scanner has to make sense of - it would
+			//-- land in the middle of an examine and be read as part of its answer. There is
+			//-- nowhere for this to go; the SimH Console window is where commands are typed.
+			m_logger.log(LogChannel.OTHER, "Console input dropped: this connection has no machine console");
+			return;
+		}
+		PhysicalTransport channel = m_consoleChannel;
+		if(m_separateMachineConsole && channel != null) {
+			try {
+				channel.write(text.getBytes(StandardCharsets.ISO_8859_1));
+			} catch(IOException x) {
+				m_logger.log(LogChannel.OTHER, "Console input dropped: " + x);
+			}
+			return;
+		}
+		ConsoleConnection c = m_connection;
+		if(c == null) {
+			m_logger.log(LogChannel.OTHER, "Console input dropped: not connected");
+			return;
+		}
+		c.sendUserInput(text);
+	}
+
+	/**
+	 * Keep reading SimH's console channel, and hand it to whoever is listening.
 	 *
 	 * <p>PLAN.md phase 3 records the hazard plainly: <b>something must read this</b>. It is the
 	 * emulated PDP-11's own serial console, it is connected because the remote console does not
-	 * work without it, and a socket nobody empties eventually blocks SimH itself. The window that
-	 * will display it arrives in phase 6; until then this drains it and holds the tail, so that
-	 * when the window does arrive there is something to show and nothing to fix.</p>
+	 * work without it, and a socket nobody empties eventually blocks SimH itself.</p>
 	 */
 	private void startConsoleDrain(PhysicalTransport channel) {
 		m_consoleChannel = channel;
-		synchronized(m_consoleText) {
-			m_consoleText.setLength(0);
-		}
 		Thread t = new Thread(() -> {
 			byte[] buf = new byte[4096];
 			try {
 				int n;
 				while((n = channel.read(buf, 0, buf.length)) > 0) {
-					synchronized(m_consoleText) {
-						m_consoleText.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
-						if(m_consoleText.length() > MAX_CONSOLE_TEXT)
-							m_consoleText.delete(0, m_consoleText.length() - MAX_CONSOLE_TEXT);
-					}
+					m_machineConsole.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
 				}
 			} catch(IOException x) {
 				//-- Closed; nothing more to read.
@@ -298,13 +428,6 @@ public final class ConnectionManager implements AutoCloseable {
 	/** The emulated machine's own console channel, or {@code null} when there is not one. */
 	public PhysicalTransport getConsoleChannel() {
 		return m_consoleChannel;
-	}
-
-	/** What the emulated machine has printed on its own console, up to the last 256 KB. */
-	public String getConsoleChannelText() {
-		synchronized(m_consoleText) {
-			return m_consoleText.toString();
-		}
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -322,6 +445,8 @@ public final class ConnectionManager implements AutoCloseable {
 
 		PhysicalTransport channel = m_consoleChannel;
 		m_consoleChannel = null;
+		m_separateMachineConsole = false;
+		m_protocolIsMachineConsole = false;
 		if(channel != null)
 			channel.close();
 

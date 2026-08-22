@@ -22,8 +22,15 @@ public enum WindowType {
 	MEMORY_LOADER("Memory loader"),
 	IO_PAGE_SCANNER("I/O page scanner"),
 	REGISTER_GROUP("Registers", true),
-	SIMH_CONSOLE("SimH console"),
-	SIMH_REMOTE_LOG("SimH remote console log");
+	/**
+	 * SimH's {@code sim>} channel, with a command line on it.
+	 *
+	 * <p>One window where the Pascal has two. {@code FormSimhConsoleU} showed the emulated
+	 * machine's own console, which is the main window's terminal here, and
+	 * {@code FormSimhRemoteLogU} showed a transcript of the {@code sim>} protocol - which is all
+	 * that is left to have a window of its own.</p>
+	 */
+	SIMH_CONSOLE("SimH console");
 
 	private final String m_title;
 

@@ -186,6 +186,11 @@ public final class GlassTerminalView implements TerminalView {
 		m_filter.reset();
 	}
 
+	/** Everything on screen, for a test that wants to know what was shown. */
+	public String getText() {
+		return m_pane.getText();
+	}
+
 	/** Ask for the keyboard. The main window does this when it opens. */
 	public void focusTerminal() {
 		m_pane.requestFocusInWindow();

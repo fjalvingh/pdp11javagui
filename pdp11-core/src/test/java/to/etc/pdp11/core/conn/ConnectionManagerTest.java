@@ -170,6 +170,102 @@ class ConnectionManagerTest {
 		}
 	}
 
+	// ---------------------------------------------------------------------------------------
+	// Which channel is the machine's console
+	// ---------------------------------------------------------------------------------------
+
+	@Test
+	void aRealConsoleIsTheMachineConsoleBecauseThereIsOneWire() throws Exception {
+		//-- ODT answers on the machine's serial line and PDP11GUI drives that same line, so the
+		//-- main window's terminal shows the console protocol's own commands too. That is not a
+		//-- leak: it is what a scope on the wire would show, and it is how a flaky console gets
+		//-- debugged.
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			assertTrue(m.hasMachineConsole());
+			assertFalse(m.hasSeparateMachineConsole(), "one wire, not two");
+			assertFalse(m.getMachineConsole().getText().isEmpty(), "the handshake is on it");
+			assertEquals(m.getProtocolChannel().getText(), m.getMachineConsole().getText(),
+				"the same bytes, because it is the same wire");
+		}
+	}
+
+	@Test
+	void simhWeDidNotLaunchHasNoMachineConsoleAtAll() throws Exception {
+		//-- The simulated SimH, and equally a telnet connection to somebody else's: there is a
+		//-- sim> channel and nothing behind it. The main terminal says so rather than quietly
+		//-- showing sim> traffic, which is what made that window confusing to read.
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			assertFalse(m.hasMachineConsole());
+			assertFalse(m.hasSeparateMachineConsole());
+			assertFalse(m.getProtocolChannel().getText().isEmpty(), "the sim> handshake happened");
+			assertEquals("", m.getMachineConsole().getText(), "and none of it is machine console output");
+		}
+	}
+
+	@Test
+	void connectingAgainStartsBothChannelsEmpty() throws Exception {
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			int first = m.getMachineConsole().length();
+			assertTrue(first > 0);
+
+			List<String> cleared = new ArrayList<>();
+			m.getMachineConsole().subscribe(new TextChannel.Listener() {
+				@Override
+				public void onText(String text) {
+				}
+
+				@Override
+				public void onCleared() {
+					cleared.add("machine");
+				}
+			});
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			assertEquals(List.of("machine"), cleared, "a view of it should empty too");
+			assertFalse(m.getMachineConsole().getText().isEmpty(), "and then fill with the new session");
+		}
+	}
+
+	@Test
+	void whatIsTypedAtTheTerminalReachesTheMachine() throws Exception {
+		//-- With no console channel of its own this goes down the console protocol's wire, queued
+		//-- on the command thread. ODT echoes what it is sent, so the echo is the proof.
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			int before = m.getMachineConsole().length();
+			m.writeToMachineConsole("\r");
+			long deadline = System.currentTimeMillis() + 5000;
+			while(m.getMachineConsole().length() == before && System.currentTimeMillis() < deadline) {
+				Thread.sleep(5);
+			}
+			assertTrue(m.getMachineConsole().length() > before, "ODT answered what was typed");
+		}
+	}
+
+	@Test
+	void typingIsDroppedWhenThereIsNoMachineConsoleToTypeAt() throws Exception {
+		//-- Simulated SimH: the only wire is the sim> channel, and a keystroke on that lands in
+		//-- the middle of whatever the console layer is saying.
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			int before = m.getProtocolChannel().length();
+			m.writeToMachineConsole("\r");
+			Thread.sleep(200);
+			assertEquals(before, m.getProtocolChannel().length(), "nothing was sent anywhere");
+			assertEquals("", m.getMachineConsole().getText());
+		}
+	}
+
+	@Test
+	void typingWithNothingConnectedIsDroppedRatherThanThrown() {
+		//-- It is called from a key listener; there is nothing useful a terminal can do about it.
+		ConnectionManager m = manager();
+		m.writeToMachineConsole("hello");
+		assertEquals("", m.getMachineConsole().getText());
+	}
+
 	@Test
 	void closingIsIdempotentAndWorksOnAManagerThatNeverConnected() {
 		ConnectionManager m = manager();
