@@ -47,6 +47,12 @@ silently diverging.
   If a core class seems to need a dialog or a progress bar, it needs a `ProgressMonitor` or an
   exception (`NoConsolePromptException`, `OperationCancelledException`) instead. See PLAN.md
   §1 and §2.
+- **An algorithm goes in `pdp11-core`, even when exactly one window uses it.** If the awkward
+  part of a window is arithmetic over what the machine said - which line the PC is on, which
+  addresses answered, which data line is stuck - that part is a class in the core with a test,
+  and the window is the thing that shows its result. `DisassemblyListing`, `IoPageScanner` and
+  `MemoryTester` are all this, and all three were got wrong in a way a test caught. A window with
+  an algorithm inside it can only be checked by looking at it.
 - **Never call `Console` methods on the EDT, and never call `get()`/`join()` on a console
   future from the EDT.** All console work is submitted to the single-threaded command
   executor, whose results are marshalled back to the EDT with `SwingUtilities.invokeLater`. A
@@ -60,9 +66,16 @@ silently diverging.
   show back with `AppContext.onUi`. Long operations take a `ProgressDialog`, which is the UI's
   implementation of the core's `ProgressMonitor`.
 - **No window tells another window anything.** Shared machine state - is it running, where is the
-  PC - lives on `MachineState`, and windows watch it. This is what replaces the Pascal's
-  `TFormExecute.SetAndShowPc` naming five other forms one by one; a window that is not open hears
-  nothing and needs to hear nothing, and adding a window changes no existing one. See PLAN.md §5.
+  PC - lives on `MachineState`, and which cell the user is looking at lives on `CellSelection`.
+  Windows watch them. This is what replaces the Pascal's `TFormExecute.SetAndShowPc` naming five
+  other forms one by one, and every grid calling `FormMain.SyncBitfieldForm`; a window that is not
+  open hears nothing and needs to hear nothing, and adding a window changes no existing one. See
+  PLAN.md §5.
+- **Only `UiColors` names a colour.** Everything that means something - a value typed and not
+  deposited, the line the PC is on, connected, failed - is a constant there, tuned for the dark
+  theme the application runs. A `new Color(...)` anywhere else is how a second theme becomes a
+  hunt through every panel. Note the two carried over from the Pascal are Delphi `TColor`
+  literals, which are **BGR**: `$80FFFF` is light yellow, not pale blue.
 - **A window is handed what it needs; it never reaches for it.** Everything shared lives on
   `AppContext`, which is constructed once in `Pdp11Gui.main` and passed down. There is no static
   instance and there must not be one. This is what makes lazy window creation work at all — see
@@ -72,6 +85,9 @@ silently diverging.
   panel (`MainPanel`, `LogPanel`), and the layout is checked headlessly by `UiRenderer` and
   rendered to `target/ui-render/*.png` on every build. Anything put directly on a frame is
   untestable on CI and unlookable-at without borrowing somebody's screen.
+- **A `JTable` column needs a *minimum* width, not just a preferred one.** Any auto-resize mode
+  redistributes the preferred widths on the first layout pass and keeps the result, so a column
+  set to 160 comes back at 67 and its text is elided beside an empty neighbour. Set both.
 - **All Swing work on the event thread, including in tests.** Laying out a component tree takes
   the AWT tree lock and then a text component's document lock; appending to a terminal takes
   them in the opposite order. Doing those on two threads deadlocks reliably, and it presents as
@@ -115,6 +131,14 @@ silently diverging.
   with `TransportKind.SIMULATED` drives the whole application against one.
 - **A test that needs an external program skips rather than fails** when it is missing — see
   `SimhConsoleIT`. CI has no SimH, no `macro11` and no Free Pascal, and is not getting them.
+- **A diagnostic must be shown the fault it exists to find.** The fakes can be broken on purpose
+  - `FakePdp11.setStuckDataLines`, `setDeadAddressLine` - so the memory tests are checked against
+  a stuck data line and a dead address line rather than against working memory. The original's
+  author did this by hand, with two commented-out lines in `TestSingleBit`; here it runs on every
+  build.
+- **Wait for the thing you are asserting, not for something that precedes it.** A value reaches a
+  cell on the command thread and reaches the view on the event thread. A test that waits for the
+  first and asserts the second passes until it does not. This has already been fixed once.
 - **Where a fake is extended beyond what the Pascal's does, say so in the source and say what
   the evidence was.** The 11/44 fakes answer `H`, `N` and `C` because the shipped driver sends
   them; the reply format came from the Pascal's parser and so from real hardware, but the
@@ -131,6 +155,21 @@ The PDP-11/70 front panel (`FormPdp1170PanelU` and all of `pdp1170panel/`) is de
 ported; its IO-Warrior USB binding is already inert on Linux. Note that
 `FormExecuteBlinkenlightU`/`BlinkenlightInstructionsU` are *not* the panel — they generate
 instructions for keying memory in on a real front panel — and are in scope.
+
+## Machine descriptions
+
+The `.ini` files that describe a machine's devices are resources in `pdp11-app`, and are
+**installed into the data directory on the way up** (`MachineDescriptionStore`) because m4
+resolves includes over a directory and a jar has none. An existing file is never overwritten, so
+a user's edit survives an upgrade. `machines/index.txt` says what to install and a test asserts
+it names exactly what is packaged — add a `.modules` file and forget the index, and the load
+breaks for everyone whose copy is not already on disk.
+
+Descriptions declare every address as a **16-bit I/O page address** so one definition serves 16,
+18 and 22-bit machines. Nothing has to be done about that: every console normalises addresses to
+its own width in its own `toPhysical`, and `MemoryCellGroups` keys its propagation index on the
+22-bit form. The Pascal's `ChangeAdddressWidth`, called from nine places in `FormMainU`, is not
+ported and is not needed — `RegisterGroupWidthTest` holds that claim down.
 
 ## External tools
 
