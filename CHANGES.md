@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Phase 6 part 3 — the Memory Test
+
+- **Four memory diagnostics**, ported from `FormMemoryTestU` into `MemoryTester` in `pdp11-core`:
+  data lines (moving one and moving zero, combined across chips so a dead chip cannot masquerade
+  as a dead line), address lines (write each address into itself, in two phases so a *short*
+  between lines shows up as well as a break), data bits (a moving-one pattern in every chip,
+  which is what finds a dead chip), and random.
+- **The simulated machines can be broken on purpose.** `FakePdp11.setStuckDataLines` and
+  `setDeadAddressLine` mean every diagnosis is now checked against the fault it exists to find,
+  rather than asserted in a comment. The original's author did the same thing by hand — two
+  commented-out lines in `TestSingleBit` tie bit 8 high and bit 15 low.
+- The window is a range, a chip size, four buttons and a log — no grid, because the Pascal's grid
+  is created and never shown. Log lines appear as the test runs, so a long test can be watched
+  rather than only reported on, and it can be cancelled from the progress dialog.
+- Test patterns are written and not put back: these are for a machine that is not running
+  anything, which is the assumption the original makes too. A range is clamped to stop at the I/O
+  page, because device registers are not memory and writing patterns into them would *do*
+  something.
+
 ### Phase 6 part 2 — Bitfields and the I/O Page Scanner
 
 - **Bitfields**: one register broken into its named bits, editable from either side — type the

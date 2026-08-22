@@ -158,6 +158,63 @@ public abstract class FakePdp11 {
 	}
 
 	// -------------------------------------------------------------------------------------
+	// Broken memory, on purpose
+	// -------------------------------------------------------------------------------------
+
+	/** Data bits forced high on every read. See {@link #setStuckDataLines}. */
+	private int m_stuckHighMask;
+
+	/** Data bits forced low on every read. */
+	private int m_stuckLowMask;
+
+	/** Address bits ignored on every access, so two addresses become one cell. */
+	private long m_deadAddressLineMask;
+
+	/**
+	 * Break this machine's memory in a specific way, so that something looking for that fault
+	 * can be shown to find it.
+	 *
+	 * <p>This exists because of a comment in the original. {@code TestSingleBit}
+	 * ({@code FormMemoryTestU.pas:388-390}) carries two commented-out lines - "bit 8 always H",
+	 * "bit 15 always L" - which is the author hand-editing the program to check that his own
+	 * memory test could detect a fault. Making that a property of the simulated machine is the
+	 * honest version of the same idea: the memory tests are diagnostic tools, and a diagnostic
+	 * tool nobody has pointed at a real fault is a guess.</p>
+	 *
+	 * @param stuckHighMask bits that read back as 1 whatever was written
+	 * @param stuckLowMask  bits that read back as 0 whatever was written
+	 */
+	public void setStuckDataLines(int stuckHighMask, int stuckLowMask) {
+		m_stuckHighMask = stuckHighMask & 0xFFFF;
+		m_stuckLowMask = stuckLowMask & 0xFFFF;
+	}
+
+	/**
+	 * Make an address line dead: the bit is ignored, so the two halves of memory either side of
+	 * it are the same cells. This is what the address line test is looking for.
+	 *
+	 * @param bitNumber the address bit to lose, or a negative number to repair it
+	 */
+	public void setDeadAddressLine(int bitNumber) {
+		m_deadAddressLineMask = bitNumber < 0 ? 0 : 1L << bitNumber;
+	}
+
+	/** Whether anything has been deliberately broken. */
+	public boolean isFaulty() {
+		return m_stuckHighMask != 0 || m_stuckLowMask != 0 || m_deadAddressLineMask != 0;
+	}
+
+	/** The address the memory actually reaches, once a dead address line has had its say. */
+	private long faultyAddress(long a) {
+		return a & ~m_deadAddressLineMask;
+	}
+
+	/** What a data word reads back as, once the stuck lines have had theirs. */
+	private int faultyRead(int value) {
+		return (value | m_stuckHighMask) & ~m_stuckLowMask & 0xFFFF;
+	}
+
+	// -------------------------------------------------------------------------------------
 	// Memory
 	// -------------------------------------------------------------------------------------
 
@@ -168,9 +225,9 @@ public abstract class FakePdp11 {
 	 *                            implemented I/O page register
 	 */
 	public int getMem(Address addr) {
-		long a = addr.val();
+		long a = faultyAddress(addr.val());
 		if(a <= m_physicalMemorySize - 2)
-			return m_memory[(int) (a >> 1)] & 0xFFFF;
+			return faultyRead(m_memory[(int) (a >> 1)] & 0xFFFF);
 		int io = ioPageIndex(a);
 		if(io >= 0 && m_ioPageValid[io])
 			return m_ioPage[io] & 0xFFFF;
@@ -179,7 +236,7 @@ public abstract class FakePdp11 {
 
 	/** Write one word, with the same rules as {@link #getMem}. */
 	public void setMem(Address addr, int value) {
-		long a = addr.val();
+		long a = faultyAddress(addr.val());
 		if(a <= m_physicalMemorySize - 2) {
 			m_memory[(int) (a >> 1)] = (short) value;
 			return;

@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields and the I/O Page Scanner. 430 tests. Still to do: the Assembler, Memory Loader/Dumper/Test, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner and the Memory Test. 448 tests. Still to do: the Assembler, Memory Loader, Memory Dumper, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1147,6 +1147,34 @@ into it.
   hundred pixels of empty Info column. The minimum width is the floor the redistribution
   respects. Found by looking at a render, not by an assertion — which is what the render habit is
   for.
+
+**Outcome so far, part 3 — the Memory Test.** Four diagnostics that say whether a machine's
+memory works and, when it does not, which part of it is broken: data lines, address lines, data
+bits chip by chip, and random. All four are `MemoryTester` in `pdp11-core`; the window is a range,
+a chip size, four buttons and a log.
+
+- **The tests are pointed at memory that is broken on purpose.** `FakePdp11` can now be given
+  stuck data lines and a dead address line, so every diagnosis is checked rather than asserted:
+  tie bit 8 high and the data line test reports bit 8 high; lose address bit 5 and the address
+  line test says "error in address line 5". This is the honest version of something the original
+  author already did by hand — `TestSingleBit` carries two commented-out lines, "bit 8 always H"
+  and "bit 15 always L", which is him editing his own program to check his own test
+  (`FormMemoryTestU.pas:388-390`).
+- **Why these patterns rather than "write every word and read it back".** A console examine is a
+  command, an answer and a round trip; at 9600 baud, testing 128 KB one word at a time is most of
+  a day. Each test writes a pattern chosen so a handful of accesses says something definite about
+  a whole class of fault, which is also why the chip size has to be told to them.
+- **The data line test's real trick is that it survives other faults.** A chip reading back
+  all-zeros and a chip reading back all-ones both look exactly like stuck data lines at one
+  address, so it repeats at the first word of every chip and ORs and ANDs the readings together.
+  A dead chip pollutes one reading; it cannot make a working line look dead in all of them.
+- **The window has no grid.** The Pascal's has one and never shows it — "Do not update
+  MemoryGrid, es ist die ganze Zeit invisible" (`:181-182`) — so what it is, is a log with
+  controls above it. The cells are still updated as the tests run, because they are on the
+  propagation bus and a memory window on the same range will show them.
+- **Invalidating the range on a keystroke became a document listener**, which catches a pasted
+  range too — with the usual guard so the panel writing its own corrected values back into the
+  fields does not read as the user editing them.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

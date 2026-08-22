@@ -111,9 +111,14 @@ class WindowsDriveTheMachineTest {
 			Edt.run(() -> first.getGrid().getTable().setValueAt("007070", 0, 1));
 			Edt.run(() -> first.getGrid().depositAll(true, null));
 
+			//-- Two hops, on two threads: the value reaches the cell on the command thread and
+			//-- the view copies it into what it displays on the event thread. Waiting only for
+			//-- the first and then asserting the second is a race the test can lose, so wait for
+			//-- the one actually being asserted.
 			until("the value to reach the other window",
 				() -> theirs.getPdpValue().isKnown() && theirs.getPdpValue().word() == 07070);
-			assertEquals(07070, theirs.getEditValue().word(), "and it is what that window is showing");
+			until("the other window to show it",
+				() -> theirs.getEditValue().isKnown() && theirs.getEditValue().word() == 07070);
 		} finally {
 			ctx.getConnectionManager().close();
 		}

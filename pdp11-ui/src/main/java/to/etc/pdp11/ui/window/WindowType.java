@@ -16,6 +16,7 @@ public enum WindowType {
 	EXECUTION("Execution control"),
 	DISASSEMBLER("Disassembler"),
 	BITFIELDS("Bitfields"),
+	MEMORY_TEST("Memory test"),
 	IO_PAGE_SCANNER("I/O page scanner"),
 	REGISTER_GROUP("Registers", true),
 	SIMH_CONSOLE("SimH console"),
