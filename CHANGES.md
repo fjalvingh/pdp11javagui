@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Dark theme
+
+- The application runs **FlatLaf's Darcula**. The terminal was always a dark glass TTY -
+  `GlassTerminalView` paints itself `0x121214` whatever is around it - so a light frame around
+  it was the odd part.
+- Every colour that carries meaning now lives in `UiColors`, and nothing outside it names one.
+  The six that assumed a white background - a dark-grey status detail, a dark green, a dark red -
+  are semantic there now (`SECONDARY_TEXT`, `OK_TEXT`, `ERROR_TEXT`), so a second theme is a
+  change to one file rather than a hunt through every panel.
+- The two markers carried over from the Pascal keep its hues with the luminance turned round:
+  the changed-cell yellow and the program-counter rose are dark blocks with pale text here,
+  where `$80FFFF` straight across would be a screaming yellow rectangle in a dark table.
+- The terminal's scroll pane loses its border. FlatLaf reports visual padding for it, so
+  MigLayout laid the terminal out two pixels outside the panel on every side and the border it
+  drew was clipped away regardless - and a terminal that is the window's content should not be
+  wearing a widget's frame.
+- `UiRenderer` installs the same look and feel the application does; a render of a theme nobody
+  will see is not worth looking at.
+
 ### Phase 5 — the windows that make it useful
 
 - **The application does what it is for.** Connect to a machine, look at memory, change it, run

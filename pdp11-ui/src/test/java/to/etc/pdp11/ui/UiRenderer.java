@@ -139,7 +139,9 @@ public final class UiRenderer {
 	 */
 	public static boolean installLookAndFeel() {
 		try {
-			UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatLightLaf());
+			//-- The same one the application installs, or a render is a picture of something
+			//-- nobody will ever see.
+			UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatDarculaLaf());
 			return true;
 		} catch(Exception | LinkageError x) {
 			return false;

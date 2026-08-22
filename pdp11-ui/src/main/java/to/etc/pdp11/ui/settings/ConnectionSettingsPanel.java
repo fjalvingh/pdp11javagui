@@ -6,6 +6,7 @@ import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TransportConfig;
 import to.etc.pdp11.core.conn.TransportKind;
 import to.etc.pdp11.core.io.SerialTransport;
+import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
@@ -15,7 +16,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.util.List;
 
 /**
@@ -92,7 +92,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 		buildTransportCards();
 		add(m_transportCards, "spanx, growx, wrap");
 
-		m_problem.setForeground(new Color(0xA0, 0x20, 0x20));
+		m_problem.setForeground(UiColors.ERROR_TEXT);
 		add(m_problem, "spanx, growx");
 
 		m_protocol.addActionListener(e -> changed());

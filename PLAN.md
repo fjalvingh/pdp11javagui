@@ -86,7 +86,7 @@ still clear:
 4. **No manual resource disposal.** SWT requires disposing every `Color`, `Font`, `Image`,
    `GC`; across ~25 windows that is a steady source of leaks.
 
-**Stack:** Java 21+ · Swing · [FlatLaf](https://www.formdev.com/flatlaf/) · RSyntaxTextArea ·
+**Stack:** Java 21+ · Swing · [FlatLaf](https://www.formdev.com/flatlaf/), Darcula · RSyntaxTextArea ·
 MigLayout · [jSerialComm](https://github.com/Fazecast/jSerialComm) ·
 [JediTerm](https://github.com/JetBrains/jediterm) · JUnit 5 · Maven (matching
 `/home/jal/git/domui`, which is also multi-module).

@@ -10,6 +10,7 @@ import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MachineState;
+import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -18,7 +19,6 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.border.TitledBorder;
-import java.awt.Color;
 import java.awt.Font;
 import java.util.EnumSet;
 
@@ -109,7 +109,7 @@ public final class ExecutionPanel extends JPanel {
 		m_switchPanel.add(m_switchInfo, "growx");
 		add(m_switchPanel, "cell 0 3, spanx, growx, wrap");
 
-		m_state.setForeground(Color.DARK_GRAY);
+		m_state.setForeground(UiColors.SECONDARY_TEXT);
 		add(m_state, "cell 0 4, spanx, growx");
 
 		m_reset.addActionListener(e -> doResetAndSetPc());
@@ -162,7 +162,8 @@ public final class ExecutionPanel extends JPanel {
 			m_haltSwitch.setSelected(mode == ConsoleRunMode.HALT);
 			//-- Red until the operator says where the switch is: until then the console does not
 			//-- know what it is allowed to do, and neither do we.
-			m_switchInfo.setForeground(mode == ConsoleRunMode.UNKNOWN ? Color.RED : Color.GRAY);
+			m_switchInfo.setForeground(mode == ConsoleRunMode.UNKNOWN
+				? UiColors.ERROR_TEXT : UiColors.SECONDARY_TEXT);
 		}
 
 		m_state.setText(connected

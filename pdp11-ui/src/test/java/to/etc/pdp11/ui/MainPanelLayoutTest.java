@@ -124,7 +124,7 @@ class MainPanelLayoutTest {
 	}
 
 	@Test
-	void itPaintsAndTheTerminalIsDarkWhereItShouldBe() throws Exception {
+	void itPaintsAndTheTerminalIsDarkerThanTheFrameAroundIt() throws Exception {
 		MainPanel panel = new MainPanel();
 		panel.getTerminal().append("sim> E 1000\n1000:   123456\nsim> ", TerminalStyle.PDP);
 		panel.showConnectionState(ConnectionManager.State.CONNECTED, "SimH over simulated machine");
@@ -132,13 +132,16 @@ class MainPanelLayoutTest {
 
 		assertEquals(WIDTH, image.getWidth());
 		assertEquals(HEIGHT, image.getHeight());
-		//-- Somewhere in the middle of the terminal, which is the dark part. If the terminal had
-		//-- not been laid out or had not painted, this would be the panel's background.
+		//-- Somewhere in the middle of the terminal. The application runs a dark theme, so this
+		//-- is no longer "dark against light" - what says the terminal painted at all is that it
+		//-- is its own near-black rather than the theme's window background.
 		int middle = image.getRGB(WIDTH / 2, HEIGHT / 3);
-		assertTrue(brightness(middle) < 80, "the terminal should be dark here, was " + Integer.toHexString(middle));
-		//-- And the status bar, two pixels off the bottom, should not be.
+		assertTrue(brightness(middle) < 40, "the terminal should be near-black, was " + Integer.toHexString(middle));
+		//-- And the status bar, two pixels off the bottom, is the frame around it: darker than a
+		//-- light theme ever was, and still clearly not the terminal.
 		int bottom = image.getRGB(WIDTH / 2, HEIGHT - 3);
-		assertTrue(brightness(bottom) > 150, "the status bar should be light, was " + Integer.toHexString(bottom));
+		assertTrue(brightness(bottom) > brightness(middle) + 20,
+			"the status bar should be distinguishable from the terminal, was " + Integer.toHexString(bottom));
 	}
 
 	private static int brightness(int rgb) {

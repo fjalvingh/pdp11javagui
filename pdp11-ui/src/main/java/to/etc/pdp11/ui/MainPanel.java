@@ -7,7 +7,6 @@ import to.etc.pdp11.ui.terminal.TerminalView;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import java.awt.Color;
 
 /**
  * What is inside the main window: the terminal, and the connection status under it.
@@ -42,7 +41,7 @@ public final class MainPanel extends JPanel {
 	private JPanel buildStatusBar() {
 		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow]", "[]"));
 		bar.add(m_state);
-		m_detail.setForeground(new Color(0x60, 0x60, 0x60));
+		m_detail.setForeground(UiColors.SECONDARY_TEXT);
 		bar.add(m_detail, "growx");
 		return bar;
 	}
@@ -78,9 +77,9 @@ public final class MainPanel extends JPanel {
 			case FAILED -> "Connection failed";
 		});
 		m_state.setForeground(switch(state) {
-			case CONNECTED -> new Color(0x1E, 0x7A, 0x32);
-			case FAILED -> new Color(0xA0, 0x20, 0x20);
-			default -> Color.DARK_GRAY;
+			case CONNECTED -> UiColors.OK_TEXT;
+			case FAILED -> UiColors.ERROR_TEXT;
+			default -> UiColors.SECONDARY_TEXT;
 		});
 		m_detail.setText(detail == null ? "" : detail);
 	}

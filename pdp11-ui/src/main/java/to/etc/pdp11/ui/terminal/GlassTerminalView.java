@@ -2,6 +2,7 @@ package to.etc.pdp11.ui.terminal;
 
 import to.etc.pdp11.core.console.TerminalProfile;
 
+import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JScrollPane;
 import javax.swing.JTextPane;
@@ -72,6 +73,14 @@ public final class GlassTerminalView implements TerminalView {
 				onKeyPressed(e);
 			}
 		});
+		//-- No border. The terminal is the main window's content rather than a widget on a
+		//-- form, and a themed scroll pane border here is both wrong-looking and, because
+		//-- FlatLaf reports visual padding for it, laid out two pixels outside the panel on
+		//-- every side - so the border it draws is clipped away anyway.
+		m_scroll.setBorder(BorderFactory.createEmptyBorder());
+		m_scroll.setViewportBorder(BorderFactory.createEmptyBorder());
+		m_scroll.getViewport().setBackground(m_pane.getBackground());
+
 		m_pdpStyle = style(new Color(0xD8, 0xD8, 0xD8));
 		m_userStyle = style(new Color(0x7F, 0xC7, 0xFF));
 		m_systemStyle = style(new Color(0xB0, 0x90, 0x50));

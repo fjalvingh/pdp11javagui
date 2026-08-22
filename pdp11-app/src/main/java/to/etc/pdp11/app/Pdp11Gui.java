@@ -1,6 +1,6 @@
 package to.etc.pdp11.app;
 
-import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.FlatDarculaLaf;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MainWindow;
@@ -80,9 +80,17 @@ public final class Pdp11Gui {
 		}
 	}
 
+	/**
+	 * Darcula, FlatLaf's dark theme.
+	 *
+	 * <p>The terminal was always a dark glass TTY - {@code GlassTerminalView} paints itself
+	 * {@code 0x121214} whatever is around it - so a light frame around it was the odd part. The
+	 * colours that carry meaning are in {@link to.etc.pdp11.ui.UiColors}, tuned for this
+	 * background; nothing else in the UI names a colour.</p>
+	 */
 	private static void installLookAndFeel() {
 		try {
-			UIManager.setLookAndFeel(new FlatLightLaf());
+			UIManager.setLookAndFeel(new FlatDarculaLaf());
 		} catch(Exception x) {
 			//-- Not fatal: the cross-platform L&F is ugly but works, and a missing theme is no
 			//-- reason to refuse to start.
