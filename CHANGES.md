@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Phase 6 part 1 — machine descriptions and the register windows
+
+- **`MemoryCellGroupList`**, the second of the two reusable frames PLAN.md §3 asks for: named
+  cells one per row, with register, address, editable value and description. One address under
+  several names is several rows that agree — which several real device registers need, the
+  RX211's data buffer being declared six times because the controller reinterprets it at each
+  stage of a transfer.
+- **Machine descriptions are installed into the data directory** on the way up and `pdp11.ini`
+  is loaded from there: 17 register groups, 62 bitfield definitions. m4 resolves includes over a
+  directory and there is none inside a jar, and it gives the user somewhere to describe their own
+  machine. An existing file is never overwritten. `machines/index.txt` says what to install and a
+  test asserts it names exactly what is packaged.
+- **Register-group windows**, keyed `REGISTER_GROUP/<name>` — the case `WindowKey`'s
+  `instanceId` was built for, since these are whatever the loaded description declares rather
+  than a fixed set. The Windows menu lists them by name and is built when it opens, so loading a
+  different description needs nothing kept in step.
+- **The Pascal's global address-width switch is not ported, and does not need to be.** The
+  descriptions declare 16-bit I/O page addresses so one definition serves 16, 18 and 22-bit
+  machines; the Pascal re-expresses every group in the application whenever a console is chosen,
+  from nine call sites. Every console here normalises addresses in its own `toPhysical` and the
+  propagation index keys on the 22-bit form, so a 16-bit register group reaches the right
+  register on a 22-bit machine untouched. `RegisterGroupWidthTest` proves it against a live
+  simulated machine instead of asserting it in a comment.
+- `SyncBitfieldForm` becomes an announcement rather than a reach-in: the list says which cell is
+  selected, and the Bitfields window will subscribe when it exists.
+
 ### Dark theme
 
 - The application runs **FlatLaf's Darcula**. The terminal was always a dark glass TTY -

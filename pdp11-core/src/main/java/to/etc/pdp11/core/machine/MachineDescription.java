@@ -43,8 +43,13 @@ import java.util.List;
  *
  * <p>Addresses are octal and always 16-bit I/O page addresses, by the descriptions' own
  * convention, "so the same device definition can be used for 16, 18 and 22 bit machines"
- * ({@code pdp11.ini:12-15}). {@link MemoryCellGroups#changeAddressWidth} re-expresses them
- * once the target machine is known.</p>
+ * ({@code pdp11.ini:12-15}). <b>Nothing has to be done about that here.</b> Every console
+ * normalises an address to its own width on the way out, and {@link MemoryCellGroups} keys its
+ * propagation index on the 22-bit form, so a 16-bit register group reaches the right register on
+ * a 22-bit machine untouched - which {@code RegisterGroupWidthTest} checks against a live
+ * simulated machine. The Pascal has to call {@code ChangeAdddressWidth} over every group in the
+ * application whenever a console is chosen, from nine places in {@code FormMainU}, because its
+ * consoles send the address they are given.</p>
  */
 public final class MachineDescription {
 	/** Everything loaded from a description carries this, so a reload can drop just it. */

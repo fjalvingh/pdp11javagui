@@ -7,12 +7,14 @@ import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
+import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowType;
 
 import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
@@ -194,6 +197,37 @@ class WindowsBuildTest {
 			});
 			assertEquals("000777", w.getPanel().getCurrentPcField().getText(),
 				"a window that came back is still listening");
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * The register-group windows are whatever the machine description declares, so the factory
+	 * looks the group up by name when the window is opened rather than being told about it.
+	 */
+	@Test
+	void aRegisterGroupWindowIsBuiltForTheGroupItIsNamedAfter(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		RegisterGroupWindow.register(ctx);
+		to.etc.pdp11.core.mem.MemoryCellGroup g = ctx.getMemoryCellGroups()
+			.addGroup(to.etc.pdp11.core.addr.MemoryAddressType.PHYSICAL16, "DL11");
+		g.setUsageTag("machine");
+		g.add(0177560, 4);
+		try {
+			ToolWindow w = onEdt(() -> ctx.getWindowManager()
+				.open(to.etc.pdp11.ui.window.WindowKey.of(WindowType.REGISTER_GROUP, "DL11")));
+			assertEquals("Registers - DL11", w.getTitle());
+			assertEquals(List.of(g), RegisterGroupWindow.groupsOf(ctx));
+
+			//-- And a group that is not there is refused rather than opening an empty window
+			//-- onto nothing.
+			assertThrows(IllegalStateException.class, () -> onEdt(() -> ctx.getWindowManager()
+				.open(to.etc.pdp11.ui.window.WindowKey.of(WindowType.REGISTER_GROUP, "NOSUCH"))));
 		} finally {
 			onEdt(() -> {
 				ctx.getWindowManager().closeAll();

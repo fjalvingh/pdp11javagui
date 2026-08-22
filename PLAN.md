@@ -37,7 +37,7 @@ reference implementation throughout the port.
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
 | 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
-| 6 — Assembler and tools | | |
+| 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, and the register-group windows the description creates — 17 of them from the shipped `pdp11.ini`. 413 tests. Still to do: the Assembler, Memory Loader/Dumper/Test, Bitfields, I/O Page Scanner, MMU, Microcode, Number Converter, Blinkenlight Execution, SimH Console and Remote Log. |
 | 7 — Disc images | | |
 | 8 — Packaging | | |
 
@@ -1074,6 +1074,39 @@ JVM, so the "done when" above is checked on a build machine with no hardware and
 - **Known gap: settings are saved when the main window closes, and only then.** Killing the
   process loses them. The Pascal is the same. A shutdown hook would cover it and has not been
   added, because a save on the way out of a crash is not obviously the right thing to want.
+
+**Outcome so far — the machine description, and what it creates.** The two things phase 5
+deferred are done, because everything else in this phase leans on them. `MemoryCellGroupList` is
+the second of the two reusable frames; the shipped machine descriptions are installed into the
+data directory on the way up and `pdp11.ini` is loaded there; and the register-group windows it
+declares are created on demand, keyed `REGISTER_GROUP/<name>`.
+
+- **The global address-width switch does not need porting, and that is worth knowing before
+  anything else is built on it.** The descriptions declare every address as 16-bit I/O page,
+  "so the same device definition can be used for 16, 18 and 22 bit machines"
+  (`pdp11.ini:12-15`), and the Pascal answers that by re-expressing *every group in the
+  application* whenever a console is chosen — `MemoryCellGroups.ChangeAdddressWidth`, called
+  from nine places in `FormMainU`. Here every console already normalises an address to its own
+  width in its own `toPhysical`, and `MemoryCellGroups` keys its propagation index on the 22-bit
+  form, so a 16-bit register group reaches the right register on a 22-bit machine untouched.
+  `RegisterGroupWidthTest` proves it against a live simulated machine rather than asserting it
+  in a comment: deposit through the 16-bit cell, read `017777776` back directly, same register.
+- **The descriptions had to become files, not resources.** m4 include resolution works over a
+  directory and there is no directory inside a jar, so the shipped set is written into the data
+  directory — which is where the Pascal keeps them too (`--include=%PDP11GUIAPPDATADIR%\machines`)
+  and which gives the user somewhere to describe their own machine. An existing file is never
+  overwritten, so an edit survives an upgrade. The list of what to install is a committed
+  `machines/index.txt`, and a test asserts it names exactly what is packaged — a hand-maintained
+  file list is otherwise a trap that only bites people who are not the developer.
+- **`SyncBitfieldForm` becomes an announcement.** The Pascal list frame calls
+  `FormMain.SyncBitfieldForm` by name (`FrameMemoryCellGroupListU.pas:108-114`), so the list
+  knows about the main form and the main form knows about the Bitfields window. Here the list
+  says which cell is selected and whoever cares subscribes — which is what the Bitfields window
+  will do when it arrives, changing nothing here.
+- **`Disconnect` survives, but only half of it.** It exists in the Pascal because the grid holds
+  raw pointers to `TMemoryCell` in `Objects[]` and a repaint during a rescan — and the scan is
+  full of `ProcessMessages` — would paint from freed memory. None of that can happen here; what
+  is worth keeping is dropping the subscription before the cells go.
 
 **Phase 6 — Assembler and remaining tools.** The merged Assembler window (RSyntaxTextArea +
 MACRO-11 JFlex mode + external `macro11` on `PATH` via `ProcessBuilder` — two runs,

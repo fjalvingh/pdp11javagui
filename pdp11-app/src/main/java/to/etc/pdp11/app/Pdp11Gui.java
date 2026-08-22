@@ -8,6 +8,7 @@ import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
+import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.log.UiLogger;
 
 import javax.swing.JOptionPane;
@@ -45,6 +46,9 @@ public final class Pdp11Gui {
 			installLookAndFeel();
 			AppContext context = AppContext.create(logger);
 			registerWindows(context);
+			//-- Before the main window, so its Windows menu has the device groups in it the
+			//-- first time it is opened.
+			MachineDescriptionStore.installAndLoad(context);
 			logger.log(LogChannel.OTHER, "PDP11GUI starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
 			new MainWindow(context).setVisible(true);
@@ -63,6 +67,7 @@ public final class Pdp11Gui {
 		MemoryWindow.register(context);
 		ExecutionWindow.register(context);
 		DisassemblerWindow.register(context);
+		RegisterGroupWindow.register(context);
 	}
 
 	/**

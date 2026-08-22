@@ -10,12 +10,10 @@ import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 
-import javax.swing.DefaultCellEditor;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -23,8 +21,6 @@ import javax.swing.table.TableCellRenderer;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -105,7 +101,7 @@ public final class MemoryCellGroupTable extends JPanel {
 		m_table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		m_table.setRowSelectionAllowed(false);
 		m_table.setDefaultRenderer(Object.class, new ValueRenderer());
-		m_table.setDefaultEditor(Object.class, new OctalEditor());
+		m_table.setDefaultEditor(Object.class, new OctalCellEditor());
 		//-- One click into a cell starts editing; the Pascal grid behaves this way and a memory
 		//-- editor where you have to double-click every word is tiring within about a minute.
 		m_table.setSurrendersFocusOnKeystroke(true);
@@ -454,30 +450,6 @@ public final class MemoryCellGroupTable extends JPanel {
 			sb.append(": ").append(mc.getInfo());
 		sb.append("; machine holds ").append(mc.getPdpValue().isKnown() ? mc.getPdpValue().toOctal() : "nothing read");
 		return sb.toString();
-	}
-
-	/**
-	 * Octal digits only, which is what {@code MemoryCellsStringGridKeyPress} enforces
-	 * ({@code :331-355}) - minus its hand-rolled ^C and ^V handling, because a
-	 * {@code JTextField} already has a working clipboard.
-	 */
-	private static final class OctalEditor extends DefaultCellEditor {
-		private OctalEditor() {
-			super(new JTextField());
-			JTextField field = (JTextField) getComponent();
-			field.setFont(new Font(Font.MONOSPACED, Font.PLAIN, field.getFont().getSize()));
-			field.addKeyListener(new KeyAdapter() {
-				@Override
-				public void keyTyped(KeyEvent e) {
-					char c = e.getKeyChar();
-					if(c < '0' || c > '7') {
-						if(c != KeyEvent.VK_BACK_SPACE && c != KeyEvent.VK_DELETE && !e.isControlDown())
-							e.consume();
-					}
-				}
-			});
-			setClickCountToStart(1);
-		}
 	}
 
 	/** The renderer, for a test that wants to know what colour a cell came out. */

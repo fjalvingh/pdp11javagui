@@ -5,6 +5,7 @@ import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
 import to.etc.pdp11.ui.window.ToolWindow;
@@ -156,6 +157,12 @@ public final class MainWindow extends JFrame {
 		for(WindowType type : WindowType.values()) {
 			if(!windows.isRegistered(type))
 				continue;
+			if(type == WindowType.REGISTER_GROUP) {
+				//-- Not "another one": these are whatever the machine description declares, so
+				//-- the menu lists them by name.
+				m_windowsMenu.add(buildRegisterGroupMenu());
+				continue;
+			}
 			if(type.isMultiple()) {
 				//-- There can be any number of these, so the menu offers another one rather than
 				//-- "the" one; the ones that exist are listed below with everything else open.
@@ -182,6 +189,35 @@ public final class MainWindow extends JFrame {
 			m_windowsMenu.addSeparator();
 			m_windowsMenu.add(hideAll);
 		}
+	}
+
+	/**
+	 * One entry per device group in the loaded machine description.
+	 *
+	 * <p>The Pascal builds these menu items in {@code LoadMachineDescription}
+	 * ({@code FormMainU.pas:628-641}) and frees them in {@code UnloadMachineDescription},
+	 * matching them back to their windows by caption. Building the menu when it opens means
+	 * there is nothing to keep in step: load a different description and the next look at this
+	 * menu shows that description's devices.</p>
+	 */
+	private JMenu buildRegisterGroupMenu() {
+		JMenu menu = new JMenu("Device registers");
+		java.util.List<to.etc.pdp11.core.mem.MemoryCellGroup> groups = RegisterGroupWindow.groupsOf(m_context);
+		if(groups.isEmpty()) {
+			JMenuItem none = new JMenuItem("No machine description loaded");
+			none.setEnabled(false);
+			menu.add(none);
+			return menu;
+		}
+		for(to.etc.pdp11.core.mem.MemoryCellGroup group : groups) {
+			JMenuItem item = new JMenuItem(group.getGroupName());
+			if(!group.getGroupInfo().isEmpty())
+				item.setToolTipText(group.getGroupInfo());
+			item.addActionListener(e -> m_context.getWindowManager()
+				.open(to.etc.pdp11.ui.window.WindowKey.of(WindowType.REGISTER_GROUP, group.getGroupName())));
+			menu.add(item);
+		}
+		return menu;
 	}
 
 	// -------------------------------------------------------------------------------------
