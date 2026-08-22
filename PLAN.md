@@ -35,7 +35,7 @@ reference implementation throughout the port.
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
 | 3 — Transports and fakes | **Partly done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; `FakePdp11` + ODT (both dialects), 42 tests. **Still to port: the 11/44, 11/44 v340c, M9301 and M9312 fakes** - phase 4 needs each one as it reaches that console. |
-| 4 — Console layer | Next | The keystone. Budget it generously - and see the SimH findings under phase 3. |
+| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and two of the five consoles: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH) and ODT in both dialects. 208 tests. **Still to do: the M9301/M9312 and 11/44 consoles**, and the phase-3 fakes each of them needs. |
 | 5 — First usable app | | |
 | 6 — Assembler and tools | | |
 | 7 — Disc images | | |
@@ -769,6 +769,72 @@ was hard-won. Also preserve the event-driven `TSimhCpuState` tracking
 (`ConsolePDP11SimHU.pas:98, 542-551`) — an earlier timeout-based version was a real hazard.
 **Done when:** headless integration tests examine and deposit against every fake, and against
 a real SimH launched by the test. *Large — the heart of the port.*
+
+**Outcome so far — SimH direct.** The threading model of §1 is in and is what §1 said it
+would be: `ConsoleConnection` owns a reader thread and a single-threaded command executor, and
+the executor being the critical section deletes `BeginCriticalSection`, its nesting counter, the
+100 ms monitor timer and the inter-phrase `ProcessMessages` outright. Nothing replaced them. The
+one deadlock trap §1 named is now an exception rather than a hazard: `call()` from the command
+thread refuses.
+
+- **The prompt is not a synchronisation point. The echo is.** This is the phase-3 problem, and
+  it had a clean answer once stated properly: of everything SimH sends, exactly one thing cannot
+  have been produced before the command was sent, and that is SimH's echo of the command itself.
+  `sendCommand` waits for that echo and returns its position; the prompt check, the examine
+  replies and the "did SimH reject this" scan all read strictly after it. `SimhConsoleIT` drives
+  examine, deposit, run, halt and single step against a real SimH and has been run repeatedly
+  without drifting. **The general lesson is worth carrying to the other consoles:** when a
+  protocol repeats itself, synchronise on the token that is unique to this exchange, not on the
+  one that merely tends to arrive next.
+- **`AnswerCollector` therefore has positions, not just "the last one of this type".** The
+  Pascal's `GetLastAnswer` searches the whole list backwards, which is what let a stale prompt
+  satisfy a check. Both forms are available; the SimH console uses the positional one everywhere.
+- **A fake SimH now exists (`FakeSimh`), and the Pascal has no such thing.** It tests its SimH
+  console against SimH, which CI cannot do. It reproduces exactly three things - nothing works
+  before `^E`, every command is echoed character by character, and the prompt is printed at the
+  end of the *previous* command - because those are the three the protocol layer has to cope
+  with. A fake that printed the prompt after the reply would quietly validate a synchronisation
+  that does not work against the real thing.
+- **Two deliberate divergences.** `Console.examine` returns a `CellValue`, not the `int` §1
+  sketched: §2 had already decided the sentinel does not survive the port, and a UNIBUS timeout
+  is precisely the case it was used for. And the base bulk deposit skips a cell whose edit value
+  was never set - the Pascal sends `MEMORYCELL_ILLEGALVAL` to the machine as a value, depositing
+  `177777` into whatever that cell names. With `CellValue` that is not expressible.
+- **One hardening.** `while not examineAddrList(...) do ;` terminates in the Pascal because a
+  comment says every call marks at least one more cell answered. That holds only while a failure
+  can be attributed to a cell; against a SimH answering about an address nobody asked for it
+  spins forever. The Java counts what is left and stops a pass that achieves nothing.
+**Outcome so far — ODT.** The second console, and the first one that talks to real hardware.
+It exercises the half of the scanner SimH does not use: the symbol lexer, the one-deep mark and
+restore, and both control-flow exceptions. `FakePdp11Odt` was already ported in phase 3, so this
+had a full transcript from a real PDP-11/23 to be tested against from the first line of code.
+
+- **ODT is a terminal, and that is what shapes the parser.** Everything sent is echoed and the
+  reply is glued to the echo - `1000/` comes back as `1000/000000 `, of which five
+  characters are our own. So there is nothing here to anchor on the way SimH anchors on its
+  echo, because here the echo *is* the answer. What makes it sound instead is that the phrase
+  grammar says unambiguously where a reply starts: a prompt or a line end, then an address, then
+  a slash. Two consoles, two different reasons a naive "send and wait" is wrong.
+- **The one-symbol lookahead survives between decode calls, and has to.** "Leave the `@`
+  standing" in the Pascal means the character is consumed from the buffer but stays as the
+  scanner's current symbol, so the next call parses `@addr/val` without re-reading the prompt.
+  That is the part of the restartable-lexer design that is easy to lose in translation and
+  impossible to notice until a reply arrives split across two reads.
+- **`OdtDialect` is the `ConsoleDialect` value object §2 asked for.** The Pascal has two
+  independent booleans whose own comment says the K1630 "needs also
+  GobbleExtraSpaceAfterPrompt" - a constraint nothing there enforces. Note it is deliberately
+  *not* the same type as the fake's identically named enum: the transports depend on the fakes
+  and the console layer depends on the transports, so sharing one would put a cycle between the
+  packages. The fake's says what a machine prints; this says how a driver reads it.
+- **One decode-loop fix.** A pass that consumes input without recognising a phrase now reports
+  progress rather than "nothing found". The K1630 prefixes its halt report with `ESC S`, which
+  matches no rule; the Pascal stops there with input still in the buffer and looks no further
+  until the next byte arrives - and if that byte was the last of the reply, never. Every such
+  pass consumes at least one character, so the loop still terminates.
+- **What is left of phase 4:** the M9301 and M9312 boot-ROM consoles and the 11/44, each with the
+  phase-3 fake it needs (`FakePDP11M9301U`, `FakePDP11M9312U`, `FakePDP1144U`,
+  `FakePDP1144v340cU`, ~1,700 lines). The K1630 needs no console of its own - it is a dialect of
+  this one - but `FakePDP11ODTK1630U` would give it a fake at the machine end.
 
 **Phase 5 — First usable app.** Main window with terminal and connection status, Settings
 with the decomposed `ConnectionProfile` model, `WindowManager` + `ToolWindow` + geometry

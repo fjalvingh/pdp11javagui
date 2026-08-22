@@ -157,18 +157,18 @@ class SimhProcessTransportIT {
 		}
 	}
 
-	/**
-	 * <b>The command handshake is deliberately not tested here.</b> Getting SimH's remote
-	 * console to answer a command needs more than a connection: {@code ^E} to reach a prompt,
-	 * and then a synchronisation that survives SimH printing its prompt <i>before</i> echoing
-	 * the command it is about to run. Ad-hoc waiting in a test can be made to pass and then
-	 * fails on the next run - it did, repeatedly - because what is actually needed is the
-	 * phase 4 scanner: a restartable lexer that knows a prompt from an echo from an answer.
-	 *
-	 * <p>Everything observed live is recorded in PLAN.md phase 3 as input to that work. What
-	 * this class asserts is what phase 3 owns and what is stable: SimH launches, the ports are
-	 * probed, both channels connect, IAC is stripped, and the banner arrives intact.</p>
-	 */
+	//-- The command handshake is deliberately not tested here. Getting SimH's remote console
+	//-- to answer a command needs more than a connection: ^E to reach a prompt, and then a
+	//-- synchronisation that survives SimH printing its prompt BEFORE echoing the command it
+	//-- is about to run. Ad-hoc waiting in a test can be made to pass and then fails on the
+	//-- next run - it did, repeatedly - because what is actually needed is the phase 4
+	//-- console layer. That now exists, and SimhConsoleIT drives examine, deposit, run, halt
+	//-- and single step against a real SimH; it synchronises on SimH's echo of the command,
+	//-- which is the one thing in the stream that cannot predate the command.
+	//--
+	//-- What this class asserts is what phase 3 owns and what is stable without any of that:
+	//-- SimH launches, the ports are probed, both channels connect, IAC is stripped, and the
+	//-- banner arrives intact.
 
 	/** The generated configuration is left on disk deliberately, for when a launch goes wrong. */
 	@Test

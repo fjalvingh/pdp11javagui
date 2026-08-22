@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+### Phase 4 — console layer (SimH first)
+
+- `to.etc.pdp11.core.console`: the threading model of PLAN.md §1, made real.
+  `ConsoleConnection` owns one **reader thread** (blocks on the transport, masks each byte to
+  7 bits, forwards a copy to the terminal, feeds the decoder) and one **command thread** (a
+  single-threaded executor every `Console` call runs on). That executor *is* the Pascal's
+  critical section: `BeginCriticalSection`/`EndCriticalSection` and their nesting counter are
+  gone, as are the 100 ms monitor timer and the `ProcessMessages` between decoded phrases.
+  `call()` refuses to be called from the command thread rather than deadlocking there — which
+  is the trap the Pascal walks into when `SilentHaltTimerTimer` issues a console command from
+  a timer callback.
+- `AnswerPhrase` is a sealed hierarchy (`Prompt`, `Halt`, `ExamineResult`, `OtherLine`) in
+  place of a class whose fields are valid only for certain values of a discriminator, and
+  `ConsoleScanner` is the restartable lexer, generic over each console's own symbol enum.
+- `SimhConsole`: examine, deposit, bulk examine with address-range batching, reset, run, halt,
+  single step, and the event-driven `CpuState` tracking PLAN.md said to preserve.
+- **The prompt is not a synchronisation point, and the echo is.** SimH prints its prompt
+  *before* echoing the command it is about to run, so "send, then wait for `sim>`" can be
+  satisfied by the *previous* command's prompt. That is what made phase 3's attempts pass and
+  then fail on the next run. `sendCommand` waits for SimH's echo of the command — the one
+  thing in the stream that cannot predate the command — and reads the prompt, the replies and
+  the rejection check strictly after it. `SimhConsoleIT` now drives examine, deposit, run,
+  halt and single step against a real SimH, repeatedly, without drifting out of step.
+- `FakeSimh`, which has no Pascal counterpart: the Pascal tests its SimH console against SimH
+  itself, and CI has no SimH. It reproduces the three properties the protocol layer has to
+  cope with — nothing works before `^E`, every command is echoed back, and the prompt arrives
+  before the echo — so `SimhConsoleTest` covers the same ground everywhere the build runs.
+- Two divergences worth knowing. `examine` returns a `CellValue`, not an `int`: PLAN.md §1
+  sketched the sentinel and PLAN.md §2 had already decided it does not survive the port, and a
+  UNIBUS timeout is exactly what it was used for. And a bulk deposit now *skips* a cell whose
+  edit value was never set, where the Pascal sends its `$ffffffff` sentinel to the machine as a
+  value and deposits `177777` into whatever it names.
+- Terminal input is queued on the command thread instead of being dropped whenever the console
+  is busy, which is what `TSerialIoHub.DataFromTerminal` does.
+- `OdtConsole` and `OdtScanner`: the microcode ODT console, in 16, 18 and 22-bit form, driven
+  against the phase-3 `FakePdp11Odt` for both dialects. This is the console that talks to real
+  hardware, and it is parsed symbol by symbol rather than by lines, because ODT is a terminal:
+  everything sent is echoed and the reply is glued to the echo, so `1000/` comes back as
+  `1000/000000 ` with the first five characters our own. `OdtDialect` replaces the two
+  independent `isK1630` / `GobbleExtraSpaceAfterPrompt` booleans threaded through the Pascal
+  scanner, which the Pascal's own comment says have to agree and nothing enforces.
+- A deposit at ODT is a conversation, not a command: send `addr/`, wait for the location to
+  open and print its contents, then send the value. `haltCpu` explains that ODT cannot stop a
+  running machine — it is the CPU's own microcode, so nobody is listening — where the Pascal
+  leaves the method abstract and raises an abstract-method error.
+- **One decode-loop fix.** A pass that consumes input without recognising a phrase now reports
+  progress instead of stopping. The K1630 prefixes a halt report with `ESC S`, which matches no
+  rule; the Pascal returns "nothing recognised" there and looks no further until the next byte
+  arrives — and if that was the last of the reply, never.
+
 ### Phase 3 — transports and fakes
 
 - `to.etc.pdp11.core.io`: `PhysicalTransport`, the boundary the whole test strategy rests on,
@@ -23,8 +73,10 @@
   `^E` is what produces a `sim>` prompt at all. `SimhProcessTransport` opens both channels and
   drains SimH's stdout for diagnosis; see the note on that class and PLAN.md phase 3 for the
   full handshake and for what phase 4's scanner has to expect.
-- `SimhProcessTransportIT` launches a real SimH and round-trips a deposit and examine. It
-  skips when SimH is not on `PATH`, which is the case on CI.
+- `SimhProcessTransportIT` launches a real SimH and asserts what phase 3 owns: the port probe,
+  both channels connecting, IAC stripping and the banner. Commands are phase 4's business and
+  are covered by `SimhConsoleIT`. Both skip when SimH is not on `PATH`, which is the case on
+  CI.
 - **Not yet ported:** the 11/44, 11/44 v340c, M9301 and M9312 fakes. Phase 4 reaches those
   consoles after SimH and ODT, so each can follow its console.
 

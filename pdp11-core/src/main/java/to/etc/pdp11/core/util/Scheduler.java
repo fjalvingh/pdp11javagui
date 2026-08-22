@@ -42,8 +42,14 @@ public interface Scheduler {
 	final class Manual implements Scheduler {
 		private final List<ManualHandle> m_pending = new ArrayList<>();
 
+		/**
+		 * Synchronized, all of it. Scheduling is no longer something only the test thread does:
+		 * the console layer schedules from its reader thread and its fakes from the command
+		 * thread, so a plain {@code ArrayList} here would be a data race in every test that
+		 * drives a console rather than a bare fake.
+		 */
 		@Override
-		public Handle schedule(Runnable task, long delayMillis) {
+		public synchronized Handle schedule(Runnable task, long delayMillis) {
 			ManualHandle h = new ManualHandle(task, delayMillis);
 			m_pending.add(h);
 			return h;
@@ -51,25 +57,29 @@ public interface Scheduler {
 
 		/** Run everything scheduled and not cancelled, in the order it was scheduled. */
 		public int fireAll() {
-			List<ManualHandle> due = new ArrayList<>(m_pending);
-			m_pending.clear();
+			List<ManualHandle> due;
+			synchronized(this) {
+				due = new ArrayList<>(m_pending);
+				m_pending.clear();
+			}
 			int fired = 0;
 			for(ManualHandle h : due) {
 				if(h.m_cancelled)
 					continue;
 				h.m_fired = true;
+				//-- Outside the lock: a fired task may well schedule the next one.
 				h.m_task.run();
 				fired++;
 			}
 			return fired;
 		}
 
-		public boolean hasPending() {
+		public synchronized boolean hasPending() {
 			return m_pending.stream().anyMatch(h -> !h.m_cancelled);
 		}
 
 		/** The delay the last scheduled task asked for, so a test can check the range. */
-		public long lastDelayMillis() {
+		public synchronized long lastDelayMillis() {
 			if(m_pending.isEmpty())
 				throw new IllegalStateException("nothing is scheduled");
 			return m_pending.get(m_pending.size() - 1).m_delayMillis;
@@ -80,9 +90,9 @@ public interface Scheduler {
 
 			private final long m_delayMillis;
 
-			private boolean m_cancelled;
+			private volatile boolean m_cancelled;
 
-			private boolean m_fired;
+			private volatile boolean m_fired;
 
 			private ManualHandle(Runnable task, long delayMillis) {
 				m_task = task;
