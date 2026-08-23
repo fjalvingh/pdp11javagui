@@ -40,6 +40,22 @@ public final class RegisterGroupWindow extends ToolWindow {
 		m_panel.examineIfConnected();
 	}
 
+	@Override
+	protected void onShowing() {
+		m_panel.attach();
+	}
+
+	@Override
+	protected void onHiding() {
+		m_panel.detach();
+	}
+
+	@Override
+	public void dispose() {
+		m_panel.detach();
+		super.dispose();
+	}
+
 	/**
 	 * Register the type. The factory looks the group up by name at open time rather than
 	 * capturing it, so a window opened after a different description was loaded gets that

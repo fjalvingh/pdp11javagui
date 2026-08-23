@@ -35,6 +35,14 @@ import java.awt.Window;
  * at all, and a dialog that flashes up and vanishes is worse than no dialog. Over a 9600-baud
  * serial line the same operation takes long enough to want a way out of it, and then it
  * appears.</p>
+ *
+ * <h2>One monitor, several phases</h2>
+ *
+ * <p>A {@link ProgressMonitor} is reusable: each of {@code MemoryTester}'s phases is its own
+ * {@code begin(…) … finally done()} pair, and the memory test window chains two of them through
+ * <b>one</b> dialog. So {@link #begin} resets everything {@link #done} set, and the second phase
+ * gets its own dialog and its own Cancel exactly like the first. The one thing it does not reset
+ * is {@link #isCancelled()} - see there.</p>
  */
 public final class ProgressDialog implements ProgressMonitor {
 	private final Window m_owner;
@@ -60,11 +68,24 @@ public final class ProgressDialog implements ProgressMonitor {
 	@Override
 	public void begin(String task, int total) {
 		m_progress = 0;
+		//-- The phase that just ended set this; without clearing it here the next phase's timer
+		//-- fires into a showNow() that bails at its first guard, and a two-phase operation runs
+		//-- its second - typically longer - phase with no progress display and no way to cancel.
+		m_finished = false;
 		AppContext.onUi(() -> {
 			m_label.setText(task == null || task.isBlank() ? " " : task);
 			m_bar.setMinimum(0);
 			m_bar.setMaximum(Math.max(1, total));
 			m_bar.setValue(0);
+			//-- Whatever the previous phase left armed is about to be replaced.
+			if(m_showTimer != null)
+				m_showTimer.stop();
+			//-- A dialog still standing from a previous phase is relabelled rather than shut and
+			//-- rebuilt: the label and the bar above have already re-pointed it at this phase.
+			//-- done() closes it between phases today, so this is for a caller that begins twice
+			//-- without one in between.
+			if(m_dialog != null)
+				return;
 			//-- Nothing is shown yet. If the work is over before this fires, it never will be.
 			m_showTimer = new Timer(DISPLAY_THRESHOLD_MS, e -> showNow());
 			m_showTimer.setRepeats(false);
@@ -83,6 +104,15 @@ public final class ProgressDialog implements ProgressMonitor {
 		});
 	}
 
+	/**
+	 * Cancelled once, cancelled for the rest of this monitor's life.
+	 *
+	 * <p>Deliberately <b>not</b> reset by {@link #begin}, unlike everything else it sets. Cancel
+	 * means "stop what I asked for", and what the user asked for is the whole operation, not the
+	 * phase that happened to be running when they pressed it. A monitor is made per operation -
+	 * every caller does {@code new ProgressDialog(owner)} at the point of the button press - so
+	 * "the rest of this monitor's life" and "the rest of this operation" are the same thing.</p>
+	 */
 	@Override
 	public boolean isCancelled() {
 		return m_cancelled;
@@ -102,9 +132,26 @@ public final class ProgressDialog implements ProgressMonitor {
 		});
 	}
 
+	/**
+	 * Whether the timer firing now should put a dialog up: only while this phase is still
+	 * running, and only if it has not already got one.
+	 *
+	 * <p>Package-private because this guard is the whole of the reuse bug - it was the thing a
+	 * second phase silently failed - and it is the only part of showing a dialog a headless test
+	 * can look at.</p>
+	 */
+	boolean shouldShow() {
+		return !m_finished && m_dialog == null;
+	}
+
+	/** Whether a show is armed and waiting for the threshold. On the EDT. */
+	boolean isShowScheduled() {
+		return m_showTimer != null && m_showTimer.isRunning();
+	}
+
 	/** On the EDT, from the timer. Builds the dialog only if the work is still going. */
 	private void showNow() {
-		if(m_finished || m_dialog != null)
+		if(!shouldShow())
 			return;
 		JPanel content = new JPanel(new MigLayout("fill, insets 12", "[grow]", "[][][]"));
 		content.add(m_label, "growx, wrap");

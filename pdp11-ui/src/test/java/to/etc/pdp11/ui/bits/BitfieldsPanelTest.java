@@ -7,6 +7,8 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.bits.BitfieldDef;
 import to.etc.pdp11.core.bits.BitfieldsDef;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
@@ -16,8 +18,10 @@ import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.UiRenderer;
 
+import javax.swing.JButton;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,9 +36,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * priority to 7 should not require working out that it means {@code 0340}.</p>
  */
 class BitfieldsPanelTest {
+	private static final long TIMEOUT_MS = 30_000;
+
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
+	}
+
+	/**
+	 * Examine and Deposit are dead with nothing connected, and live again once there is.
+	 *
+	 * <p>Typing bits and reading off what they mean is the rest of the window and stays
+	 * available offline; only the two round trips go. Before this, either button offline was a
+	 * modal "Not connected to a machine" dialog.</p>
+	 */
+	@Test
+	void examineAndDepositFollowTheConnection(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		definePsw(ctx);
+		BitfieldsPanel panel = Edt.call(() -> new BitfieldsPanel(ctx));
+		for(JButton b : panel.getMachineControls())
+			assertFalse(b.isEnabled(), b.getText() + " needs a machine");
+		//-- The value field is still typeable: working out what 0340 means needs no machine.
+		assertTrue(panel.getValueField().isEnabled());
+
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			until("the buttons to arm",
+				() -> panel.getMachineControls().stream().allMatch(JButton::isEnabled));
+			ctx.getConnectionManager().disconnect();
+			until("the buttons to go dead again",
+				() -> panel.getMachineControls().stream().noneMatch(JButton::isEnabled));
+		} finally {
+			ctx.getConnectionManager().close();
+			Edt.run(panel::detach);
+		}
 	}
 
 	/** The PSW's bits, as {@code pdp11.ini} declares them. */

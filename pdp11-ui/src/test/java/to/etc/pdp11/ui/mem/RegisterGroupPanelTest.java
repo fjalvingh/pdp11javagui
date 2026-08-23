@@ -4,6 +4,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
@@ -14,10 +16,12 @@ import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.UiRenderer;
 
+import javax.swing.JButton;
 import javax.swing.JTable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -34,9 +38,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * appear more than once under different names, as several device registers genuinely do.</p>
  */
 class RegisterGroupPanelTest {
+	private static final long TIMEOUT_MS = 30_000;
+
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
 	}
 
 	/** A device group shaped like one from a machine description. */
@@ -160,6 +181,35 @@ class RegisterGroupPanelTest {
 			ctx.getMemoryCellGroups().syncMemoryCells(g.cell(0));
 		});
 		assertEquals(0, panel.getList().getRowCount());
+	}
+
+	/**
+	 * The four buttons are dead with nothing connected, and live again once there is.
+	 *
+	 * <p>This panel had no connection listener at all and never reacted to connecting or
+	 * disconnecting: all four of its buttons are a console round trip and nothing else, so
+	 * offline every one of them raised a modal "Not connected to a machine" dialog.</p>
+	 */
+	@Test
+	void theFourButtonsFollowTheConnection(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryCellGroup g = deviceGroup(ctx.getMemoryCellGroups());
+		RegisterGroupPanel panel = Edt.call(() -> new RegisterGroupPanel(ctx, g));
+		for(JButton b : panel.getMachineControls())
+			assertFalse(b.isEnabled(), b.getText() + " needs a machine");
+
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			until("the buttons to arm",
+				() -> panel.getMachineControls().stream().allMatch(JButton::isEnabled));
+			ctx.getConnectionManager().disconnect();
+			until("the buttons to go dead again",
+				() -> panel.getMachineControls().stream().noneMatch(JButton::isEnabled));
+		} finally {
+			ctx.getConnectionManager().close();
+			Edt.run(panel::detach);
+		}
 	}
 
 	@Test

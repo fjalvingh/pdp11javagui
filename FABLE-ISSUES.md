@@ -224,6 +224,29 @@ relabel.
 ### 7. Unsaved assembler source is discarded without confirmation — by New, Open, and Quit
 `pdp11-ui/.../macro11/AssemblerModel.java:181-187`, `AssemblerPanel.java:198-199,273-282`, `MainWindow.java:337-345`
 
+**FIXED.** All three ask now. `AppContext` grew a `DiscardConfirmer` alongside the failure
+handler and for the same reason: the window that can put a dialog on the screen installs it, and
+nothing below has to know a dialog exists. `MainWindow` installs a Yes/No `JOptionPane`; the
+default says yes, so a context with no window over it — a test, a headless run — never blocks on
+an answer nobody can give, and behaves exactly as before.
+
+The dirty check and the wording live in one place, `AssemblerModel.confirmDiscard(action)`,
+because the three callers are in two different classes: New and Open in the Assembler window,
+Quit in the main one. It returns true at once when nothing is unsaved, so a clean editor still
+gets no dialog. The question names the file — *"p.mac has changes that have not been saved.
+Discard them and open another file?"* — since "the MACRO-11 source" is not enough to decide with
+after several files in one session; text that was never saved at all says so instead. Open asks
+*before* the file chooser rather than after: there is no point picking a file only to be told the
+one you have is in the way.
+
+Four tests, all headless. New asks and keeps the text on *no*, discards on *yes*, and asks nothing
+when there is nothing to lose; Open and Quit are checked through the model, since a file chooser
+and `System.exit` are not things a test can click. Without the fix the first fails with
+"it asked ==> expected: <1> but was: <0>".
+
+The one line not covered by a headless test is `MainWindow.quit()`'s call to it — `MainWindow` is
+a `JFrame`, and `WindowsBuildTest` already skips itself without a display.
+
 The panel tracks dirty state (`isChanged()`, "*" in the status line, Save enablement), yet
 "New" wipes the editor, file association and assembled code with no prompt; "Open ..."
 replaces unsaved text the same way; and `MainWindow.quit()` exits without checking
@@ -235,6 +258,27 @@ when dirty, and check on quit.
 ### 8. Disconnect (and Quit) runs transport teardown on the EDT — up to 2 s+ freeze, deadlock-adjacent
 `pdp11-ui/.../MainWindow.java:99-103,337-345`; `pdp11-core/.../console/ConsoleConnection.java:290-301`
 
+**FIXED.** Disconnect now runs on a worker with the same shape as connect: the guard flag, the
+menu items disabled for the duration, and `onConnectionState` on the way back. The flag was
+`m_connecting` and is now `m_changingConnection`, which is what it always meant — the comment on
+`setConnectionControlsEnabled` already said a Disconnect racing a connect was the thing being
+prevented, and only half of it was. The terminal's "[disconnected]" moved from before the call to
+after it: before is a claim, after is a fact.
+
+Quit keeps its teardown too, but the order changed. Geometry, `closeAll` and `saveSettings` are
+the event thread's own work and are quick; `dispose()` now happens before the connection is
+closed, so the machine is torn down behind a screen that is already empty rather than in front of
+one that has stopped repainting. That runs on a non-daemon `pdp11-shutdown` thread whose last
+statement is the exit — non-daemon deliberately, since a daemon could be killed halfway through
+and leave SimH orphaned. Both teardown paths are bounded already (`reader.join(2000)`, SimH's
+`waitFor(2, SECONDS)` then `destroyForcibly`), so nothing here can hang the exit indefinitely.
+
+Tested in `WindowsBuildTest` by asking the connection listener which thread reached DISCONNECTED -
+listeners fire on the calling thread, so that is the property itself rather than a proxy for it.
+Without the fix it reports `expected: <[false]> but was: <[true]>`. Like everything else in that
+class it skips without a display, since `MainWindow` is a `JFrame`; there is no headless seam for
+a menu item's action listener.
+
 `connect()` is carefully run on a worker (its own comment explains the freeze/deadlock);
 the Disconnect menu action calls `ConnectionManager.disconnect()` directly from the EDT.
 `close()` does `reader.join(2000)`, closes the SimH console channel and the transport
@@ -244,6 +288,29 @@ run disconnect on a worker exactly like connect.
 
 ### 9. NumberFormatException escapes the fake ODT and kills the command thread
 `pdp11-core/.../fake/FakePdp11Odt.java:363` (parse sites `:234,:299,:329`)
+
+**FIXED**, both halves of it.
+
+The fake's three parse sites go through a `parseOctal` helper that converts a
+`NumberFormatException` into the `FakePdp11Exception` `serialWriteByte` already knows how to
+answer, so `1R2/` and `R3G` print `?` and a fresh prompt like an 11/23 - the same answer `12X4/`
+already gave, since `X` is caught by the state machine before it ever reaches a parse. Reproduced
+first: both threw straight out of `serialWriteByte`. The sibling fakes were checked and already
+guard every `Octal.parse` (`FakePdp1144.parseOctalOr`, three try/catch blocks in
+`FakePdp11M9312`); this was the only one that did not.
+
+The second half is the one that made it dangerous rather than merely wrong.
+`ConsoleConnection.execute` ran its task raw, so any `RuntimeException` out of a queued job
+reached the single-threaded executor, which terminates the worker and silently starts another -
+the work lost, the fake left mid-command, nothing logged anywhere. It is now wrapped: the
+exception is logged with the connection it came from and the command thread carries on. `Error`
+is deliberately not caught.
+
+Two tests, both failing before. The ODT ones assert the exact transcript
+(`"1R2/?\r\n@"`) and that the console still answers afterwards; the connection one asserts that
+the *same* worker thread takes the next task and that the failure was logged - without the fix it
+reports `expected: <Thread[#48,pdp11-command,...]> but was: <Thread[#72,...]>` above an
+`Exception in thread "pdp11-command"` on stderr, which is precisely the reported symptom.
 
 `serialWriteByte` catches only `FakePdp11Exception` and answers "?", but the parse paths
 call `Octal.parse`, which throws `NumberFormatException` — reachable from typed input like
@@ -256,6 +323,29 @@ fake's parsers throw `FakePdp11Exception`).
 
 ### 10. A closed multi-instance memory window is unreachable forever — but still alive on the propagation bus
 `pdp11-ui/.../window/WindowManager.java:95-101`, `window/ToolWindow.java:44-53`, `MainWindow.java:178-198`
+
+**FIXED** by listing them, not by disposing them. Disposing multi-instance windows on close would
+have made "close" mean two different things depending on the window type, and it is the wrong one:
+`ToolWindow`'s own comment and PLAN.md §3 both say a closed window comes back as it was, and a
+memory view's range and edits are exactly the thing worth keeping.
+
+`WindowManager.hiddenWindows()` is the counterpart to `openWindows()`, and the Windows menu now
+lists both - the hidden ones marked "(closed)". Said in a word rather than shown with a checkmark:
+choosing one of those brings it back and choosing one of the others only raises it, and two
+gestures that read the same would be worse than the word. `showAll()` is there too, beside
+`hideAll()`, which is the other half of what PLAN.md §3 specified and the second gap this finding
+names; the menu offers it only when something is hidden.
+
+`openNew` is unchanged and its comment corrected. It claimed closing the second of three freed
+that id; it does not, and must not - the window still exists, keeps its contents, and its saved
+geometry is keyed on that id. Ids come back when a window is really disposed of, which is
+`closeAll` and nothing else.
+
+The test opens "Memory - 1", closes it, opens another and checks it is "Memory - 2" (the id is
+still held), that the menu names the closed one, and that choosing it brings back that window
+rather than a third. Without the fix the menu reads `[New memory window, Memory - 2, Hide all]` -
+the finding, printed. It lives in `WindowsBuildTest` and skips without a display, since both a
+`ToolWindow` and the menu are `JFrame` work.
 
 Closing a tool window only hides it. Singletons come back via their Windows-menu entry,
 contents intact. But for MEMORY (any multi-instance type) the menu offers only "New memory
@@ -272,6 +362,23 @@ truly dispose+unregister multi-instance windows on close.
 ### 11. Two incompatible disconnected-state models: half the windows grey out, the other half raise a modal error dialog
 Grey-out: `load/MemoryLoaderPanel.java:297-303`, `dump/MemoryDumperPanel.java:281-286`, `memtest/MemoryTestPanel.java:357-364`, `scan/IoPageScannerPanel.java:156-165`, `mmu/MmuPanel.java:224-225`, `simh/SimhConsolePanel.java:187-190`, `macro11/AssemblerPanel.java:426-438`, exec. Never disabled: `mem/MemoryPanel.java:107-123`, `mem/RegisterGroupPanel.java:40-52`, `bits/BitfieldsPanel.java:176-181`
 
+**FIXED** by giving the three holdouts the same connection-listener-driven `updateButtons` the
+other eight have, which is the direction the finding asks for: the grey-out is the application's
+one answer to "not yet", and eight windows against three is not a tie.
+
+`MemoryPanel` holds its four buttons and the popup's Verify as fields and disables them off
+`isConnected()`; Show, `<` and `>` deliberately stay live, because moving the shown range and
+re-laying the grid is worth doing with nothing attached, and `applyRange` already examines only
+when connected. `BitfieldsPanel` disables Examine and Deposit only - typing bits and reading off
+what they mean is the rest of that window and needs no machine, and Enter in the address field
+already checked `isConnected()` before examining. `RegisterGroupPanel` had no connection listener
+at all: it now has `attach`/`detach` like every other panel, and `RegisterGroupWindow` calls them
+from `onShowing`/`onHiding` and detaches on dispose - so it is no longer the one window that
+never hears about a connection.
+
+Three tests, one per panel, each failing without the change: the controls are dead on a fresh
+panel, arm on `connect`, and go dead again on `disconnect`.
+
 Loader, Dumper, Memory Test, Scanner, MMU, SimH Console, Assembler and Execution disable
 their machine-touching buttons when disconnected. The plain Memory window, every Register
 Group window and Bitfields never call `setEnabled` at all: clicking Examine/Deposit while
@@ -285,6 +392,27 @@ connection-listener-driven `updateButtons` the others have.
 ### 12. ProgressDialog is single-use but is reused — phase 2 of every two-phase memory test runs with no dialog and cannot be cancelled
 `pdp11-ui/.../ProgressDialog.java:52,61-74,92-95,107`; bitten at `memtest/MemoryTestPanel.java:269-296`
 
+**FIXED** in `ProgressDialog`, not in its caller: a `ProgressMonitor` that cannot be used twice
+is a broken monitor, and the memory test window is only the caller that noticed. `begin()` now
+clears `m_finished`, stops whatever timer the previous phase left armed, and re-arms its own, so
+phase 2 gets a dialog and a Cancel exactly like phase 1. A dialog somehow still standing at
+`begin()` is relabelled rather than shut and rebuilt.
+
+`m_cancelled` is deliberately **not** reset, and that is now written down on `isCancelled()`:
+Cancel means "stop what I asked for", and what was asked for is the whole operation rather than
+the phase that happened to be running. Every caller builds a fresh `ProgressDialog` at the point
+of the button press, so "this monitor" and "this operation" are the same thing. `MemoryTestPanel`
+already stops between phases on `cancelled()`, so the two agree.
+
+The threshold still applies per phase - phase 2 waits its own second before appearing rather than
+coming back instantly - which is the existing design, not a leftover: it is what stops a dialog
+flashing for work that is over immediately, and a modal dialog flashed at a phase boundary would
+be worse than the one-second wait.
+
+`ProgressDialogTest` fails without the change. It runs the whole begin/done/begin sequence inside
+one `Edt.run` block, which builds no dialog and needs no display, and which the show timer cannot
+fire in the middle of because its action would need the event thread that block is holding.
+
 Each `MemoryTester.testDataLines/testAddressLines/testDataBits` phase calls `pm.begin(…)`
 … `finally pm.done()`, and MemoryTestPanel passes **one** ProgressDialog through two
 chained phases. `done()` sets `m_finished = true`; `begin()` never resets it (verified),
@@ -296,6 +424,26 @@ per phase.
 
 ### 13. Execution controls set MachineState to RUNNING optimistically with no rollback on failure
 `pdp11-ui/.../exec/ExecutionPanel.java:247-260`
+
+**FIXED** by the first of the two suggestions: both now call `running()` from inside the console
+job, after the console call has returned. A refusal therefore changes no state at all, so there is
+no failure path to restore anything on.
+
+Nothing races it, and that is why this rather than a rollback. A stop the machine reports while
+the job is in flight is posted to the *same* command thread by `AbstractConsole.signalExecutionStop`
+(it does `c.execute(...)` from the reader thread rather than calling the listener there), so it
+queues behind this job and lands after the RUNNING instead of under it. And neither
+`resetAndStart` nor `continueCpu` waits for a prompt in any of the three consoles - they write and
+return - so RUNNING appears as promptly as it did before. A rollback path, by contrast, would have
+had to guess whether the state it captured was still the right one to put back after a disconnect.
+
+`doResetAndSetPc` and `doSetPc` were already doing it this way; these two were the odd ones out.
+
+Two tests. `continuingSaysRunningOnceTheConsoleHasTakenIt` records every state the machine passes
+through and asserts RUNNING is among them, since the simulated machine may halt again immediately.
+`aRefusedContinueLeavesTheMachineStateAlone` fails without the change: the operator moves the
+physical ENABLE/HALT switch back to HALT, which nothing tells the window about, so Continue is
+still enabled and ODT refuses it - and the state stays UNKNOWN instead of sticking at RUNNING.
 
 `doResetAndStart`/`doContinue` call `machineState.running()` on the EDT *before* queueing
 the console job. If `resetAndStart`/`continueCpu` throws (serial timeout, console

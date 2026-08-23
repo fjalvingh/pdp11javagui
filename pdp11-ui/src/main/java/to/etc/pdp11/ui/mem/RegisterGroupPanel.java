@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.mem;
 
 import net.miginfocom.swing.MigLayout;
+import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
@@ -10,6 +11,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import java.awt.Window;
+import java.util.List;
 
 /**
  * One device's registers: the list, and the four buttons that talk to the machine.
@@ -31,25 +33,29 @@ public final class RegisterGroupPanel extends JPanel {
 
 	private final JLabel m_info = new JLabel();
 
+	private final JButton m_examineAll = new JButton("Examine all");
+
+	private final JButton m_examineOne = new JButton("Examine register");
+
+	private final JButton m_depositChanged = new JButton("Deposit changed");
+
+	private final JButton m_depositAll = new JButton("Deposit all");
+
 	public RegisterGroupPanel(AppContext context, MemoryCellGroup group) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
 		m_list = new MemoryCellGroupList(context);
 
 		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]", "[]"));
-		JButton examineAll = new JButton("Examine all");
-		JButton examineOne = new JButton("Examine register");
-		JButton depositChanged = new JButton("Deposit changed");
-		JButton depositAll = new JButton("Deposit all");
-		bar.add(examineAll);
-		bar.add(examineOne);
-		bar.add(depositChanged);
-		bar.add(depositAll);
+		bar.add(m_examineAll);
+		bar.add(m_examineOne);
+		bar.add(m_depositChanged);
+		bar.add(m_depositAll);
 
-		examineAll.addActionListener(e -> m_list.examineAll(owner()));
-		examineOne.addActionListener(e -> m_list.examineCell(m_list.getSelectedCell()));
-		depositChanged.addActionListener(e -> m_list.depositAll(true, owner()));
-		depositAll.addActionListener(e -> m_list.depositAll(false, owner()));
+		m_examineAll.addActionListener(e -> m_list.examineAll(owner()));
+		m_examineOne.addActionListener(e -> m_list.examineCell(m_list.getSelectedCell()));
+		m_depositChanged.addActionListener(e -> m_list.depositAll(true, owner()));
+		m_depositAll.addActionListener(e -> m_list.depositAll(false, owner()));
 
 		m_info.setForeground(UiColors.SECONDARY_TEXT);
 		add(bar, "growx, wrap");
@@ -61,7 +67,24 @@ public final class RegisterGroupPanel extends JPanel {
 		//-- know that.
 		m_list.setOnSelect(context.getCellSelection()::select);
 		m_list.connectTo(group);
+		updateButtons();
 		updateInfo();
+	}
+
+	/**
+	 * Switch the four buttons off while there is no machine, as every other data window does.
+	 *
+	 * <p>All four of them are a console round trip and nothing else: with nothing connected the
+	 * click used to fall through {@code AppContext.onConsole} into a modal
+	 * "Not connected to a machine" dialog, where the same gesture in the Loader or the Scanner
+	 * is simply a dead button.</p>
+	 */
+	private void updateButtons() {
+		boolean connected = m_context.getConnectionManager().isConnected();
+		m_examineAll.setEnabled(connected);
+		m_examineOne.setEnabled(connected);
+		m_depositChanged.setEnabled(connected);
+		m_depositAll.setEnabled(connected);
 	}
 
 	private void updateInfo() {
@@ -84,6 +107,11 @@ public final class RegisterGroupPanel extends JPanel {
 		return m_info.getText();
 	}
 
+	/** The controls that need a machine, for a test that wants to know whether they are live. */
+	public List<JButton> getMachineControls() {
+		return List.of(m_examineAll, m_examineOne, m_depositChanged, m_depositAll);
+	}
+
 	/** Read everything as soon as the window is looked at, if there is a machine to ask. */
 	public void examineIfConnected() {
 		if(m_context.getConnectionManager().isConnected())
@@ -92,5 +120,22 @@ public final class RegisterGroupPanel extends JPanel {
 
 	private Window owner() {
 		return SwingUtilities.getWindowAncestor(this);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Following the connection
+	// -------------------------------------------------------------------------------------
+
+	private final ConnectionManager.Listener m_connectionListener =
+		(manager, state) -> AppContext.onUi(this::updateButtons);
+
+	public void attach() {
+		detach();
+		m_context.getConnectionManager().addListener(m_connectionListener);
+		updateButtons();
+	}
+
+	public void detach() {
+		m_context.getConnectionManager().removeListener(m_connectionListener);
 	}
 }

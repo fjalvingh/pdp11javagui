@@ -17,6 +17,8 @@ import to.etc.pdp11.ui.exec.ExecutionPanel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -168,6 +170,114 @@ class AssemblerPanelTest {
 		Edt.run(() -> panel.getNewButton().doClick());
 		assertTrue(ctx.getAssembler().getGroup().isEmpty(), "the Code tab is emptied too");
 		assertEquals("", panel.getSourceArea().getText());
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Not losing what was typed
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * New asks before throwing unsaved text away, and takes no for an answer.
+	 *
+	 * <p>The window draws a "*" and enables Save to say "this is not on disk", and then used to
+	 * discard exactly that with no prompt - from New, from Open, and from Quit.</p>
+	 */
+	@Test
+	void newAsksBeforeDiscardingUnsavedSourceAndTakesNoForAnAnswer(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		List<String> asked = new ArrayList<>();
+		ctx.setDiscardConfirmer(question -> {
+			asked.add(question);
+			return false;
+		});
+
+		Edt.run(() -> panel.getSourceArea().setText("\thalt\n"));
+		assertTrue(ctx.getAssembler().isChanged());
+		Edt.run(() -> panel.getNewButton().doClick());
+
+		assertEquals(1, asked.size(), "it asked");
+		assertTrue(asked.get(0).contains("never been saved"), asked.get(0));
+		assertTrue(asked.get(0).contains("start a new program"), asked.get(0));
+		assertEquals("\thalt\n", ctx.getAssembler().getSourceText(), "and kept what was typed");
+		assertEquals("\thalt\n", panel.getSourceArea().getText());
+	}
+
+	/** Said yes, and it goes - the answer is obeyed in both directions. */
+	@Test
+	void newDiscardsWhenTheAnswerIsYes(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		ctx.setDiscardConfirmer(question -> true);
+
+		Edt.run(() -> panel.getSourceArea().setText("\thalt\n"));
+		Edt.run(() -> panel.getNewButton().doClick());
+		assertEquals("", ctx.getAssembler().getSourceText());
+	}
+
+	/** Nothing unsaved, nothing to ask about: New must not put a dialog in the way for no reason. */
+	@Test
+	void newAsksNothingWhenThereIsNothingToLose(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path src = write(dir, "p.mac", "\thalt\n");
+		List<String> asked = new ArrayList<>();
+		ctx.setDiscardConfirmer(question -> {
+			asked.add(question);
+			return true;
+		});
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		assertFalse(ctx.getAssembler().isChanged());
+		Edt.run(() -> panel.getNewButton().doClick());
+		assertEquals(List.of(), asked);
+		assertEquals("", ctx.getAssembler().getSourceText());
+	}
+
+	/**
+	 * Open asks too, and names the file whose changes would go.
+	 *
+	 * <p>Clicking Open would raise a file chooser, which no test can answer, so this asks the
+	 * model the question the button asks it. The point being checked is the wording and the
+	 * refusal, not the chooser.</p>
+	 */
+	@Test
+	void openAndQuitAskAboutTheNamedFile(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		Edt.call(() -> new AssemblerPanel(ctx));
+		Path src = write(dir, "p.mac", "\thalt\n");
+		List<String> asked = new ArrayList<>();
+		ctx.setDiscardConfirmer(question -> {
+			asked.add(question);
+			return false;
+		});
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+			ctx.getAssembler().setSourceText("\tclr\tr0\n");
+		});
+
+		assertFalse(ctx.getAssembler().confirmDiscard("open another file"));
+		assertFalse(ctx.getAssembler().confirmDiscard("quit"));
+		assertEquals(2, asked.size());
+		//-- The name matters: "the MACRO-11 source" is not enough to decide with when several
+		//-- files have been open this session.
+		assertTrue(asked.get(0).contains("p.mac"), asked.get(0));
+		assertTrue(asked.get(0).contains("open another file"), asked.get(0));
+		assertTrue(asked.get(1).contains("quit"), asked.get(1));
 	}
 
 	// -------------------------------------------------------------------------------------

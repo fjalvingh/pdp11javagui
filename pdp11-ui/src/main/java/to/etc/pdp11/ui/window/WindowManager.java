@@ -88,9 +88,15 @@ public final class WindowManager {
 	/**
 	 * Open another window of a type there can be several of.
 	 *
-	 * <p>The instance id is the lowest number not in use, so closing the second of three and
-	 * asking for another gets the gap back rather than counting ever upwards - which matters
-	 * because the id is what the saved geometry is keyed on.</p>
+	 * <p>The instance id is the lowest one no window <i>exists</i> for, which is not the same as
+	 * the lowest one not on the screen: closing a tool window hides it, and a hidden window keeps
+	 * its id because it keeps its contents and its saved geometry is keyed on it. Ids come back
+	 * only when a window is really disposed of, by {@link #closeAll(WindowType)} or on the way
+	 * out.</p>
+	 *
+	 * <p>Which is why {@link #hiddenWindows()} exists: a hidden window that the menu did not list
+	 * was a window nothing could ever get back, holding a range, its edits and a
+	 * {@code MemoryCellGroup} on the propagation bus until shutdown.</p>
 	 */
 	public ToolWindow openNew(WindowType type) {
 		for(int i = 1; ; i++) {
@@ -138,6 +144,23 @@ public final class WindowManager {
 		return l;
 	}
 
+	/**
+	 * Every window that exists but is not showing, in the order they were first opened.
+	 *
+	 * <p>These are recoverable and have to be listed somewhere, or they are not. A singleton
+	 * comes back through its own entry in the Windows menu whatever this says; a memory view has
+	 * no such entry - the menu offers "New memory window", which builds a different one - so
+	 * without this the only way back is this list.</p>
+	 */
+	public List<ToolWindow> hiddenWindows() {
+		List<ToolWindow> l = new ArrayList<>();
+		for(ToolWindow w : m_windows.values()) {
+			if(!w.isVisible())
+				l.add(w);
+		}
+		return l;
+	}
+
 	/** Every window that has been created, showing or not. */
 	public List<ToolWindow> allWindows() {
 		return new ArrayList<>(m_windows.values());
@@ -147,6 +170,14 @@ public final class WindowManager {
 		for(ToolWindow w : new ArrayList<>(m_windows.values())) {
 			if(w.isVisible())
 				w.hideWindow();
+		}
+	}
+
+	/** The other half of {@link #hideAll()}, which PLAN.md §3 asks for and which was missing. */
+	public void showAll() {
+		for(ToolWindow w : new ArrayList<>(m_windows.values())) {
+			if(!w.isVisible())
+				w.showWindow();
 		}
 	}
 

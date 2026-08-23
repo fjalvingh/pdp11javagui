@@ -61,11 +61,11 @@ public final class MainWindow extends JFrame {
 	private JMenuItem m_disconnectItem;
 
 	/**
-	 * Whether a connect worker is running. Read and written on the event thread only: the state
-	 * change to CONNECTING arrives a moment later than the click, and a second click inside that
-	 * moment is exactly what the disabled menu items cannot catch.
+	 * Whether a connect <i>or a disconnect</i> worker is running. Read and written on the event
+	 * thread only: the state change arrives a moment later than the click, and a second click
+	 * inside that moment is exactly what the disabled menu items cannot catch.
 	 */
-	private boolean m_connecting;
+	private boolean m_changingConnection;
 
 	/**
 	 * What the connection last was, so that losing one can be told apart from failing to make
@@ -99,10 +99,29 @@ public final class MainWindow extends JFrame {
 		context.getConnectionManager().addListener((manager, state) ->
 			SwingUtilities.invokeLater(() -> onConnectionState(manager)));
 		context.setFailureHandler((message, cause) -> SwingUtilities.invokeLater(() -> showFailure(message, cause)));
+		//-- The window that can put a dialog on the screen is the one that owns the asking; see
+		//-- AppContext.confirmDiscard.
+		context.setDiscardConfirmer(this::askBeforeDiscarding);
 		onConnectionState(context.getConnectionManager());
 	}
 
 	/** What is in the window, for a test that wants to know what it showed. */
+	/**
+	 * The Windows menu, rebuilt as if it had just been opened.
+	 *
+	 * <p>For a test: the menu is built on {@code menuSelected} rather than kept in step by a
+	 * timer, so asking what is in it means asking for it to be built first.</p>
+	 */
+	public JMenu getWindowsMenuRebuilt() {
+		rebuildWindowsMenu();
+		return m_windowsMenu;
+	}
+
+	/** The Disconnect menu item, so a test can press what the user presses. */
+	public JMenuItem getDisconnectItem() {
+		return m_disconnectItem;
+	}
+
 	public MainPanel getPanel() {
 		return m_panel;
 	}
@@ -125,10 +144,7 @@ public final class MainWindow extends JFrame {
 
 		JMenuItem disconnect = new JMenuItem("Disconnect");
 		m_disconnectItem = disconnect;
-		disconnect.addActionListener(e -> {
-			m_context.getConnectionManager().disconnect();
-			m_panel.getTerminal().append("\n[disconnected]\n", TerminalStyle.SYSTEM);
-		});
+		disconnect.addActionListener(e -> disconnect());
 
 		JMenuItem quit = new JMenuItem("Quit");
 		quit.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, menuMask));
@@ -216,19 +232,41 @@ public final class MainWindow extends JFrame {
 			item.addActionListener(e -> windows.open(type));
 			m_windowsMenu.add(item);
 		}
-		//-- Then the ones that are open, which is the replacement for the MDI window list.
+		//-- Then the ones that exist, which is the replacement for the MDI window list.
 		java.util.List<ToolWindow> open = windows.openWindows();
-		if(!open.isEmpty()) {
+		//-- Hidden ones are listed too, and this is not a nicety. Closing a tool window hides it,
+		//-- and the entries above reopen a window of a *type* - so a singleton comes back either
+		//-- way, but a closed "Memory - 1" does not: "New memory window" builds "Memory - 2"
+		//-- beside it, because the hidden one still holds id 1. Listing only the visible ones left
+		//-- it unreachable for the rest of the session, still on the propagation bus, still
+		//-- holding its range and its edits.
+		java.util.List<ToolWindow> hidden = windows.hiddenWindows();
+		if(!open.isEmpty() || !hidden.isEmpty()) {
 			m_windowsMenu.addSeparator();
 			for(ToolWindow w : open) {
 				JMenuItem item = new JMenuItem(w.getTitle());
 				item.addActionListener(e -> windows.raise(w.key()));
 				m_windowsMenu.add(item);
 			}
-			JMenuItem hideAll = new JMenuItem("Hide all");
-			hideAll.addActionListener(e -> windows.hideAll());
+			for(ToolWindow w : hidden) {
+				//-- Said out loud rather than shown by a checkmark: choosing one of these brings
+				//-- it back, and choosing one of the above only raises it. Two gestures that read
+				//-- the same would be worse than a word.
+				JMenuItem item = new JMenuItem(w.getTitle() + " (closed)");
+				item.addActionListener(e -> windows.raise(w.key()));
+				m_windowsMenu.add(item);
+			}
 			m_windowsMenu.addSeparator();
-			m_windowsMenu.add(hideAll);
+			if(!hidden.isEmpty()) {
+				JMenuItem showAll = new JMenuItem("Show all");
+				showAll.addActionListener(e -> windows.showAll());
+				m_windowsMenu.add(showAll);
+			}
+			if(!open.isEmpty()) {
+				JMenuItem hideAll = new JMenuItem("Hide all");
+				hideAll.addActionListener(e -> windows.hideAll());
+				m_windowsMenu.add(hideAll);
+			}
 		}
 	}
 
@@ -274,13 +312,13 @@ public final class MainWindow extends JFrame {
 	 * and the menu item is the place it gets crossed.</p>
 	 */
 	private void connect(ConnectionProfile profile) {
-		if(m_connecting) {
+		if(m_changingConnection) {
 			//-- Belt and braces with the disabled menu items: this closes the gap between the
 			//-- click and CONNECTING coming back, which is where a double-click lands.
 			m_context.getLogger().log(LogChannel.OTHER, "Connect ignored: already connecting");
 			return;
 		}
-		m_connecting = true;
+		m_changingConnection = true;
 		setConnectionControlsEnabled(false);
 		m_panel.getTerminal().append("\n[connecting to " + profile.describe() + "]\n", TerminalStyle.SYSTEM);
 		Thread worker = new Thread(() -> {
@@ -295,11 +333,48 @@ public final class MainWindow extends JFrame {
 				m_context.reportFailure("Could not connect to " + profile.describe(), x);
 			} finally {
 				SwingUtilities.invokeLater(() -> {
-					m_connecting = false;
+					m_changingConnection = false;
 					onConnectionState(m_context.getConnectionManager());
 				});
 			}
 		}, "pdp11-connect");
+		worker.setDaemon(true);
+		worker.start();
+	}
+
+	/**
+	 * Disconnect, on a worker thread.
+	 *
+	 * <p>Closing is as slow as opening and for the same reasons: {@code close()} waits up to two
+	 * seconds for the reader thread to notice, then tears the transport down - which for SimH is
+	 * killing a child process and waiting for it, and for a serial line is closing the port. Done
+	 * on the event thread, as this was, a wedged transport freezes the whole window for several
+	 * seconds with no way to tell that from a crash. Same boundary as {@link #connect}, same
+	 * worker.</p>
+	 *
+	 * <p>The terminal is told afterwards rather than before, because before is a claim and after
+	 * is a fact.</p>
+	 */
+	private void disconnect() {
+		if(m_changingConnection) {
+			m_context.getLogger().log(LogChannel.OTHER, "Disconnect ignored: already connecting or disconnecting");
+			return;
+		}
+		m_changingConnection = true;
+		setConnectionControlsEnabled(false);
+		Thread worker = new Thread(() -> {
+			try {
+				m_context.getConnectionManager().disconnect();
+			} catch(RuntimeException x) {
+				m_context.reportFailure("Could not disconnect cleanly", x);
+			} finally {
+				SwingUtilities.invokeLater(() -> {
+					m_changingConnection = false;
+					m_panel.getTerminal().append("\n[disconnected]\n", TerminalStyle.SYSTEM);
+					onConnectionState(m_context.getConnectionManager());
+				});
+			}
+		}, "pdp11-disconnect");
 		worker.setDaemon(true);
 		worker.start();
 	}
@@ -325,7 +400,7 @@ public final class MainWindow extends JFrame {
 		ConnectionManager.State was = m_lastState;
 		m_lastState = state;
 		m_panel.showConnectionState(state, manager.getMessage());
-		setConnectionControlsEnabled(!m_connecting && state != ConnectionManager.State.CONNECTING);
+		setConnectionControlsEnabled(!m_changingConnection && state != ConnectionManager.State.CONNECTING);
 		if(state == ConnectionManager.State.FAILED && was == ConnectionManager.State.CONNECTED) {
 			//-- The machine went away rather than the user going anywhere. Nothing else says so:
 			//-- the windows simply grey out, which on its own looks like the application broke.
@@ -403,14 +478,39 @@ public final class MainWindow extends JFrame {
 			"About PDP11GUI", JOptionPane.INFORMATION_MESSAGE);
 	}
 
+	/**
+	 * Yes/No on something the user has not saved. Always on the event thread, because every
+	 * caller is a button or a menu item.
+	 */
+	private boolean askBeforeDiscarding(String question) {
+		return JOptionPane.showConfirmDialog(this, question, "PDP11GUI",
+			JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
+	}
+
 	/** Remember where everything was, close the connection, and go. */
 	public void quit() {
+		//-- Before anything is torn down: this is the last chance to keep the source, and the
+		//-- window that holds it may not even be open.
+		if(!m_context.getAssembler().confirmDiscard("quit"))
+			return;
 		m_context.getLogger().log(LogChannel.OTHER, "Shutting down");
 		m_context.getWindowManager().rememberAllGeometry();
 		m_context.getWindowManager().closeAll();
-		m_context.getConnectionManager().close();
 		m_context.saveSettings();
+		//-- Everything above is the event thread's own work and is quick. Closing the connection
+		//-- is not - see disconnect() - so the windows go first and the machine is torn down
+		//-- behind a screen that is already empty, rather than in front of one that has stopped
+		//-- repainting. Not a daemon: the exit is its last statement, and a daemon could be
+		//-- killed halfway through leaving SimH orphaned.
 		dispose();
-		System.exit(0);
+		Thread worker = new Thread(() -> {
+			try {
+				m_context.getConnectionManager().close();
+			} catch(RuntimeException x) {
+				m_context.getLogger().log(LogChannel.OTHER, "Shutdown: " + x);
+			}
+			System.exit(0);
+		}, "pdp11-shutdown");
+		worker.start();
 	}
 }

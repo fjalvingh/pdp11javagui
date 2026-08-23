@@ -195,7 +195,7 @@ public final class AssemblerPanel extends JPanel {
 		m_sourceStatus.setForeground(UiColors.SECONDARY_TEXT);
 		p.add(m_sourceStatus, "growx");
 
-		m_new.addActionListener(e -> m_model.newSource());
+		m_new.addActionListener(e -> newSource());
 		m_open.addActionListener(e -> openSource());
 		m_save.addActionListener(e -> saveSource(false));
 		m_saveAs.addActionListener(e -> saveSource(true));
@@ -270,7 +270,18 @@ public final class AssemblerPanel extends JPanel {
 		showSourceCaption();
 	}
 
+	/** Start again, asking first if that would lose something. */
+	private void newSource() {
+		if(!m_model.confirmDiscard("start a new program"))
+			return;
+		m_model.newSource();
+	}
+
 	private void openSource() {
+		//-- Asked before the chooser rather than after it: there is no point picking a file only
+		//-- to be told the one you have is in the way.
+		if(!m_model.confirmDiscard("open another file"))
+			return;
 		Path file = choose("Open a MACRO-11 source", "MACRO-11 source", "mac", false);
 		if(file == null)
 			return;

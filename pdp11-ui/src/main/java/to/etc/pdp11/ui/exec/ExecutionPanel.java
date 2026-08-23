@@ -220,6 +220,14 @@ public final class ExecutionPanel extends JPanel {
 		return m_singleStep;
 	}
 
+	public JButton getResetAndStartButton() {
+		return m_resetAndStart;
+	}
+
+	public JButton getContinueButton() {
+		return m_continue;
+	}
+
 	// -------------------------------------------------------------------------------------
 	// The commands
 	// -------------------------------------------------------------------------------------
@@ -244,19 +252,41 @@ public final class ExecutionPanel extends JPanel {
 		});
 	}
 
+	/**
+	 * Reset the machine and start it running at the Start PC.
+	 *
+	 * <p>RUNNING is set <b>from inside the job</b>, once the console has taken the command,
+	 * rather than optimistically on the EDT before it is even queued. A console that refuses -
+	 * a serial timeout, or an ODT whose switch has been moved back to HALT since the button was
+	 * last enabled - would otherwise leave MachineState RUNNING with nothing running: Reset,
+	 * Continue, Single step and Set/show all disable on {@code running}, the disassembler stops
+	 * following, and the only way out is Halt against a machine that never started.</p>
+	 *
+	 * <p>Nothing races it. A stop the machine reports while this is in flight is posted to this
+	 * same command thread by {@code AbstractConsole.signalExecutionStop}, so it queues
+	 * <i>behind</i> this job and lands after the RUNNING rather than under it - which is what
+	 * makes setting the state here rather than before the call safe as well as honest. Neither
+	 * of these console calls waits for a prompt: they write and return, so RUNNING appears as
+	 * promptly as it did before.</p>
+	 */
 	private void doResetAndStart() {
 		Address start = parse(m_startPc, "start PC");
 		if(start == null || !checkRunMode())
 			return;
-		m_context.getMachineState().running();
-		m_context.onConsole("Reset and start", console -> console.resetAndStart(start));
+		m_context.onConsole("Reset and start", console -> {
+			console.resetAndStart(start);
+			m_context.getMachineState().running();
+		});
 	}
 
+	/** Carry on from where the machine stopped. RUNNING once the console has taken it, as above. */
 	private void doContinue() {
 		if(!checkRunMode())
 			return;
-		m_context.getMachineState().running();
-		m_context.onConsole("Continue", Console::continueCpu);
+		m_context.onConsole("Continue", console -> {
+			console.continueCpu();
+			m_context.getMachineState().running();
+		});
 	}
 
 	private void doSingleStep() {

@@ -166,6 +166,38 @@ class FakePdp11OdtTest {
 		assertEquals("z?\r\n@", type("z"));
 	}
 
+	/**
+	 * A register letter in the middle of a number is answered with "?", not with an exception.
+	 *
+	 * <p>{@code R}, {@code $} and {@code S} start a register name, so the state machine lets
+	 * them into an address that has already begun - which makes {@code 1R2} and {@code R3}
+	 * typeable and neither of them a number. The parse used to throw a
+	 * {@code NumberFormatException}, which is not the one type {@code serialWriteByte} catches,
+	 * so it walked out of the fake, through the transport, and into whatever was writing: for a
+	 * terminal keystroke that is the command thread's worker dying with nothing logged, and the
+	 * fake left half way through a command.</p>
+	 *
+	 * <p>Every other illegal character already behaved: {@code 12X4/} queries at the {@code X}
+	 * and carries on. These two are the same case and now give the same answer.</p>
+	 */
+	@Test
+	void aRegisterLetterInsideANumberIsQueriedRatherThanThrown() {
+		assertEquals("1R2/?\r\n@", type("1R2/"), "an address that is neither octal nor a register");
+	}
+
+	@Test
+	void aRegisterNameWhereGoWantsAnAddressIsQueriedRatherThanThrown() {
+		assertEquals("R3G?\r\n@", type("R3G"), "G takes a number, and R3 is not one");
+	}
+
+	/** And the console is still there afterwards, rather than wedged in the state it threw from. */
+	@Test
+	void theConsoleStillWorksAfterAQueriedNumber() {
+		type("1R2/");
+		m_odt.setMem(addr(01000), 0123);
+		assertEquals("1000/000123 ", type("1000/"));
+	}
+
 	// ---------------------------------------------------------------------------------------
 	// "@1000/000000 a?   The 'a' is echoed and the ? follows immediately after."
 	// ---------------------------------------------------------------------------------------

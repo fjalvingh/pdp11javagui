@@ -5,6 +5,7 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.bits.BitfieldDef;
 import to.etc.pdp11.core.bits.BitfieldsDef;
+import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
@@ -93,6 +94,10 @@ public final class BitfieldsPanel extends JPanel {
 
 	private final JTextField m_value = new JTextField(8);
 
+	private final JButton m_examine = new JButton("Examine");
+
+	private final JButton m_deposit = new JButton("Deposit");
+
 	private final JLabel m_info = new JLabel(" ");
 
 	private final JLabel m_noDefinitions = new JLabel();
@@ -136,6 +141,7 @@ public final class BitfieldsPanel extends JPanel {
 		m_noDefinitions.setForeground(UiColors.SECONDARY_TEXT);
 		m_info.setForeground(UiColors.SECONDARY_TEXT);
 
+		updateButtons();
 		add(buildTop(), "growx, wrap");
 		add(m_info, "growx, wrap");
 		add(m_scroll, "grow, wrap");
@@ -173,12 +179,10 @@ public final class BitfieldsPanel extends JPanel {
 		bar.add(m_address);
 		bar.add(new JLabel("Value:"));
 		bar.add(m_value);
-		JButton examine = new JButton("Examine");
-		JButton deposit = new JButton("Deposit");
-		bar.add(examine);
-		bar.add(deposit);
-		examine.addActionListener(e -> examine());
-		deposit.addActionListener(e -> deposit());
+		bar.add(m_examine);
+		bar.add(m_deposit);
+		m_examine.addActionListener(e -> examine());
+		m_deposit.addActionListener(e -> deposit());
 		return bar;
 	}
 
@@ -365,6 +369,25 @@ public final class BitfieldsPanel extends JPanel {
 		return m_noDefinitions.isVisible() ? m_noDefinitions.getText() : "";
 	}
 
+	/** The two controls that need a machine, for a test that wants to know whether they are live. */
+	public List<JButton> getMachineControls() {
+		return List.of(m_examine, m_deposit);
+	}
+
+	/**
+	 * Examine and Deposit are dead while nothing is connected, as in every other data window.
+	 *
+	 * <p>Typing bits and reading what they mean is the rest of this window and stays available:
+	 * only the two round trips go. Before this, clicking either one offline produced a modal
+	 * "Not connected to a machine" dialog where the Loader's identical gesture is a dead
+	 * button.</p>
+	 */
+	private void updateButtons() {
+		boolean connected = m_context.getConnectionManager().isConnected();
+		m_examine.setEnabled(connected);
+		m_deposit.setEnabled(connected);
+	}
+
 	// -------------------------------------------------------------------------------------
 	// Editing
 	// -------------------------------------------------------------------------------------
@@ -498,14 +521,20 @@ public final class BitfieldsPanel extends JPanel {
 		refreshValue();
 	});
 
+	private final ConnectionManager.Listener m_connectionListener =
+		(manager, state) -> AppContext.onUi(this::updateButtons);
+
 	public void attach() {
 		detach();
 		m_context.getCellSelection().addListener(m_selectionListener);
+		m_context.getConnectionManager().addListener(m_connectionListener);
+		updateButtons();
 		showCell(m_context.getCellSelection().getSelected());
 	}
 
 	public void detach() {
 		m_context.getCellSelection().removeListener(m_selectionListener);
+		m_context.getConnectionManager().removeListener(m_connectionListener);
 	}
 
 	/** Give the group back when the window goes for good. */

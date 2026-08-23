@@ -168,6 +168,29 @@ public final class AssemblerModel {
 	}
 
 	/**
+	 * Whether the editor's contents may be thrown away - which they may when nothing is unsaved,
+	 * and otherwise only if the user says so.
+	 *
+	 * <p>Here rather than in the window because three places destroy this text and they are in
+	 * two different classes: New and Open in the Assembler window, and Quit in the main one. A
+	 * window that draws a "*" to mean "changed since saved" and then discards those changes
+	 * without asking is telling the user something it does not act on.</p>
+	 *
+	 * <p>Event thread only; see {@link AppContext#confirmDiscard}.</p>
+	 *
+	 * @param action what is about to happen, in the infinitive: "start a new program",
+	 *               "open another file", "quit"
+	 */
+	public boolean confirmDiscard(String action) {
+		if(!isChanged())
+			return true;
+		String name = m_sourceFile == null
+			? "The MACRO-11 source has never been saved"
+			: m_sourceFile.getFileName() + " has changes that have not been saved";
+		return m_context.confirmDiscard(name + ".\n\nDiscard them and " + action + "?");
+	}
+
+	/**
 	 * Whether there is anything worth assembling: a name to save under, and some text. Says
 	 * nothing about whether an assembly is already running - {@link #isAssembling()} does, and
 	 * the two mean different things to the user.

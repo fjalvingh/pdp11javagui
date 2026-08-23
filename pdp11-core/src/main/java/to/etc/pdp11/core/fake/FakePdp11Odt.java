@@ -231,7 +231,7 @@ public class FakePdp11Odt extends FakePdp11 {
 	private void openOctalLocation(String expr) {
 		//-- Only the last eight digits count; ODT simply keeps the low bits of what you type.
 		String digits = expr.length() > 8 ? expr.substring(expr.length() - 8) : expr;
-		long value = Octal.parse(digits);
+		long value = parseOctal(digits);
 		long max = (1L << getAddressType().getBits()) - 1;
 		if(value > max)
 			throw new FakePdp11Exception("address 0" + Long.toOctalString(value) + " is too wide");
@@ -296,7 +296,7 @@ public class FakePdp11Odt extends FakePdp11 {
 			return;
 		//-- Only the last six digits count.
 		String digits = valExpr.length() > 6 ? valExpr.substring(valExpr.length() - 6) : valExpr;
-		long value = Octal.parse(digits);
+		long value = parseOctal(digits);
 		if(isImplemented(m_lastLocationAddr))
 			setMem(m_lastLocationAddr, (int) value);
 	}
@@ -326,7 +326,29 @@ public class FakePdp11Odt extends FakePdp11 {
 
 	private static long parseValue(String valExpr) {
 		String digits = valExpr.length() > 6 ? valExpr.substring(valExpr.length() - 6) : valExpr;
-		return Octal.parse(digits);
+		return parseOctal(digits);
+	}
+
+	/**
+	 * Octal digits, or the error a real ODT gives.
+	 *
+	 * <p>The state machine deliberately lets characters that are not octal digits into the input
+	 * buffer: {@code R} and {@code $} start a register name and can legally follow a digit, so
+	 * {@code 1R2/} and {@code R3G} are both typeable and neither is a number. {@link Octal#parse}
+	 * answers that with a {@link NumberFormatException}, which is not a
+	 * {@link FakePdp11Exception} and so walked straight out of {@link #serialWriteByte} - through
+	 * the transport and into the caller. From a terminal keystroke that is the command thread's
+	 * worker dying with nobody told, and the fake left half way through a command.</p>
+	 *
+	 * <p>An 11/23 prints {@code ?} and a fresh prompt. That is what this makes happen, by giving
+	 * the failure the one type {@code serialWriteByte} already knows how to answer.</p>
+	 */
+	private static long parseOctal(String digits) {
+		try {
+			return Octal.parse(digits);
+		} catch(NumberFormatException x) {
+			throw new FakePdp11Exception("'" + digits + "' is not an octal number");
+		}
 	}
 
 	// -------------------------------------------------------------------------------------

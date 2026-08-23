@@ -154,6 +154,60 @@ class ConsoleConnectionTest {
 		}
 	}
 
+	/**
+	 * A queued task that throws is logged and the command thread carries on.
+	 *
+	 * <p>Nothing is waiting on an {@link ConsoleConnection#execute} task, so an exception out of
+	 * one has nowhere to go: it reached the executor, which terminates the worker thread and
+	 * quietly starts another. Whatever that task was doing was lost and nobody was told - which
+	 * is how a {@code NumberFormatException} escaping the fake ODT presented, as a terminal that
+	 * simply stopped responding.</p>
+	 */
+	@Test
+	void aQueuedTaskThatThrowsIsLoggedAndTheCommandThreadSurvives() throws Exception {
+		ScriptedTransport t = new ScriptedTransport("");
+		List<String> logged = new java.util.concurrent.CopyOnWriteArrayList<>();
+		ConsoleConnection c = new ConsoleConnection(t, new Logger() {
+			@Override
+			public boolean isEnabled(to.etc.pdp11.core.util.LogChannel channel) {
+				return true;
+			}
+
+			@Override
+			public void log(to.etc.pdp11.core.util.LogChannel channel, String message) {
+				logged.add(message);
+			}
+		});
+		try {
+			c.attach(new RecordingReceiver());
+			AtomicReference<Thread> first = new AtomicReference<>();
+			CountDownLatch ran = new CountDownLatch(1);
+			c.execute(() -> {
+				first.set(Thread.currentThread());
+				ran.countDown();
+			});
+			assertTrue(ran.await(5, TimeUnit.SECONDS));
+
+			c.execute(() -> {
+				throw new NumberFormatException("'1R2' is not octal");
+			});
+
+			//-- Still the same thread, still taking work.
+			AtomicReference<Thread> second = new AtomicReference<>();
+			CountDownLatch after = new CountDownLatch(1);
+			c.execute(() -> {
+				second.set(Thread.currentThread());
+				after.countDown();
+			});
+			assertTrue(after.await(5, TimeUnit.SECONDS), "the command thread stopped taking work");
+			assertEquals(first.get(), second.get(), "the worker was replaced, so state was lost");
+			assertTrue(logged.stream().anyMatch(l -> l.contains("1R2") && l.contains("Console task failed")),
+				"and it said so: " + logged);
+		} finally {
+			c.close();
+		}
+	}
+
 	@Test
 	void aConsoleCallFromTheCommandThreadIsRefusedRatherThanDeadlocked() throws Exception {
 		ScriptedTransport t = new ScriptedTransport("");

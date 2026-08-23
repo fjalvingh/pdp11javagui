@@ -276,7 +276,17 @@ public final class ConsoleConnection implements AutoCloseable {
 	 */
 	public void execute(Runnable task) {
 		try {
-			m_executor.execute(task);
+			m_executor.execute(() -> {
+				try {
+					task.run();
+				} catch(RuntimeException x) {
+					//-- Nothing above is waiting on this one, so an exception has nowhere to go
+					//-- and would otherwise reach the executor, which kills the worker thread and
+					//-- quietly makes a new one. That loses whatever the task was doing and says
+					//-- nothing anywhere. An Error is left alone: that is not ours to swallow.
+					m_logger.log(LogChannel.OTHER, "Console task failed on " + describe() + ": " + x);
+				}
+			});
 		} catch(RejectedExecutionException x) {
 			//-- Closing. Nothing left that could care about the result.
 		}

@@ -4,6 +4,69 @@
 
 ### Fixes
 
+- **The second phase of every two-phase memory test ran with no progress bar and no Cancel.** Each
+  `MemoryTester` phase is a `begin … finally done()` pair and the Memory Test window puts one
+  `ProgressDialog` through two of them, but `done()` marked the dialog finished for good and
+  `begin()` never unmarked it — so the second phase's dialog bailed at its own guard. Over a slow
+  serial line that is the longer of the two phases, spent sitting at "Testing ..." with no way to
+  stop it. `begin()` now resets the monitor for the phase that is starting. Cancel stays sticky on
+  purpose, and now says so: it means "stop what I asked for", and a two-phase test is one thing
+  asked for.
+- **A failed start left the window convinced the machine was running, for good.** Reset and start
+  and Continue flipped `MachineState` to RUNNING on the event thread before the console command
+  was even queued. If the console then refused — a serial timeout, or an ENABLE/HALT switch moved
+  back to HALT since the button was last enabled — the failure was reported and the state stayed
+  RUNNING: Reset, Continue, Single step and Set/show all disable while running, the disassembler
+  stops following, and the only way out was pressing Halt against a machine that had never
+  started. Both now say RUNNING from inside the job, once the console has taken the command. A
+  stop reported meanwhile is posted to that same command thread, so it still lands after the
+  RUNNING rather than under it.
+- **Three windows raised a modal "Not connected" dialog where their siblings simply greyed the
+  button out.** The Loader, Dumper, Memory Test, Scanner, MMU, SimH Console, Assembler and
+  Execution windows all disable their machine-touching buttons when there is nothing connected.
+  The plain Memory window, every Register Group window and Bitfields never called `setEnabled` at
+  all, so the same gesture — Examine, Deposit, Verify — fell through to `reportFailure`, which is
+  a modal error dialog plus a terminal line, once per click. All three now follow the connection
+  the way the others do: Memory greys out its four buttons and the popup's Verify (Show, `<` and
+  `>` stay live, because moving the range needs no machine), Bitfields greys out Examine and
+  Deposit while leaving the bit editing usable offline, and Register Group — which had no
+  connection listener at all and never reacted to connecting or disconnecting — greys out all
+  four of its buttons and now attaches and detaches with its window.
+- **A closed memory window could never be got back.** Closing a tool window hides it, which for a
+  singleton is fine — its entry in the Windows menu brings it back with its contents. A memory
+  window has no such entry: the menu offers "New memory window", which builds a *different* one,
+  because the closed window still holds instance id 1. The menu listed only visible windows, so
+  "Memory - 1" was unreachable for the rest of the session while still sitting on the propagation
+  bus with its range and its edits. The menu now lists closed windows too, marked "(closed)", and
+  choosing one brings that window back. **Show all** has been added beside Hide all, which PLAN.md
+  §3 always specified and which was the other gesture that would have recovered them.
+- **Typing `1R2/` at a simulated ODT killed the command thread instead of printing `?`.** `R`, `$`
+  and `S` start a register name, so the console's state machine lets them into an address that has
+  already begun — which makes `1R2` and `R3` typeable and neither of them a number. The octal
+  parse answered that with a `NumberFormatException`, which is not the exception type the fake
+  catches, so it walked out through the transport into whatever was writing. For a terminal
+  keystroke that was the command thread's worker dying with nothing logged and the fake left half
+  way through a command; the terminal simply stopped responding. The fake now gives that failure
+  the type it already knows how to answer, and prints `?` and a fresh prompt like a real 11/23. A
+  queued console task that throws is also logged now rather than silently taking the command
+  thread's worker with it.
+- **Disconnect froze the whole window while it tore the connection down.** Connect was carefully
+  run on a worker — its own comment explains why — but Disconnect called into the connection
+  manager straight from the menu item's action listener, and closing is as slow as opening: up to
+  two seconds waiting for the reader thread, then a child process killed and waited for, or a
+  serial port closed. A wedged transport locked the UI for several seconds, which is
+  indistinguishable from a crash. Disconnect now runs on a worker exactly like connect, with the
+  connection menu items disabled for the duration, and the terminal says "[disconnected]" once it
+  has actually happened rather than before. Quit does the same: the windows are disposed and the
+  settings saved first, and the machine is closed on a shutdown thread behind an already-empty
+  screen.
+- **Unsaved MACRO-11 source was thrown away without asking — by New, by Open, and by Quit.** The
+  Assembler window draws a "*" in its status line and keeps Save enabled to say "this is not on
+  disk", and then discarded exactly that with no prompt; quitting did not look at the editor at
+  all. All three now ask, naming the file whose changes would go, and Open asks before raising the
+  file chooser rather than after. The asking is an `AppContext.DiscardConfirmer` installed by the
+  main window, the same shape as the failure handler — so a headless run or a test never blocks on
+  a dialog nobody can answer, and a clean editor still gets no prompt.
 - **The Assembler window's *Verify* threw away the program it was supposed to be checking.** The
   Memory Loader's Verify reads the machine back without touching the loaded values, so anything
   the machine disagrees about colours itself — that is what the group's `pdpOverwritesEdit` is

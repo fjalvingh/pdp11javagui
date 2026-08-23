@@ -78,6 +78,15 @@ public final class AppContext {
 	private BiConsumer<String, Throwable> m_failureHandler = (message, x) -> {
 	};
 
+	/**
+	 * Who asks before unsaved work is destroyed.
+	 *
+	 * <p>Defaults to saying yes, for the same reason {@link #m_failureHandler} defaults to
+	 * silence: a context with no window over it - a test, a headless run - must not block on an
+	 * answer nobody can give. {@link MainWindow} installs the one that actually asks.</p>
+	 */
+	private DiscardConfirmer m_discardConfirmer = question -> true;
+
 	public AppContext(SettingsStore settingsStore, Logger logger, MemoryCellGroups memoryCellGroups,
 		BitfieldsDefs bitfieldDefs, ConnectionManager connectionManager, WindowManager windowManager,
 		Scheduler scheduler, Path dataDir) {
@@ -185,6 +194,33 @@ public final class AppContext {
 	public void setFailureHandler(BiConsumer<String, Throwable> failureHandler) {
 		m_failureHandler = failureHandler == null ? (m, x) -> {
 		} : failureHandler;
+	}
+
+	/** Asked before work the user has not saved would be thrown away. */
+	@FunctionalInterface
+	public interface DiscardConfirmer {
+		/**
+		 * @param question what would be lost and what would happen, already phrased for a dialog
+		 * @return true to go ahead and lose it
+		 */
+		boolean confirmDiscard(String question);
+	}
+
+	public void setDiscardConfirmer(DiscardConfirmer confirmer) {
+		m_discardConfirmer = confirmer == null ? q -> true : confirmer;
+	}
+
+	/**
+	 * Ask before destroying something unsaved.
+	 *
+	 * <p>Event thread only - the answer is a modal dialog, and every caller is a menu item or a
+	 * button. Same shape as {@link #reportFailure}: the window that can put a dialog on the
+	 * screen installs the handler, and nothing below it has to know a dialog exists.</p>
+	 *
+	 * @return true when the caller may go ahead
+	 */
+	public boolean confirmDiscard(String question) {
+		return m_discardConfirmer.confirmDiscard(question);
 	}
 
 	/**

@@ -20,6 +20,7 @@ import to.etc.pdp11.ui.window.WindowType;
 import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -169,6 +170,65 @@ class WindowsBuildTest {
 		}
 	}
 
+	/**
+	 * Disconnect tears the connection down on a worker, not on the event thread.
+	 *
+	 * <p>{@code close()} waits up to two seconds for the reader thread and then closes the
+	 * transport - killing a child process and waiting for it, or closing a serial port. Run from
+	 * the menu item's action listener, as this was, a wedged transport freezes the whole window
+	 * for several seconds, which looks exactly like a crash. Connect was already careful about
+	 * this and said so in its own comment; Disconnect was not.</p>
+	 *
+	 * <p>The listener fires on whichever thread reached DISCONNECTED, so asking it which thread
+	 * that was is the property itself rather than a proxy for it.</p>
+	 */
+	@Test
+	void disconnectDoesNotTearTheConnectionDownOnTheEventThread(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			ctx.getConnectionManager().connect(
+				to.etc.pdp11.core.conn.ConnectionProfile.simulated(
+					to.etc.pdp11.core.conn.ConsoleProtocol.ODT_18));
+			onEdt(() -> null);
+			assertEquals("Connected", onEdt(() -> w.getPanel().getStateText()));
+
+			List<Boolean> onEventThread = new java.util.concurrent.CopyOnWriteArrayList<>();
+			ctx.getConnectionManager().addListener((m, state) -> {
+				if(state == ConnectionManager.State.DISCONNECTED)
+					onEventThread.add(SwingUtilities.isEventDispatchThread());
+			});
+
+			onEdt(() -> {
+				w.getDisconnectItem().doClick();
+				return null;
+			});
+			long deadline = System.currentTimeMillis() + 10_000;
+			while(ctx.getConnectionManager().getState() != ConnectionManager.State.DISCONNECTED) {
+				if(System.currentTimeMillis() > deadline)
+					throw new AssertionError("the disconnect never finished");
+				Thread.sleep(5);
+			}
+
+			assertFalse(onEventThread.isEmpty(), "the disconnect did happen");
+			assertEquals(List.of(Boolean.FALSE), onEventThread,
+				"the teardown must not run on the event thread");
+			//-- And the window catches up afterwards, saying so once it is a fact.
+			onEdt(() -> null);
+			assertEquals("Not connected", onEdt(() -> w.getPanel().getStateText()));
+			String terminal = onEdt(() -> w.getPanel().getGlassTerminal().getText());
+			assertTrue(terminal.contains("[disconnected]"), terminal.replace("\n", " | "));
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
 	/** A real console <i>is</i> the machine's console, so the terminal shows the whole wire. */
 	@Test
 	void anOdtConnectionPutsTheWholeWireOnTheTerminal(@TempDir Path dir) throws Exception {
@@ -194,6 +254,74 @@ class WindowsBuildTest {
 				return null;
 			});
 		}
+	}
+
+	/**
+	 * A closed memory window is still reachable, and can be told apart from an open one.
+	 *
+	 * <p>Closing a tool window hides it. For a singleton that is fine - its own entry in the
+	 * Windows menu brings it back with its contents. For a memory window there is no such entry:
+	 * the menu offers "New memory window", which builds a <i>different</i> one, because the hidden
+	 * window still holds instance id 1 and {@code openNew} takes the next free id. Listing only
+	 * the visible windows therefore left it unreachable for the rest of the session - still on the
+	 * propagation bus, still holding its range and its edits.</p>
+	 */
+	@Test
+	void aClosedMemoryWindowIsStillListedAndStillHoldsItsId(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MemoryWindow.register(ctx);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			ToolWindow one = onEdt(() -> ctx.getWindowManager().openNew(WindowType.MEMORY));
+			assertEquals("Memory - 1", one.getTitle());
+			onEdt(() -> {
+				one.hideWindow();
+				return null;
+			});
+			assertFalse(one.isVisible());
+
+			//-- The id is not freed by closing, and must not be: the window still exists, keeps
+			//-- its contents, and its saved geometry is keyed on it.
+			ToolWindow two = onEdt(() -> ctx.getWindowManager().openNew(WindowType.MEMORY));
+			assertEquals("Memory - 2", two.getTitle());
+			assertEquals(List.of(one), ctx.getWindowManager().hiddenWindows());
+
+			//-- So the menu has to name it, or nothing ever gets it back.
+			List<String> items = onEdt(() -> menuItemTexts(w));
+			assertTrue(items.contains("Memory - 1 (closed)"), items.toString());
+			assertTrue(items.contains("Memory - 2"), items.toString());
+			assertTrue(items.contains("Show all"), "PLAN.md's other half of Hide all: " + items);
+
+			//-- And choosing it brings back the one that was closed, not a third window.
+			onEdt(() -> {
+				ctx.getWindowManager().raise(one.key());
+				return null;
+			});
+			assertTrue(one.isVisible());
+			assertEquals(2, ctx.getWindowManager().windowsOfType(WindowType.MEMORY).size());
+			assertEquals(List.of(), ctx.getWindowManager().hiddenWindows());
+			assertFalse(onEdt(() -> menuItemTexts(w)).contains("Show all"),
+				"nothing to show once nothing is hidden");
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/** The Windows menu as the user would read it, rebuilt as opening it would rebuild it. */
+	private static List<String> menuItemTexts(MainWindow w) {
+		List<String> l = new ArrayList<>();
+		javax.swing.JMenu menu = w.getWindowsMenuRebuilt();
+		for(int i = 0; i < menu.getItemCount(); i++) {
+			javax.swing.JMenuItem item = menu.getItem(i);
+			if(item != null)                                // null is a separator
+				l.add(item.getText());
+		}
+		return l;
 	}
 
 	@Test

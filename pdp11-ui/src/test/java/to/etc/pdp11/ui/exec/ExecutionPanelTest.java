@@ -16,6 +16,9 @@ import to.etc.pdp11.ui.UiRenderer;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,9 +36,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * and no serial port.</p>
  */
 class ExecutionPanelTest {
+	private static final long TIMEOUT_MS = 30_000;
+
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
+	}
+
+	/** Every state the machine passes through, in order, recorded from the event thread. */
+	private static List<MachineState.ExecutionState> record(AppContext ctx) {
+		List<MachineState.ExecutionState> seen = new CopyOnWriteArrayList<>();
+		ctx.getMachineState().addListener(state -> seen.add(state.getState()));
+		return seen;
 	}
 
 	private static AppContext connected(Path dir, ConsoleProtocol protocol) throws Exception {
@@ -155,6 +182,70 @@ class ExecutionPanelTest {
 
 			//-- And a new connection forgets it, because it is a different machine.
 			ctx.getConnectionManager().disconnect();
+			assertEquals(MachineState.ExecutionState.UNKNOWN, ctx.getMachineState().getState());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * Continue says RUNNING once the console has taken the command - not before it is queued.
+	 *
+	 * <p>Recorded as a list of every state rather than read at the end, because the simulated
+	 * machine may well halt again immediately: what matters is that RUNNING happened, not that
+	 * it is still true by the time this looks.</p>
+	 */
+	@Test
+	void continuingSaysRunningOnceTheConsoleHasTakenIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.SIMH);
+		try {
+			ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+			Edt.run(panel::attach);
+			List<MachineState.ExecutionState> seen = record(ctx);
+			assertTrue(panel.getContinueButton().isEnabled());
+
+			Edt.run(() -> panel.getContinueButton().doClick());
+			until("the machine to be running", () -> seen.contains(MachineState.ExecutionState.RUNNING));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * A console that refuses to start leaves the machine state alone.
+	 *
+	 * <p>The refusal here is the ordinary one: the operator moves the physical ENABLE/HALT
+	 * switch back to HALT, and the window - which is told about connections and stops, not about
+	 * switches - still has Continue enabled from when the switch was at ENABLE. ODT's {@code P}
+	 * means "single step" with the machine halted, so the console refuses the continue.</p>
+	 *
+	 * <p>Before this was fixed the window set RUNNING on the event thread <i>before</i> queueing
+	 * the job, so the refusal left MachineState RUNNING for good: Reset, Continue, Single step
+	 * and Set/show all disable on {@code running}, and the only way out was pressing Halt
+	 * against a machine that had never started.</p>
+	 */
+	@Test
+	void aRefusedContinueLeavesTheMachineStateAlone(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.ODT_16);
+		try {
+			List<String> failures = new CopyOnWriteArrayList<>();
+			ctx.setFailureHandler((message, x) -> failures.add(message));
+			ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+			Edt.run(panel::attach);
+			List<MachineState.ExecutionState> seen = record(ctx);
+
+			ctx.getConnectionManager().getConsole().setRunMode(ConsoleRunMode.RUN);
+			Edt.run(panel::updateDisplay);
+			assertTrue(panel.getContinueButton().isEnabled(), "at ENABLE, P continues");
+
+			//-- The switch moves back. Nothing tells the window, which is the whole point.
+			ctx.getConnectionManager().getConsole().setRunMode(ConsoleRunMode.HALT);
+			Edt.run(() -> panel.getContinueButton().doClick());
+
+			until("the console to refuse", () -> !failures.isEmpty());
+			assertEquals("Continue failed", failures.get(0));
+			assertFalse(seen.contains(MachineState.ExecutionState.RUNNING),
+				"nothing started, so nothing is running");
 			assertEquals(MachineState.ExecutionState.UNKNOWN, ctx.getMachineState().getState());
 		} finally {
 			ctx.getConnectionManager().close();

@@ -17,10 +17,12 @@ import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.UiRenderer;
 
+import javax.swing.AbstractButton;
 import javax.swing.JTable;
 import java.awt.Rectangle;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -41,9 +43,58 @@ class MemoryPanelTest {
 
 	private static final int HEIGHT = 460;
 
+	private static final long TIMEOUT_MS = 30_000;
+
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
+	}
+
+	private static void until(String what, BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
+	}
+
+	private static boolean allEnabled(MemoryPanel panel) {
+		return panel.getMachineControls().stream().allMatch(AbstractButton::isEnabled);
+	}
+
+	/**
+	 * Examine, Deposit and Verify are dead with nothing connected, and live again once there is.
+	 *
+	 * <p>This window used to be one of the three that never called {@code setEnabled} at all, so
+	 * clicking Examine offline produced a modal "Not connected to a machine" dialog where the
+	 * same gesture in the Loader or the Scanner is simply a dead button.</p>
+	 */
+	@Test
+	void theMachineControlsFollowTheConnection(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryPanel panel = Edt.call(() -> new MemoryPanel(ctx, "1"));
+		for(AbstractButton b : panel.getMachineControls())
+			assertFalse(b.isEnabled(), b.getText() + " needs a machine");
+		//-- Show, < and > are not machine controls and stay usable offline.
+		assertTrue(panel.getStartAddressField().isEnabled());
+
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			until("the buttons to arm", () -> allEnabled(panel));
+			ctx.getConnectionManager().disconnect();
+			until("the buttons to go dead again", () -> !allEnabled(panel));
+		} finally {
+			ctx.getConnectionManager().close();
+			Edt.run(panel::detach);
+		}
 	}
 
 	private static MemoryPanel panel(Path dir) {

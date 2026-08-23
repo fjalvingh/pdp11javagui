@@ -10,6 +10,7 @@ import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.ui.AppContext;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * A window onto memory: a start address, a length, and an editable grid of words.
@@ -59,6 +61,19 @@ public final class MemoryPanel extends JPanel {
 
 	private final JLabel m_info = new JLabel();
 
+	//-- The controls that reach the machine. Fields, because they are switched off while there
+	//-- is no machine to reach: the alternative is a modal "Not connected" dialog per click,
+	//-- which is what every other data window already avoids.
+	private final JButton m_examineAll = new JButton("Examine all");
+
+	private final JButton m_examineOne = new JButton("Examine cell");
+
+	private final JButton m_depositChanged = new JButton("Deposit changed");
+
+	private final JButton m_depositAll = new JButton("Deposit all");
+
+	private final JMenuItem m_verify = new JMenuItem("Verify against the machine");
+
 	public MemoryPanel(AppContext context, String instanceId) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
@@ -82,6 +97,7 @@ public final class MemoryPanel extends JPanel {
 		m_startAddr.setText(Address.of(m_group.getType(), 0).toOctal());
 		m_blockSize.setText(Octal.format(DEFAULT_BLOCK_SIZE, 1));
 		installPopupMenu();
+		updateButtons();
 		updateInfo();
 	}
 
@@ -106,23 +122,21 @@ public final class MemoryPanel extends JPanel {
 		bar.add(m_blockSize);
 
 		JButton set = new JButton("Show");
-		JButton examineAll = new JButton("Examine all");
-		JButton examineOne = new JButton("Examine cell");
-		JButton depositChanged = new JButton("Deposit changed");
-		JButton depositAll = new JButton("Deposit all");
 		bar.add(set);
-		bar.add(examineAll);
-		bar.add(examineOne);
-		bar.add(depositChanged);
-		bar.add(depositAll);
+		bar.add(m_examineAll);
+		bar.add(m_examineOne);
+		bar.add(m_depositChanged);
+		bar.add(m_depositAll);
 
 		set.addActionListener(e -> applyRange(true));
 		back.addActionListener(e -> step(-1));
 		forward.addActionListener(e -> step(1));
-		examineAll.addActionListener(e -> m_grid.examineAll(false, owner()));
-		examineOne.addActionListener(e -> m_grid.examineCell(m_grid.getSelectedCell()));
-		depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
-		depositAll.addActionListener(e -> m_grid.depositAll(false, owner()));
+		//-- Show, < and > stay live while disconnected: they move the range and re-lay the grid,
+		//-- which is worth doing with no machine attached. Only the four that talk to one go dead.
+		m_examineAll.addActionListener(e -> m_grid.examineAll(false, owner()));
+		m_examineOne.addActionListener(e -> m_grid.examineCell(m_grid.getSelectedCell()));
+		m_depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
+		m_depositAll.addActionListener(e -> m_grid.depositAll(false, owner()));
 		//-- Enter in either field is the same as pressing Show, which is what makes typing an
 		//-- address feel like typing an address.
 		m_startAddr.addActionListener(e -> applyRange(true));
@@ -137,15 +151,14 @@ public final class MemoryPanel extends JPanel {
 		clear.addActionListener(e -> m_grid.clearData());
 		JMenuItem fill = new JMenuItem("Fill data with address");
 		fill.addActionListener(e -> m_grid.fillWithAddress());
-		JMenuItem verify = new JMenuItem("Verify against the machine");
-		verify.setToolTipText("Read it all back; anything the machine disagrees with shows as changed");
-		verify.addActionListener(e -> verify());
+		m_verify.setToolTipText("Read it all back; anything the machine disagrees with shows as changed");
+		m_verify.addActionListener(e -> verify());
 		JMenuItem export = new JMenuItem("Export as SimH DO script ...");
 		export.addActionListener(e -> exportSimhScript());
 		menu.add(clear);
 		menu.add(fill);
 		menu.addSeparator();
-		menu.add(verify);
+		menu.add(m_verify);
 		menu.addSeparator();
 		menu.add(export);
 
@@ -257,6 +270,23 @@ public final class MemoryPanel extends JPanel {
 	// Odds and ends
 	// -------------------------------------------------------------------------------------
 
+	/**
+	 * Switch the machine-touching controls off while there is nothing to touch.
+	 *
+	 * <p>The grey-out is the application's one answer to "you cannot do that yet": Loader,
+	 * Dumper, Memory Test, Scanner, MMU, SimH Console, Assembler and Execution all do this, and
+	 * this window used to be one of three that instead let the click through to a modal
+	 * "Not connected to a machine" dialog.</p>
+	 */
+	private void updateButtons() {
+		boolean connected = m_context.getConnectionManager().isConnected();
+		m_examineAll.setEnabled(connected);
+		m_examineOne.setEnabled(connected);
+		m_depositChanged.setEnabled(connected);
+		m_depositAll.setEnabled(connected);
+		m_verify.setEnabled(connected);
+	}
+
 	private void updateInfo() {
 		int edited = m_grid.getEditedCells().size();
 		m_info.setText(m_group.isEmpty()
@@ -285,6 +315,7 @@ public final class MemoryPanel extends JPanel {
 			m_startAddr.setText(Address.of(type, m_group.getRange().empty() ? 0 : m_group.getRange().lo()).toOctal());
 			m_grid.rebuild();
 		}
+		updateButtons();
 		updateInfo();
 	}
 
@@ -315,6 +346,11 @@ public final class MemoryPanel extends JPanel {
 	/** The cell shown at a grid position, for a test that wants to know what is where. */
 	public MemoryCell cellAt(int row, int column) {
 		return m_grid.cellAt(row, column);
+	}
+
+	/** The controls that need a machine, for a test that wants to know whether they are live. */
+	public List<AbstractButton> getMachineControls() {
+		return List.of(m_examineAll, m_examineOne, m_depositChanged, m_depositAll, m_verify);
 	}
 
 	private final ConnectionManager.Listener m_connectionListener =
