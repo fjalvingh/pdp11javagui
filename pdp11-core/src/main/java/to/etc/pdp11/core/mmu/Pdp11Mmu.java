@@ -6,8 +6,8 @@ import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * A model of the PDP-11 memory management unit, as fitted to the 11/44 and 11/70.
@@ -134,7 +134,14 @@ public final class Pdp11Mmu {
 
 	private final int[][][] m_pdr = new int[CpuMode.values().length][AccessSpace.values().length][8];
 
-	private final List<Runnable> m_listeners = new ArrayList<>();
+	/**
+	 * Copy-on-write, like every other notification bus in the project: the listeners are added
+	 * and removed on the event thread - a window being shown, hidden or rebound to a new
+	 * connection - and the list is walked on the command thread, on every register a bulk
+	 * examine fills in. A plain list throws ConcurrentModificationException out of the middle
+	 * of an examine, which reaches the user as "Reading the MMU registers failed".
+	 */
+	private final List<Runnable> m_listeners = new CopyOnWriteArrayList<>();
 
 	/**
 	 * Build the MMU's register group inside the application's groups, so that examining these

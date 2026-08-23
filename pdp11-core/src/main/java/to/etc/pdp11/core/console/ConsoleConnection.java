@@ -273,8 +273,13 @@ public final class ConsoleConnection implements AutoCloseable {
 	 * events, and SimH's deferred silent-halt resolution. Serialization then gives the Pascal's
 	 * "fire the stop event outside any command sequence" rule ({@code ConsoleGenericU.pas:511-531})
 	 * for free.</p>
+	 *
+	 * @return false when the connection is closing and the task will never run. A caller that
+	 *         only wants the work done can ignore that; a caller that has already told the user
+	 *         something is happening cannot, because the callbacks it is waiting for live in
+	 *         the task that was refused - see {@code AppContext.onConsole}.
 	 */
-	public void execute(Runnable task) {
+	public boolean execute(Runnable task) {
 		try {
 			m_executor.execute(() -> {
 				try {
@@ -287,8 +292,10 @@ public final class ConsoleConnection implements AutoCloseable {
 					m_logger.log(LogChannel.OTHER, "Console task failed on " + describe() + ": " + x);
 				}
 			});
+			return true;
 		} catch(RejectedExecutionException x) {
-			//-- Closing. Nothing left that could care about the result.
+			//-- Closing. The task is gone; whoever queued it decides whether that matters.
+			return false;
 		}
 	}
 

@@ -229,15 +229,28 @@ public final class DisassemblerPanel extends JPanel {
 	 * not moving it.</p>
 	 */
 	public void showPc(Address pc) {
+		//-- Only when somebody is looking. Every stop would otherwise cost twenty-one examines
+		//-- for a window that is not on the screen.
+		showPc(pc, isShowing());
+	}
+
+	/**
+	 * {@link #showPc(Address)} for a caller that knows whether the machine should be read,
+	 * because {@link #isShowing()} cannot tell it.
+	 *
+	 * <p>Which is the case on the way in: {@code ToolWindow.showWindow} runs {@code onShowing()}
+	 * - and so {@link #attach()} - <i>before</i> {@code setVisible(true)}, so a window being
+	 * opened is not showing yet. Asking the component was how "catch up rather than waiting for
+	 * the next stop" came to mean "show whatever was left over from last time": the flag was
+	 * false on every single open.</p>
+	 */
+	public void showPc(Address pc, boolean examine) {
 		if(pc == null)
 			return;
 		long before = 2L * WORDS_BEFORE_PC;
 		long start = pc.val() < before ? 0 : pc.val() - before;
 		setRange(Address.of(MemoryAddressType.VIRTUAL, start),
-			Address.of(MemoryAddressType.VIRTUAL, start + 2L * (WORDS_SHOWN - 1)), pc,
-			//-- Only when somebody is looking. Every stop would otherwise cost twenty-one
-			//-- examines for a window that is not on the screen.
-			isShowing());
+			Address.of(MemoryAddressType.VIRTUAL, start + 2L * (WORDS_SHOWN - 1)), pc, examine);
 	}
 
 	private final MachineState.Listener m_machineListener = state -> {
@@ -259,10 +272,12 @@ public final class DisassemblerPanel extends JPanel {
 		m_context.getMachineState().addListener(m_machineListener);
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		//-- Opened after the machine stopped, which is the ordinary case: catch up rather than
-		//-- waiting for the next stop.
+		//-- waiting for the next stop. Being attached is what "somebody is looking" means here -
+		//-- the window is one statement away from visible - so the read is on if there is a
+		//-- machine to read from.
 		Address pc = m_context.getMachineState().getPc();
 		if(pc != null)
-			showPc(pc);
+			showPc(pc, m_context.getConnectionManager().isConnected());
 		else
 			updateDisplay();
 	}

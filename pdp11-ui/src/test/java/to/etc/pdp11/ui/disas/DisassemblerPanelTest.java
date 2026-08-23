@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.ui.AppContext;
@@ -30,6 +32,23 @@ class DisassemblerPanelTest {
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
+	}
+
+	private static final long TIMEOUT_MS = 30_000;
+
+	private static void until(String what, java.util.function.BooleanSupplier condition) {
+		long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			try {
+				Thread.sleep(20);
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(x);
+			}
+		}
+		throw new AssertionError("Timed out waiting for " + what);
 	}
 
 	private static Address v(int val) {
@@ -124,6 +143,67 @@ class DisassemblerPanelTest {
 		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
 		Edt.run(panel::updateDisplay);
 		assertEquals("Not connected, so there is nothing to disassemble", panel.getInfoText());
+	}
+
+	/**
+	 * Opened after the machine stopped, it reads around the PC rather than showing nothing.
+	 *
+	 * <p>{@code ToolWindow.showWindow} runs {@code onShowing()} - and so {@code attach()} -
+	 * before {@code setVisible(true)}, so {@code isShowing()} is false on every single open.
+	 * Handing that flag to the catch-up read meant the read never happened: opening the window
+	 * while connected and stopped showed "Nothing has been read from this range yet" beside a
+	 * comment promising the opposite. The window does not have to be visible for this test to
+	 * mean what it says - that is the whole point.</p>
+	 */
+	@Test
+	void openingItAfterTheMachineStoppedReadsAroundThePc(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			//-- Two instructions at 1000, and a machine that stopped there before this window
+			//-- was ever opened.
+			var m = ctx.getConnectionManager();
+			m.getConnection().run(() -> {
+				m.getConsole().deposit(Address.of(m.getConsole().physicalAddressType(), 01000), 0005000);
+				m.getConsole().deposit(Address.of(m.getConsole().physicalAddressType(), 01002), 0005200);
+			});
+			ctx.getMachineState().stopped(v(01000));
+
+			DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+			//-- Exactly what DisassemblerWindow.onShowing does, and it is not showing yet.
+			Edt.run(panel::attach);
+			try {
+				until("the catch-up read", () -> {
+					MemoryCell mc = panel.getGroup().findByAddress(01000L);
+					return mc != null && mc.getPdpValue().isKnown();
+				});
+				assertEquals(0005000, panel.getGroup().findByAddress(01000L).getPdpValue().word());
+			} finally {
+				Edt.run(panel::detach);
+			}
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/** A window nobody has open still does not read memory when the machine stops. */
+	@Test
+	void aHiddenWindowStillDoesNotReadOnEveryStop(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+			Edt.run(panel::attach);
+			//-- Attached, hidden, and the machine stops somewhere else: no examine, because
+			//-- twenty-one words per stop over a serial line is what the flag exists to avoid.
+			Edt.run(() -> panel.showPc(v(02000)));
+			Thread.sleep(200);
+			MemoryCell mc = panel.getGroup().findByAddress(02000L);
+			assertTrue(mc == null || !mc.getPdpValue().isKnown(), "nothing was read");
+			Edt.run(panel::detach);
+		} finally {
+			ctx.getConnectionManager().close();
+		}
 	}
 
 	@Test

@@ -234,6 +234,49 @@ class BitfieldsPanelTest {
 		assertEquals(0777, theirs.getPdpValue().word(), "the index still says these are one register");
 	}
 
+	/**
+	 * Bits being composed here are not thrown away by somebody else's examine.
+	 *
+	 * <p>This window's group sits on the propagation bus so that a deposit here reaches every
+	 * window showing the same register - and that bus runs both ways. With
+	 * {@code pdpOverwritesEdit} left at its default, an examine of the same address from any
+	 * other window propagated the machine's value in and the cell listener copied it straight
+	 * over the half-composed word, silently. Every other edit-holding view opts out while it
+	 * holds an edit; this one now does too.</p>
+	 */
+	@Test
+	void anExamineElsewhereDoesNotWipeTheBitsBeingComposed(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		definePsw(ctx);
+		BitfieldsPanel panel = Edt.call(() -> new BitfieldsPanel(ctx));
+		MemoryCell theirs = pswCell(ctx, 0);
+		Edt.run(() -> panel.showCell(theirs));
+
+		//-- Priority 7, typed here and not deposited: what the window is for.
+		Edt.run(() -> panel.getTable().setValueAt("7", 2, 3));
+		assertEquals(0340, panel.getCell().getEditValue().word());
+
+		//-- Meanwhile another window examines the same register and the machine says 0100.
+		Edt.run(() -> {
+			theirs.setPdpValue(CellValue.of(0100));
+			ctx.getMemoryCellGroups().syncMemoryCells(theirs);
+		});
+
+		assertEquals(0340, panel.getCell().getEditValue().word(), "the composition is still there");
+		assertEquals("000340", panel.getValueField().getText());
+		assertEquals("7", panel.getTable().getValueAt(2, 3));
+
+		//-- And once it has been deposited there is nothing left to protect, so the window
+		//-- follows the machine again like any other view.
+		Edt.run(() -> {
+			panel.getCell().setDeposited();
+			panel.refreshValue();
+			theirs.setPdpValue(CellValue.of(0200));
+			ctx.getMemoryCellGroups().syncMemoryCells(theirs);
+		});
+		assertEquals(0200, panel.getCell().getEditValue().word(), "nothing edited, so it tracks");
+	}
+
 	@Test
 	void followingTheSelectionMovesToTheNewAddress(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);

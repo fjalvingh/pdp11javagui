@@ -460,6 +460,22 @@ previous state on the failure path.
 ### 14. `onConsole` can silently drop a job during a disconnect race, leaving panels stuck "working"
 `pdp11-ui/.../AppContext.java:227-232`; `pdp11-core/.../console/ConsoleConnection.java:242-247`
 
+**FIXED** on both sides, as suggested. `ConsoleConnection.execute` now returns false when the
+executor refuses the task instead of swallowing the rejection, and `onConsole` turns that into the
+same `reportFailure` + `false` it already gives for "not connected at all" - so a caller cannot
+tell the two apart and does not have to. `MemoryTestPanel` was already written for it: it checks
+the return and calls `failed(...)`, which puts its buttons back.
+
+The rejection is still not an exception. A queued job whose connection has gone is an ordinary
+outcome of a disconnect landing at the wrong moment, and the reader thread - the other caller of
+`execute`, posting execution-stop events - has nowhere to put an exception and nothing that could
+act on one.
+
+`AppContextTest.aJobThatCannotBeQueuedIsReportedRatherThanVanishing` fails without the change. It
+reproduces the race exactly rather than approximating it: connect, then close the *connection*
+while the manager still hands out its console, which is the window between `onConsole`'s null
+check and its submit.
+
 `onConsole` null-checks the connection, then calls `connection.execute(…)` — which
 swallows `RejectedExecutionException` after close. If a disconnect lands between check and
 submit, the job vanishes and `onConsole` returns true; callers that flipped state up front
@@ -469,6 +485,20 @@ them only from the job's own callbacks — its buttons stay disabled forever). F
 
 ### 15. Disassembler "catch up on open" never examines: `isShowing()` is always false during `onShowing`
 `pdp11-ui/.../disas/DisassemblerPanel.java:231-241,257-268`; `window/ToolWindow.java:91-101`
+
+**FIXED** in the panel rather than in `ToolWindow`, by the first of the two suggestions: there is
+now `showPc(pc, examine)` beside `showPc(pc)`, and `attach()` passes `isConnected()`. Moving
+`setVisible(true)` before `onShowing()` would have fixed this one window by changing the order every
+window's subscribe step runs in, and `onShowing`/`onHiding` pairing up is what that order is for.
+
+The stop listener still asks `isShowing()`, which is the case the flag was written for and where it
+is answered correctly: a window that is up and hidden must not spend twenty-one examines per stop.
+"Being attached" and "being on screen" are simply not the same question, and the code now asks each
+one where it belongs.
+
+`DisassemblerPanelTest.openingItAfterTheMachineStoppedReadsAroundThePc` fails without the change -
+it attaches the panel with no frame at all, which is the state every real open is in when
+`onShowing()` runs - and `aHiddenWindowStillDoesNotReadOnEveryStop` holds the other half down.
 
 `attach()` (from `DisassemblerWindow.onShowing`) calls `showPc(pc)`, which passes
 `isShowing()` as the examine flag — but `ToolWindow.showWindow()` runs `onShowing()`
@@ -481,6 +511,16 @@ the next stop" describes behaviour the code cannot deliver. Fix: pass an explici
 ### 16. Pdp11Mmu's listener list is a plain ArrayList mutated on the EDT while iterated on the command thread
 `pdp11-core/.../mmu/Pdp11Mmu.java:137,184-195`; used from `pdp11-ui/.../mmu/MmuPanel.java:144-171`
 
+**FIXED**: `CopyOnWriteArrayList`, like every other notification bus in the project. The comment
+on the field says which thread each end runs on, because that is what makes the choice obvious
+rather than defensive.
+
+`Pdp11MmuTest.aListenerMayComeAndGoWhileTheListIsBeingNotified` fails without the change. It does
+the remove-and-re-add from inside the notification, which is the same interleaving the EDT and the
+command thread produce and needs no threads to make it happen; a listener behind the mutating one
+is what catches it, since a `for` over an `ArrayList` whose size did not change ends quietly if the
+mutation happens on the last element.
+
 MmuPanel's `attach()/detach()/rebind()` call add/removeChangeListener on the EDT; the MMU
 fires the list on the command thread during every register examine. Hiding/showing/
 reconnecting the MMU window while an examine runs can throw
@@ -491,6 +531,15 @@ MemoryCellGroup, ConnectionManager) uses `CopyOnWriteArrayList`; this one was mi
 ### 17. MmuPanel's `m_updatePending` coalescing flag has no happens-before edge — the MMU map can stop refreshing
 `pdp11-ui/.../mmu/MmuPanel.java:69,189-197`
 
+**FIXED**: `AtomicBoolean`, with the test-and-set collapsed into one `compareAndSet` so the flag
+cannot be observed half-set either.
+
+No test can be made to fail on this reliably - it is a permitted-but-unlikely reordering, not a
+sequence of events - and inventing one that passes on this JVM would say nothing about the next.
+`MmuPanelTest.everyRoundOfRegisterChangesReachesTheTable` instead pins down the behaviour a stuck
+flag destroys: three rounds of register changes, each read back out of the machine, each reaching
+the table.
+
 `scheduleUpdate()` tests/sets the plain boolean on the command thread (it is the Pdp11Mmu
 change listener); the queued EDT runnable clears it. Per the JMM the command thread may
 keep seeing a stale `true` and never post another redraw — the panel silently stops
@@ -498,6 +547,21 @@ following register changes. Independently found by two reviewers. Fix: `AtomicBo
 
 ### 18. Bitfields never opts out of `pdpOverwritesEdit`, so any other window's examine wipes the user's in-progress bit edits
 `pdp11-ui/.../bits/BitfieldsPanel.java:115-120,496-499`
+
+**FIXED** by the first of the two suggestions - opt out while the cell is edited, not
+permanently - which is what `MemoryCellGroupTable.updateOverwritePolicy` does for the grids and for
+the same reason: with nothing being composed there is nothing to protect, and a Bitfields window
+showing the PSW should follow the PSW like any other view.
+
+The policy is set in `updateValueColour()`, which is not where a reader would look for it and is
+therefore documented there. It is the one place every path that can change the edit value already
+ends - typing the word, typing a field, being shown a cell, being pointed at an address, and
+refreshing after an examine or a deposit - and the alternative was the same line repeated at five
+call sites with nothing to keep the sixth from forgetting it.
+
+`BitfieldsPanelTest.anExamineElsewhereDoesNotWipeTheBitsBeingComposed` fails without the change,
+and goes on to check the other half: once the composition has been deposited the window tracks the
+machine again.
 
 The panel's one-cell group keeps the default `pdpOverwritesEdit = true`, and its cell
 listener does `cell.setEditValue(cell.getPdpValue())`. While the user composes a register
@@ -509,6 +573,20 @@ composition. Every other edit-holding view protects itself. Fix: opt out while
 ### 19. The dumper's connection listener discards a captured dump on width change — including plain disconnect from a 16/18-bit machine
 `pdp11-ui/.../dump/MemoryDumperPanel.java:302-311`; contrast `load/MemoryLoaderPanel.java:313-322`
 
+**FIXED** by copying the Loader's guard, comment and all: the range is only re-expressed while
+the group is empty. The dumper's group starts empty, so connecting to a 16 or 18-bit machine still
+moves it to that machine's width; it stops being empty the moment something has been read, which is
+exactly when there is something to lose.
+
+That leaves a dump read from a 16-bit machine sitting at 16-bit addresses after connecting to a
+22-bit one, which is the Loader's behaviour too and is the right way round: what is in the grid was
+read from a particular machine, and silently re-labelling it as belonging to a different one would
+be worse than leaving it alone. Reading a new range re-establishes the width.
+
+`MemoryDumperPanelTest.disconnectingFromAnEighteenBitMachineDoesNotThrowTheDumpAway` fails without
+the change. The existing "written after the machine has gone" test could not catch this: it uses
+SimH, which is 22 bits, so the fallback width matched and nothing was thrown away.
+
 The listener does `getGroup().shiftRange(…)` whenever the address type differs, with no
 `isEmpty()` guard. `addressType()` falls back to PHYSICAL22 with no console, so
 disconnecting from a 16-bit ODT machine destroys the words just read — the very data
@@ -518,6 +596,18 @@ has gone away"). The sibling MemoryLoaderPanel guards the same operation with
 
 ### 20. DisassemblyListing: PC in range with an unread word silently discards every line before the PC
 `pdp11-core/.../disas/DisassemblyListing.java:112-123`
+
+**FIXED** as suggested: the listing built at the requested start is kept, and returned when the
+realignment loop reaches the PC without ever landing on a line. `pcLine()` is then -1 and
+`startAddress()` is where the caller asked, which is what the class Javadoc has always promised for
+a PC it cannot find.
+
+The loop is otherwise unchanged - a PC genuinely inside an instruction still moves the start, which
+is the case it exists for.
+
+`DisassemblyListingTest.aPcInRangeWhoseWordWasNeverReadKeepsTheLinesBeforeIt` fails without the
+change: it shows a sparsely examined range whose PC word alone was never read, and asserts the
+lines before the PC are still there.
 
 The realignment loop advances `from` by 2 until `pcLine >= 0` or `from >= pc`. If the PC
 lies inside the range but its own word was never examined, `atPc` can never be set, so the

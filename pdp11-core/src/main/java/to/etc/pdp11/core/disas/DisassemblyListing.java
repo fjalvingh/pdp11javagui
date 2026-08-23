@@ -113,10 +113,22 @@ public final class DisassemblyListing {
 		//-- from the PC should show the listing you scrolled to.
 		boolean pcInRange = pc != null && pc.val() >= start.val() && pc.val() <= end.val();
 		Address from = start;
+		DisassemblyListing asAsked = null;
 		for(;;) {
 			DisassemblyListing listing = build(image, from, end, pc);
-			if(listing.m_pcLine >= 0 || !pcInRange || from.val() >= pc.val())
+			if(listing.m_pcLine >= 0 || !pcInRange)
 				return listing;
+			if(asAsked == null)
+				asAsked = listing;
+			if(from.val() >= pc.val()) {
+				//-- Walked all the way up to the PC without ever landing on it, which means its
+				//-- own word was never read from the machine: no realignment can mark a line
+				//-- that does not exist. Give back the listing as it was asked for rather than
+				//-- the one starting at the PC - the lines between start and the PC are real,
+				//-- and throwing them away made a sparsely examined range look empty up to the
+				//-- PC with no PC marker to explain why.
+				return asAsked;
+			}
 			//-- The PC is inside an instruction rather than at the start of one. Begin two bytes
 			//-- later and decode again; eventually the boundaries line up, or we reach the PC.
 			from = from.plus(2);

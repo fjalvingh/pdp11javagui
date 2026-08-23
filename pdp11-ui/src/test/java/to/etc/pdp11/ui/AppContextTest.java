@@ -97,6 +97,39 @@ class AppContextTest {
 		m.disconnect();
 	}
 
+	/**
+	 * A job refused because the connection closed under it is reported, not lost.
+	 *
+	 * <p>{@code onConsole} null-checks the connection and then submits; a disconnect landing in
+	 * between makes the executor refuse the task. That used to be swallowed and answered with
+	 * true, so a window that had already told the user something was happening - the Memory Test
+	 * window sets "Testing ..." and disables its buttons before queueing, and turns them back on
+	 * from inside the job - waited for callbacks that could never run, for the rest of the
+	 * session.</p>
+	 */
+	@Test
+	void aJobThatCannotBeQueuedIsReportedRatherThanVanishing(@TempDir Path dir) throws Exception {
+		AppContext ctx = context(dir, new UiLogger());
+		ConnectionManager m = ctx.getConnectionManager();
+		m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+		try {
+			//-- The disconnect that lands between the check and the submit: the manager still
+			//-- hands out console and connection, but the command thread is already gone.
+			m.getConnection().close();
+
+			AtomicReference<String> shown = new AtomicReference<>();
+			ctx.setFailureHandler((message, cause) -> shown.set(message));
+			boolean[] ran = {false};
+			assertFalse(ctx.onConsole("Memory test", console -> ran[0] = true),
+				"the caller is told the job was not queued");
+			assertFalse(ran[0]);
+			assertNotNull(shown.get(), "and the user is told why");
+			assertTrue(shown.get().contains("Memory test"), shown.get());
+		} finally {
+			m.close();
+		}
+	}
+
 	@Test
 	void aWindowTypeWithNoFactoryIsAnErrorRatherThanANullWindow(@TempDir Path dir) {
 		AppContext ctx = context(dir, new UiLogger());

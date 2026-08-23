@@ -437,9 +437,27 @@ public final class BitfieldsPanel extends JPanel {
 		updateValueColour();
 	}
 
-	/** Yellow while the value differs from what the machine holds, as the Pascal does. */
+	/**
+	 * Yellow while the value differs from what the machine holds, as the Pascal does - and while
+	 * it does, nothing else may write over it.
+	 *
+	 * <h2>Why the overwrite policy is set here</h2>
+	 *
+	 * <p>This window's whole purpose is composing a register value bit by bit, and its group is
+	 * on the propagation bus like any other so that a deposit here reaches every window showing
+	 * the same address. That bus runs the other way too: with {@code pdpOverwritesEdit} left at
+	 * its default, any other window examining the same address propagated the machine's value in
+	 * and the cell listener copied it over the composition, silently, halfway through. Every
+	 * other edit-holding view protects itself; this one did not.</p>
+	 *
+	 * <p>Following {@link MemoryCell#isEdited()} rather than turning the flag off for good is
+	 * what {@code MemoryCellGroupTable.updateOverwritePolicy} does and for the same reason: with
+	 * nothing being composed there is nothing to protect, and a bitfields window showing the
+	 * PSW should follow the PSW. Every path that can change the edit value ends here.</p>
+	 */
 	private void updateValueColour() {
 		boolean changed = m_cell.isEdited();
+		m_group.setPdpOverwritesEdit(!changed);
 		m_value.setBackground(changed ? UiColors.EDITED_BACKGROUND : UIManagerBackground());
 		m_value.setForeground(changed ? UiColors.EDITED_TEXT : UIManagerForeground());
 	}

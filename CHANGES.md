@@ -4,6 +4,51 @@
 
 ### Fixes
 
+- **A console job queued as the connection went away simply vanished.** `onConsole` checks that
+  there is a connection and then hands the job to the command thread; a disconnect landing between
+  those two steps made the executor refuse it, and the refusal was swallowed. The window was told
+  the job had been queued, so anything that had already said something was happening waited for
+  callbacks that could never run - the Memory Test window sets "Testing ..." and disables its
+  buttons before queueing, and turns them back on from inside the job, so it sat there with every
+  button dead for the rest of the session. The refusal is now reported like any other failure and
+  the caller is told the job did not start.
+- **Opening the Disassembler while the machine was stopped never read anything.** The window is
+  supposed to catch up on the way in rather than wait for the next stop, and it decided whether to
+  read by asking itself whether it was showing - but a window subscribes in `onShowing()`, which
+  runs before `setVisible(true)`, so the answer was no on every single open. It showed "Nothing has
+  been read from this range yet", or last session's listing, beside a comment promising the
+  opposite. Opening it now reads around the PC when there is a machine to read from; a window that
+  is up but hidden still does not, which is what that check was for.
+- **The MMU window could throw a ConcurrentModificationException into the middle of an examine.**
+  Its listener list was a plain `ArrayList`, added to and removed from on the event thread - the
+  window being shown, hidden, or rebound after a reconnect - while the MMU walks it on the command
+  thread once per register, ninety-nine times for one examine of the group. Doing both at once
+  surfaced as "Reading the MMU registers failed". It is a `CopyOnWriteArrayList` now, like every
+  other notification bus in the project.
+- **The MMU map could silently stop refreshing.** The flag that coalesces ninety-nine register
+  changes into one redraw is set on the command thread and cleared on the event thread, and it was
+  a plain boolean: nothing obliged the command thread ever to see the clear, and a flag stuck at
+  "a redraw is already queued" means no redraw is ever queued again. It is an `AtomicBoolean` now.
+- **Anybody else's examine wiped the bits being composed in the Bitfields window.** Composing a
+  register value bit by bit is what that window is for, and its cell sits on the propagation bus so
+  that a deposit here reaches every window showing the same address - but that bus runs both ways,
+  and with nothing opting out, an examine of the same register from any other window propagated the
+  machine's value in and overwrote the half-built word without saying anything. It now opts out
+  while it holds an edit, exactly as the memory grids do, and follows the machine again once the
+  value has been deposited.
+- **Disconnecting from a 16 or 18-bit machine destroyed the dump just read.** The Memory Dumper
+  re-expresses its range whenever the machine's address width differs from the grid's, and with no
+  machine that width reads as 22 bits - so an ordinary disconnect counted as a width change, threw
+  away the words that had been read and greyed out the Write button, which is precisely the thing
+  the window promises survives the machine going away. It now re-expresses the range only while
+  there is nothing in it, which is what the Memory Loader has always done.
+- **A sparsely read range hid every line before the PC.** The disassembler realigns its listing
+  when the PC falls inside an instruction rather than at the start of one, by starting two bytes
+  later and decoding again until the two line up. When the PC's own word had never been read from
+  the machine there was nothing for it to line up with, and the search ran all the way to the PC and
+  returned the listing from there: everything between the start of the range and the PC disappeared,
+  with no PC marker to explain why. A PC that cannot be found now leaves the listing where it was
+  asked to be, which is what it has always claimed to do.
 - **The second phase of every two-phase memory test ran with no progress bar and no Cancel.** Each
   `MemoryTester` phase is a `begin … finally done()` pair and the Memory Test window puts one
   `ProgressDialog` through two of them, but `done()` marked the dialog finished for good and

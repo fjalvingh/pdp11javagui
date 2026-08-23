@@ -292,6 +292,39 @@ class Pdp11MmuTest {
 		assertEquals(1, notified[0]);
 	}
 
+	/**
+	 * A window subscribing or unsubscribing while an examine is firing the listeners.
+	 *
+	 * <p>The two ends are on different threads: the MMU window adds and removes its listener on
+	 * the event thread as it is shown, hidden or rebound to a new connection, and the list is
+	 * walked on the command thread once per register - ninety-nine times for one examine of the
+	 * group. On a plain {@code ArrayList} that is a ConcurrentModificationException on the
+	 * command thread, which reaches the user as "Reading the MMU registers failed". Here the
+	 * mutation is done from inside the notification, which is the same interleaving without
+	 * needing two threads to hit it.</p>
+	 */
+	@Test
+	void aListenerMayComeAndGoWhileTheListIsBeingNotified() {
+		MemoryCellGroup cpu = m_groups.addGroup(MemoryAddressType.PHYSICAL16, "CPU");
+		MemoryCell psw = cpu.add(0177776);
+		Runnable other = () -> {
+		};
+		m_mmu.addChangeListener(other);
+		m_mmu.addChangeListener(() -> {
+			m_mmu.removeChangeListener(other);
+			m_mmu.addChangeListener(other);
+		});
+		//-- A listener behind the one that mutates the list: the window that was already
+		//-- subscribed and is still expecting to be told.
+		int[] notified = {0};
+		m_mmu.addChangeListener(() -> notified[0]++);
+
+		psw.setPdpValue(CellValue.of(0b11 << 14));
+		m_groups.syncMemoryCells(psw);
+
+		assertEquals(1, notified[0], "the listeners behind the change are still notified");
+	}
+
 	@Test
 	void theRegisterGroupMovesWithTheTargetMachine() {
 		assertEquals(MemoryAddressType.PHYSICAL22, m_mmu.getPhysicalAddressType());

@@ -113,6 +113,32 @@ class DisassemblyListingTest {
 		assertEquals("001000: 000000                halt    \n", l.toText());
 	}
 
+	/**
+	 * A PC inside the range whose own word was never examined: there is no line to mark, and
+	 * the lines before it must not be thrown away looking for one.
+	 *
+	 * <p>The realignment loop walks {@code from} up towards the PC two bytes at a time, hunting
+	 * for a decode that lands on it. When the PC's word is unread that hunt cannot ever succeed
+	 * - {@code build} skips unread words - so the loop used to run out at the PC and return the
+	 * listing it happened to be holding, which starts <i>at</i> the PC. Everything between the
+	 * requested start and the PC vanished, and {@code startAddress()} said the PC. What the
+	 * class promises for a PC it cannot find is the listing as asked for, with
+	 * {@code pcLine() == -1}.</p>
+	 */
+	@Test
+	void aPcInRangeWhoseWordWasNeverReadKeepsTheLinesBeforeIt() {
+		MemoryCellGroup g = code(01000, 010001, 010203, 010405, 010607);
+		g.cell(2).setPdpValue(CellValue.UNKNOWN);                   // 001004 never examined
+		DisassemblyListing l = DisassemblyListing.of(g, v(01000), v(01006), v(01004));
+
+		assertEquals(-1, l.pcLine(), "there is no line at the PC to mark");
+		assertEquals(v(01000), l.startAddress(), "the listing starts where it was asked to");
+		assertEquals(3, l.getLines().size(), "the two lines before the PC are still there");
+		assertEquals(v(01000), l.getLines().get(0).address());
+		assertEquals(v(01002), l.getLines().get(1).address());
+		assertEquals(v(01006), l.getLines().get(2).address());
+	}
+
 	@Test
 	void onlyTheRangeAskedForIsShown() {
 		MemoryCellGroup g = code(01000, 0, 0, 0, 0);

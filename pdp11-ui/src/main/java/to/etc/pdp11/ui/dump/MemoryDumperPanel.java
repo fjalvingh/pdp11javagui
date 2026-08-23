@@ -301,7 +301,12 @@ public final class MemoryDumperPanel extends JPanel {
 
 	private final ConnectionManager.Listener m_connectionListener = (manager, state) -> AppContext.onUi(() -> {
 		MemoryAddressType type = addressType(m_context());
-		if(type != getGroup().getType()) {
+		//-- Only while there is nothing to lose, exactly as the Loader does. Re-expressing the
+		//-- range at a new width throws away the words in it, and with no console addressType()
+		//-- falls back to PHYSICAL22 - so plain disconnection from a 16 or 18-bit machine used
+		//-- to destroy the dump just read, which is precisely what updateButtons() promises
+		//-- survives ("a dump read earlier can be written after the machine has gone away").
+		if(type != getGroup().getType() && getGroup().isEmpty()) {
 			getGroup().shiftRange(Address.of(type, 01000), 1, false);
 			m_startAddr.setText(Address.of(type, 01000).toOctal());
 			m_endAddr.setText(Address.of(type, 01776).toOctal());

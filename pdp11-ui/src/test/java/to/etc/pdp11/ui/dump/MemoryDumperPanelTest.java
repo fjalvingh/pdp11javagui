@@ -157,6 +157,40 @@ class MemoryDumperPanelTest {
 		assertEquals(4, Files.readAllBytes(out).length);
 	}
 
+	/**
+	 * The same promise, from an 18-bit machine - which is where it used to be broken.
+	 *
+	 * <p>The connection listener re-expresses the range whenever the machine's address width
+	 * differs from the group's, and {@code addressType()} answers PHYSICAL22 when there is no
+	 * console. So disconnecting from anything narrower than 22 bits was a width change, and a
+	 * width change rebuilds the range: the words just read were dropped on the floor and the
+	 * Write button went dead. The Loader guards the identical operation with "only while there
+	 * is nothing loaded"; this one now does too.</p>
+	 */
+	@Test
+	void disconnectingFromAnEighteenBitMachineDoesNotThrowTheDumpAway(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryDumperPanel panel = Edt.call(() -> new MemoryDumperPanel(ctx));
+		Edt.run(panel::attach);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+		Edt.run(() -> {
+			panel.getStartField().setText("1000");
+			panel.getEndField().setText("1002");
+			panel.getStartField().postActionEvent();
+		});
+		until("the read to finish", () -> panel.getGroup().size() == 2
+			&& panel.getGroup().cell(1).getEditValue().isKnown());
+		CellValue first = panel.getGroup().cell(0).getEditValue();
+
+		ctx.getConnectionManager().disconnect();
+		Edt.run(() -> {
+		});                                                 // let the connection event land
+
+		assertEquals(2, panel.getGroup().size(), "the dump survives the machine going away");
+		assertEquals(first, panel.getGroup().cell(0).getEditValue());
+		assertTrue(panel.getDumpButton().isEnabled(), "and it can still be written");
+	}
+
 	@Test
 	void aRangeWithWordsNobodyHasReadSaysSoRatherThanWritingZerosQuietly(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);

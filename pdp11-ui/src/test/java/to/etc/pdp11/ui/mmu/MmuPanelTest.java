@@ -332,6 +332,41 @@ class MmuPanelTest {
 		}
 	}
 
+	/**
+	 * The map keeps following the registers over many changes, not just the first.
+	 *
+	 * <p>The redraws are coalesced: the MMU fires its change listener once per register, on the
+	 * command thread, and the panel queues one pass on the event thread for the ninety-nine of
+	 * them a bulk examine produces. The flag that does the coalescing is set on the command
+	 * thread and cleared on the event thread, so it has to be an {@code AtomicBoolean} - a plain
+	 * one leaves the command thread free to go on seeing a stale {@code true} for ever, and the
+	 * window then silently stops redrawing. That is a memory-model bug and no test can be made
+	 * to fail on it reliably; what this does check is the behaviour it destroys, over enough
+	 * rounds to catch a flag that is left set.</p>
+	 */
+	@Test
+	void everyRoundOfRegisterChangesReachesTheTable(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir);
+		try {
+			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
+			Edt.run(panel::attach);
+			deposit(ctx, 0177572, 1);                       // relocation on
+
+			//-- Move kernel I page 0 somewhere else, three times, reading it back each round.
+			for(int round = 1; round <= 3; round++) {
+				int par = round * 04000;
+				deposit(ctx, 0172300, 077406);
+				deposit(ctx, 0172340, par);
+				Edt.run(() -> panel.getRefreshButton().doClick());
+				String want = String.format("%08o", par * 0100L);
+				until("round " + round + " to reach the table",
+					() -> cell(panel.getInstructionTable(), 0, 2).startsWith(want));
+			}
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	/** Write one I/O page register into the machine, the way any window does. */
 	private static void deposit(AppContext ctx, int addr16, int value) {
 		ctx.onConsole("deposit", console -> console.deposit(

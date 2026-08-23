@@ -267,7 +267,7 @@ public final class AppContext {
 			reportFailure("Not connected to a machine", null);
 			return false;
 		}
-		connection.execute(() -> {
+		boolean queued = connection.execute(() -> {
 			try {
 				job.run(console);
 			} catch(OperationCancelledException x) {
@@ -278,6 +278,14 @@ public final class AppContext {
 				reportFailure(what + " failed", x);
 			}
 		});
+		if(!queued) {
+			//-- A disconnect landed between the check above and the submit, so the job was
+			//-- refused and none of its callbacks will ever run. Saying nothing here is what
+			//-- left the Memory Test window at "Testing ..." with every button disabled for the
+			//-- rest of the session: it turns its buttons back on from inside the job.
+			reportFailure(what + " failed: the machine was disconnected", null);
+			return false;
+		}
 		return true;
 	}
 

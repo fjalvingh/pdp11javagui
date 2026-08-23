@@ -24,6 +24,7 @@ import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.table.TableColumn;
 import java.awt.Window;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * What the machine's memory management unit is currently doing: which virtual addresses reach
@@ -65,8 +66,16 @@ public final class MmuPanel extends JPanel {
 
 	private final JTable m_dataTable = new JTable(m_dataModel);
 
-	/** Set while a rebuild is already queued, so a bulk examine redraws once rather than 99 times. */
-	private boolean m_updatePending;
+	/**
+	 * Set while a rebuild is already queued, so a bulk examine redraws once rather than 99 times.
+	 *
+	 * <p>Atomic because the two ends are on different threads: the flag is set on the command
+	 * thread, from the MMU's change listener, and cleared on the event thread by the runnable
+	 * that listener queued. A plain boolean gives the command thread no reason ever to see the
+	 * clear, and a stale {@code true} means no redraw is ever queued again - the map silently
+	 * stops following the registers for the rest of the session.</p>
+	 */
+	private final AtomicBoolean m_updatePending = new AtomicBoolean();
 
 	/** The MMU currently being watched, so the listener can be taken off the right one. */
 	private Pdp11Mmu m_watched;
@@ -188,11 +197,10 @@ public final class MmuPanel extends JPanel {
 	 * thread is the difference between one map and ninety-nine.</p>
 	 */
 	private void scheduleUpdate() {
-		if(m_updatePending)
+		if(!m_updatePending.compareAndSet(false, true))
 			return;
-		m_updatePending = true;
 		SwingUtilities.invokeLater(() -> {
-			m_updatePending = false;
+			m_updatePending.set(false);
 			updateDisplay();
 		});
 	}
