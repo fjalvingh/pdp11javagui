@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+### Fixes
+
+- **"Read the MMU registers" took eight seconds and never read the PSW.** SimH shows a register
+  declared with a `BITFIELD` table decoded — `E PSW` on an 11/70 answers
+  `PSW:	000340	CM=K PM=K RS0 FPD0 IPL=7 TBIT0 N0 Z0 V0 C0` — and the decoder's "and there is
+  no third word" test — the Pascal's, `ConsolePDP11SimHU.pas:524-525`, which has the same bug
+  against a modern SimH — filed that as an ordinary line. The examine
+  then waited out its full `CMD_TIMEOUT_MS` for an answer that had already arrived: eight seconds
+  of progress dialog, and a PSW left unknown afterwards, so the MMU never learned which mode the
+  machine was in. Everything after the value is now ignored. Measured against a real SimH: 8115 ms
+  and one unknown cell before, 157 ms and none after.
+- **`FakeSimh` prints the PSW's bit-fields too**, which is why no test caught the above — the fake
+  answered two neat words that no live machine ever sends.
+
+### Phase 6 part 10 — the Microcode window
+
+- **The PDP-11/44's microcode, one microword at a time**: its 104 bits cut back into the 37
+  fields the print set names, each with its value and what that value means — `2 = DATO`, not
+  `2` — and the microassembler source line that produced it.
+- **The listing is packaged with the application.** DEC's *EY-C3012-RB-001 PDP-11/44 Processor
+  Maintenance Supplementary Listings (microcode), April 1981* is a resource in `pdp11-core`, so
+  the window works the moment it is opened. The Pascal remembers a file name in the registry and
+  opens on "code not loaded" until somebody finds a copy of a 1981 DEC document and puts it in
+  the data directory (`FormMicroCodeU.pas:88-110`). Load is still there, for another scan or
+  another revision, and what it loads is remembered.
+- **Reading and decoding it is `Pdp1144Microcode` in `pdp11-core`**, with the whole listing as
+  its test fixture: 1018 microwords, and 22 tests over them.
+- **The listing cross-checks itself, and that is now a test rather than a startup exception.**
+  Each line prints its address twice, and each microword's next-address *bits* must agree with
+  the `J/<tag>` written in its own source *text* — so a digit misread anywhere in the octal
+  shows up as a contradiction instead of as a plausible wrong answer. All 1018 pass.
+- **A damaged listing costs its own line, not the microcode.** The Pascal raises on the first
+  thing it dislikes and abandons the load; here every complaint is a `Problem` with its file and
+  line, the rest of the listing loads, and the status line says how many there were. This is what
+  a document that mostly arrives as somebody's scan needs.
+- **A comment line whose `;` was scanned as `:`** — line 1020 of the shipped listing — is not a
+  comment by the usual test and would be joined onto the microword above it, corrupting that
+  microword's source text. Its line number is what still says it is a line of the listing rather
+  than a continuation. Found by running the cross-checks over the real listing.
+- **You can go back.** Next follows the fall-through, as it does there; a microword also lists
+  what falls through to *it*, and Back returns the way you came — microcode is mostly read
+  backwards from the state you ended up in. Fall-through only, and the row says so: a branch
+  target is chosen by hardware substituting bits into the next address, which no listing spells
+  out.
+- **A search that finds nothing says so and changes nothing.** The Pascal reads an address it
+  cannot parse as `0` and jumps to the first microword instead (`FormMicroCodeU.pas:369`), which
+  looks like the window ignoring what was typed.
+- **The next-address row is not highlighted.** Highlighting means "this microword sets this", and
+  the next address has no resting value to differ from — the Pascal compares it against `-1` and
+  so paints it yellow in every microword, where a row that is always yellow says nothing.
+- **Sorted views are computed once, three of them.** The Pascal re-sorts one shared list every
+  time the window's "search by" changes, so the model's order is a property of the UI; and its
+  `InstructionByAddr` is a linear scan called once per microword from inside its own verify loop.
+
 ### Phase 6 part 9 — the Number Converter
 
 - **One number in octal, decimal, hex and binary at once**, each field editable and the rest

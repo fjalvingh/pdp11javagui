@@ -407,13 +407,23 @@ public final class SimhConsole extends AbstractConsole {
 	 * <p>"Address space exceeded" is a UNIBUS timeout, and a perfectly valid answer - but SimH
 	 * does not say which address it was about, so the caller has to attribute it to whatever it
 	 * asked for next ({@code :505-510}).</p>
+	 *
+	 * <p><b>Anything after the value is ignored</b>, which is where the Pascal's "and there is
+	 * no third word" test ({@code :524-525}) has to be left behind. A SimH register declared
+	 * with a {@code BITFIELD} table is shown decoded, so {@code E PSW} on an 11/70 answers</p>
+	 * <pre>PSW:	000000	CM=K PM=K RS0 FPD0 IPL=0 TBIT0 N0 Z0 V0 C0</pre>
+	 * <p>and an exact-two-words test throws that away as an unrecognised line. The examine then
+	 * waits out {@link #CMD_TIMEOUT_MS} for an answer that already arrived, and the cell stays
+	 * unknown - which for the PSW means the MMU never learns the CPU mode. Halt lines cannot be
+	 * caught by the looser rule because {@link #decodeHalt} has already had them, and the
+	 * word-size check below still rejects a second word that is not a machine word.</p>
 	 */
 	private AnswerPhrase decodeExamine(String curline) {
 		if(curline.contains("Address space exceeded"))
 			return new AnswerPhrase.ExamineResult(curline, null, CellValue.UNKNOWN);
 
 		String[] words = curline.trim().split("[ \t]+");
-		if(words.length != 2 || !words[0].endsWith(":"))
+		if(words.length < 2 || !words[0].endsWith(":"))
 			return null;
 		String name = words[0].substring(0, words[0].length() - 1);
 		Address addr = regNameToAddr(name);

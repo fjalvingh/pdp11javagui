@@ -50,11 +50,13 @@ What works today:
 - A terminal showing the whole conversation - the console's own automated commands and their
   replies included, which is how a flaky console gets debugged - and a Log window with one
   column per channel.
+- **Microcode**: the PDP-11/44's own microcode, a microword at a time, with its 104 bits cut back
+  into the fields the print set names and DEC's listing shipped with the application - so it is
+  there to read beside the processor it belongs to rather than something to go and find.
 - Settings, saved connection profiles and window geometry remembered between runs.
 
-Not yet: the assembler and the remaining tools of phase 6 (MMU, microcode, number converter,
-blinkenlight execution, the SimH console and remote log windows), the M9301/M9312 boot-ROM
-console, and the disc-image tooling of phase 7.
+Not yet: the blinkenlight execution window of phase 6, the M9301/M9312 boot-ROM console, and the
+disc-image tooling of phase 7.
 
 `PLAN.md` has the phase table and, under each phase, what that phase actually found.
 

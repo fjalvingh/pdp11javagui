@@ -50,6 +50,24 @@ public final class Settings {
 	 */
 	private String lastSourceFile;
 
+	/**
+	 * The microcode listing the Microcode window had open last, or null for the packaged one.
+	 *
+	 * <p>Replaces {@code TheRegistry.Load('MicroCodeListingFilePattern')}
+	 * ({@code FormMicroCodeU.pas:104}), which holds a wildcard rather than a file. A path that no
+	 * longer exists is not an error: the window says so and falls back to the listing shipped
+	 * with the application.</p>
+	 */
+	private String lastMicrocodeFile;
+
+	public String getLastMicrocodeFile() {
+		return lastMicrocodeFile;
+	}
+
+	public void setLastMicrocodeFile(String lastMicrocodeFile) {
+		this.lastMicrocodeFile = lastMicrocodeFile;
+	}
+
 	public int getSchemaVersion() {
 		return schemaVersion;
 	}

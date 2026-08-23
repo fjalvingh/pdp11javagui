@@ -53,6 +53,9 @@ public final class FakeSimh extends FakePdp11 {
 
 	private static final String[] REG_NAMES = {"R0", "R1", "R2", "R3", "R4", "R5", "SP", "PC"};
 
+	/** {@code psw_modes} ({@code pdp11_cpu.c:431}); "E" is the mode the hardware has no name for. */
+	private static final String[] PSW_MODES = {"K", "S", "E", "U"};
+
 	/** Until {@code ^E} arrives, this console says nothing to anybody. */
 	private boolean m_masterMode;
 
@@ -211,8 +214,33 @@ public final class FakeSimh extends FakePdp11 {
 			print("Address space exceeded\r\n");
 			return false;
 		}
-		print(label + ":\t" + Octal.format(getMem(addr), 6) + "\r\n");
+		int value = getMem(addr);
+		String decode = "PSW".equals(label) ? "\t" + decodePsw(value) : "";
+		print(label + ":\t" + Octal.format(value, 6) + decode + "\r\n");
 		return true;
+	}
+
+	/**
+	 * What SimH prints after the value of a register that has a {@code BITFIELD} table.
+	 *
+	 * <p>{@code psw_bits} ({@code pdp11_cpu.c:434-447}), printed most significant field first
+	 * and with a trailing space, exactly as {@code fprint_bits} leaves it:</p>
+	 * <pre>PSW:	000340	CM=K PM=K RS0 FPD0 IPL=7 TBIT0 N0 Z0 V0 C0 </pre>
+	 * <p>The fake has this because leaving it out is what let the decoder go on rejecting the
+	 * real thing: an {@code E PSW} that every test passed and no live machine did.</p>
+	 */
+	private static String decodePsw(int psw) {
+		return "CM=" + PSW_MODES[(psw >> 14) & 3]
+			+ " PM=" + PSW_MODES[(psw >> 12) & 3]
+			+ " RS" + ((psw >> 11) & 1)
+			+ " FPD" + ((psw >> 8) & 1)
+			+ " IPL=" + ((psw >> 5) & 7)
+			+ " TBIT" + ((psw >> 4) & 1)
+			+ " N" + ((psw >> 3) & 1)
+			+ " Z" + ((psw >> 2) & 1)
+			+ " V" + ((psw >> 1) & 1)
+			+ " C" + (psw & 1)
+			+ " ";
 	}
 
 	private void doDeposit(String[] parts) {

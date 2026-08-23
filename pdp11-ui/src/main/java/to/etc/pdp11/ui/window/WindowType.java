@@ -22,6 +22,7 @@ public enum WindowType {
 	MEMORY_LOADER("Memory loader"),
 	IO_PAGE_SCANNER("I/O page scanner"),
 	MMU("MMU"),
+	MICROCODE("Microcode"),
 	NUMBER_CONVERTER("Number converter"),
 	REGISTER_GROUP("Registers", true),
 	/**

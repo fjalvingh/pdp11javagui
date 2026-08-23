@@ -138,12 +138,25 @@ class SimhDecoderTest {
 	}
 
 	@Test
+	void aRegisterWithBitfieldsIsAnswerdWithItsDecodeAfterTheValue() {
+		//-- Recorded live: "E PSW" against SimH 4.x with the CPU set to 11/70. Every SimH
+		//-- register declared with a BITFIELD table is shown decoded like this (psw_bits,
+		//-- pdp11_cpu.c:434), and the Pascal's "no third word" test (:524-525) drops the line -
+		//-- after which the examine waits out its full timeout for an answer it already had,
+		//-- and the PSW cell stays unknown. Everything after the value is ours to ignore.
+		AnswerPhrase.ExamineResult r = (AnswerPhrase.ExamineResult)
+			decode("PSW:\t000340\tCM=K PM=K RS0 FPD0 IPL=7 TBIT0 N0 Z0 V0 C0 \r\n").get(0);
+		assertEquals(017777776L, r.examineAddr().val());
+		assertEquals(0340, r.value().word());
+	}
+
+	@Test
 	void aLineThatIsNotAnExamineAnswerIsJustALine() {
-		//-- Three words, so not "<addr>: <value>"; and a value wider than a word, which
-		//-- OctalStr2Dword(s,16) turns into the illegal-value sentinel and so rejects.
-		assertInstanceOf(AnswerPhrase.OtherLine.class, decode("1000:\t123456\t777\r\n").get(0));
+		//-- A value wider than a word, which OctalStr2Dword(s,16) turns into the illegal-value
+		//-- sentinel and so rejects; and a line that is not "<addr>: <value>" at all.
 		assertInstanceOf(AnswerPhrase.OtherLine.class, decode("1000:\t7777777\r\n").get(0));
 		assertInstanceOf(AnswerPhrase.OtherLine.class, decode("Unknown command\r\n").get(0));
+		assertInstanceOf(AnswerPhrase.OtherLine.class, decode("1000:\tnotoctal\t777\r\n").get(0));
 	}
 
 	@Test

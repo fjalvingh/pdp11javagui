@@ -9,6 +9,8 @@ import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.core.mmu.CpuMode;
+import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.core.util.ProgressMonitor;
 import to.etc.pdp11.core.util.Scheduler;
@@ -117,6 +119,36 @@ class SimhConsoleTest {
 			assertEquals(01234, rig.connection.call(() -> rig.console.examine(pc)).word());
 			assertTrue(rig.fake.getCommands().contains("D PC 1234"), rig.fake.getCommands().toString());
 			assertTrue(rig.fake.getCommands().contains("E PC"));
+		}
+	}
+
+	/**
+	 * The PSW is answered with its bit-fields spelled out after the value, and that is still an
+	 * answer.
+	 *
+	 * <p>A register SimH declares with a {@code BITFIELD} table is shown decoded - {@code E PSW}
+	 * on an 11/70 answers {@code PSW:\t000340\tCM=K PM=K RS0 ... C0}. A decoder that insists on
+	 * exactly two words files that as an ordinary line, and then the examine waits out its whole
+	 * {@link SimhConsole#CMD_TIMEOUT_MS} for an answer that arrived in milliseconds: eight
+	 * seconds of progress dialog for nothing, and a PSW that stays unknown afterwards, so the
+	 * MMU never learns which mode the machine is in.</p>
+	 */
+	@Test
+	void thePswIsAnsweredEvenThoughSimhDecoratesItWithItsBitfields() throws Exception {
+		try(Rig rig = new Rig()) {
+			Address psw = phys(017777776L);
+			rig.connection.run(() -> rig.console.deposit(psw, 0140340));
+			assertEquals(0140340, rig.connection.call(() -> rig.console.examine(psw)).word());
+
+			//-- And in bulk, which is what "Read the MMU registers" does: the group the MMU
+			//-- watches ends with the PSW, and the CPU mode comes from nowhere else.
+			Pdp11Mmu mmu = rig.console.getMmu();
+			rig.connection.run(() -> rig.console.examine(mmu.getRegisterGroup(), false, ProgressMonitor.NULL));
+			assertTrue(mmu.getPswCell().getPdpValue().isKnown(), "the PSW was waited out, not read");
+			//-- evalAll() as ExamineMMU does: propagation skips the cell it started from, so
+			//-- examining the MMU's own group never reaches the MMU's own listener.
+			mmu.evalAll();
+			assertEquals(CpuMode.USER, mmu.getCpuMode());
 		}
 	}
 
