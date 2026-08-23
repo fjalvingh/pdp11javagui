@@ -7,6 +7,7 @@ import to.etc.pdp11.core.mmu.AccessSpace;
 import to.etc.pdp11.core.mmu.CpuMode;
 import to.etc.pdp11.core.mmu.MmuMemoryMap;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
+import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.ProgressDialog;
 import to.etc.pdp11.ui.UiColors;
@@ -196,14 +197,35 @@ public final class MmuPanel extends JPanel {
 		});
 	}
 
+	/**
+	 * Redraw everything from the MMU, or say why there is nothing to draw.
+	 *
+	 * <h2>One question, asked once</h2>
+	 *
+	 * <p>Whether there is a machine to show is <b>one</b> decision - is the manager connected
+	 * <i>and</i> is there an MMU - and the button, the mode selector and the tables all follow
+	 * it. They used to be asked separately: the button wanted a connection, the tables only
+	 * wanted an MMU, and a console exists from the moment {@code connect} builds it, which is
+	 * before its handshake has finished. In between, this window showed a full memory map of a
+	 * machine that was not answering yet, with the Refresh button greyed out beside it.</p>
+	 *
+	 * <h2>A window that fails must not go on showing its last answer</h2>
+	 *
+	 * <p>Building the two maps is 65536 translations and it used to happen between the line that
+	 * enables the button and the line that sets the status. Anything thrown in there - and one
+	 * page register reading back all ones was enough - left the panel half updated: an enabled
+	 * button beside a status line still saying "Not connected to a machine", with a stack trace
+	 * on stderr where nobody was looking. The maps are built first and the widgets are set
+	 * afterwards, and a failure goes into the status line where it can be seen.</p>
+	 */
 	private void updateDisplay() {
 		Pdp11Mmu mmu = mmu();
-		m_refresh.setEnabled(mmu != null && m_context.getConnectionManager().isConnected());
-		m_mode.setEnabled(mmu != null);
-		if(mmu == null) {
+		boolean live = mmu != null && m_context.getConnectionManager().isConnected();
+		m_refresh.setEnabled(live);
+		m_mode.setEnabled(live);
+		if(!live) {
 			m_currentMode.setText("");
-			m_status.setText("Not connected to a machine");
-			m_status.setForeground(UiColors.ERROR_TEXT);
+			setStatus("Not connected to a machine", UiColors.ERROR_TEXT);
 			m_instructionModel.setMap(null);
 			m_dataModel.setMap(null);
 			return;
@@ -211,18 +233,33 @@ public final class MmuPanel extends JPanel {
 		CpuMode mode = (CpuMode) m_mode.getSelectedItem();
 		if(mode == null)
 			mode = mmu.getCpuMode();
+
+		MmuMemoryMap instruction;
+		MmuMemoryMap data;
+		try {
+			instruction = MmuMemoryMap.of(mmu, mode, AccessSpace.INSTRUCTION);
+			data = MmuMemoryMap.of(mmu, mode, AccessSpace.DATA);
+		} catch(RuntimeException x) {
+			m_context.getLogger().log(LogChannel.OTHER, "MMU window: cannot build the memory map: " + x);
+			m_currentMode.setText("");
+			m_instructionModel.setMap(null);
+			m_dataModel.setMap(null);
+			setStatus("Cannot work out the memory map from these registers: " + x, UiColors.ERROR_TEXT);
+			return;
+		}
 		m_currentMode.setText(mode == mmu.getCpuMode()
 			? "(the mode the machine is in)"
 			: "(the machine is in " + label(mmu.getCpuMode()) + ")");
-
-		MmuMemoryMap instruction = MmuMemoryMap.of(mmu, mode, AccessSpace.INSTRUCTION);
-		MmuMemoryMap data = MmuMemoryMap.of(mmu, mode, AccessSpace.DATA);
 		m_instructionModel.setMap(instruction);
 		m_dataModel.setMap(data);
 		m_tabs.setTitleAt(1, data.isUsingInstructionMapForData() ? "Data space (off)" : "Data space");
-		m_status.setText(describe(mmu, mode, data));
-		m_status.setToolTipText(m_status.getText());
-		m_status.setForeground(UiColors.SECONDARY_TEXT);
+		setStatus(describe(mmu, mode, data), UiColors.SECONDARY_TEXT);
+	}
+
+	private void setStatus(String text, java.awt.Color colour) {
+		m_status.setText(text);
+		m_status.setToolTipText(text);
+		m_status.setForeground(colour);
 	}
 
 	/**

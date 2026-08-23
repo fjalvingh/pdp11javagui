@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.conn.TransportConfig;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mmu.CpuMode;
@@ -15,6 +16,8 @@ import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiRenderer;
 
 import java.awt.Rectangle;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -196,6 +199,78 @@ class MmuPanelTest {
 		assertEquals(0, Edt.call(() -> panel.getInstructionTable().getRowCount()));
 		assertFalse(Edt.call(() -> panel.getRefreshButton().isEnabled()));
 		assertEquals("Not connected to a machine", Edt.call(panel::getStatusText));
+	}
+
+	/**
+	 * A page register whose value carries the translation past the top of the bus.
+	 *
+	 * <p>The MMU window is 65536 translations per redraw, so a page register that made one of
+	 * them throw did not cost a row: it aborted the redraw between the line that enables the
+	 * Refresh button and the line that sets the status, and left the window showing whatever it
+	 * had said last - "Not connected to a machine", beside an enabled button that worked - with
+	 * the stack trace on stderr where nobody looks.</p>
+	 */
+	@Test
+	void aPageRegisterThatCarriesPastTheTopOfTheBusDoesNotTakeTheWindowOut(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir);
+		try {
+			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
+			Edt.run(panel::attach);
+			set(ctx, "MMR0", 1);
+			set(ctx, "KIPDR0", 077406);                     // a full 8 KB page
+			set(ctx, "KIPAR0", 0177777);                    // and a PAF of all ones over it
+			Edt.run(() -> {
+			});
+
+			//-- The hardware's adder is as wide as the bus and drops the carry, so the top of
+			//-- this page is at the top of physical memory and the rest wraps to the bottom.
+			assertTrue(Edt.call(() -> panel.getInstructionTable().getRowCount()) > 0, "there is a map");
+			assertTrue(Edt.call(panel::getStatusText).contains("data space disabled"),
+				Edt.call(panel::getStatusText));
+			assertTrue(Edt.call(() -> panel.getRefreshButton().isEnabled()));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * A console exists from the moment {@code connect} builds it, which is before its handshake
+	 * has said whether there is a machine on the other end.
+	 *
+	 * <p>Opening this window in that gap used to show a full memory map - of an MMU whose
+	 * registers nothing had ever answered about - with the Refresh button greyed out beside it,
+	 * because the tables asked "is there an MMU" and the button asked "are we connected". It is
+	 * one question now.</p>
+	 */
+	@Test
+	void aConnectionStillBeingMadeIsNotAMachineToShow(@TempDir Path dir) throws Exception {
+		//-- A server that accepts and then says nothing: the console handshake waits on it, and
+		//-- the connection sits between "console built" and "machine answered" meanwhile.
+		try(ServerSocket mute = new ServerSocket(0, 4, InetAddress.getLoopbackAddress())) {
+			AppContext ctx = TestContext.create(dir);
+			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
+			Thread worker = new Thread(() -> {
+				try {
+					ctx.getConnectionManager().connect(new ConnectionProfile("mute", ConsoleProtocol.SIMH,
+						TransportConfig.telnet(mute.getInetAddress().getHostAddress(), mute.getLocalPort())));
+				} catch(Exception x) {
+					//-- It never answers, so this ends in a failure whenever it gets round to it.
+				}
+			}, "mute-connect");
+			worker.setDaemon(true);
+			worker.start();
+			try {
+				until("the console to be built", () -> ctx.getConnectionManager().getConsole() != null);
+				//-- The window is opened right then.
+				Edt.run(panel::attach);
+				assertEquals("Not connected to a machine", Edt.call(panel::getStatusText));
+				assertFalse(Edt.call(() -> panel.getRefreshButton().isEnabled()));
+				assertEquals(0, Edt.call(() -> panel.getInstructionTable().getRowCount()));
+			} finally {
+				Edt.run(panel::detach);
+				ctx.getConnectionManager().close();
+			}
+		}
 	}
 
 	@Test

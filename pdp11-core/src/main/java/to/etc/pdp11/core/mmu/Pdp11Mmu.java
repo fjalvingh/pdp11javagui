@@ -277,7 +277,14 @@ public final class Pdp11Mmu {
 		if(lengthError)
 			return TranslationResult.failed(TranslationResult.Failure.PAGE_LENGTH_ERROR);
 
-		long physical = ((long) paf << 6) + displacement;
+		//-- The physical adder is as wide as the machine's bus and a carry out of the top is
+		//-- simply lost: a PAF of 0177777 over a full-length page addresses past 22 bits, and
+		//-- the hardware wraps. {@code Address.of} refuses an address that wide instead, and a
+		//-- throw here is not a local failure - every redraw of the MMU window is 32768 of
+		//-- these, so one unlucky page register took the whole window out and left it showing
+		//-- whatever it had said last. The Pascal computes the same sum into a dword and never
+		//-- looks ({@code Pdp11MmuU.pas:253}).
+		long physical = (((long) paf << 6) + displacement) & ((1L << outType.getBits()) - 1);
 		return TranslationResult.of(Address.of(outType, physical));
 	}
 

@@ -4,6 +4,22 @@
 
 ### Fixes
 
+- **The MMU window could show "Not connected to a machine" beside a Refresh button that was
+  enabled and worked.** Building the two memory maps is 65536 translations, and it happened
+  between the line that enables the button and the line that sets the status — so anything thrown
+  in there left the window half updated, still showing whatever it had said last, with the stack
+  trace on stderr where nobody looks. One page register was enough to throw: a PAF of all ones
+  over a full-length page addresses 0140 words past the top of a 22-bit bus, and `Address.of`
+  refuses an address that wide. The hardware's adder is as wide as the bus and simply loses the
+  carry, so `Pdp11Mmu.translate` now wraps like the machine does (the Pascal computes the same sum
+  into a dword and never looks, `Pdp11MmuU.pas:253`). The window builds its maps first and sets
+  its widgets afterwards, and a failure it cannot recover from goes into the status line instead
+  of leaving the last answer standing.
+- **The MMU window no longer shows a map of a machine that has not answered yet.** A console —
+  and its MMU — exists from the moment `connect` builds it, which is before the handshake says
+  whether there is a machine there. Opening the window in that gap showed a full memory map with
+  the Refresh button greyed out beside it, because the tables asked "is there an MMU" and the
+  button asked "are we connected". It is one question now.
 - **"Read the MMU registers" took eight seconds and never read the PSW.** SimH shows a register
   declared with a `BITFIELD` table decoded — `E PSW` on an 11/70 answers
   `PSW:	000340	CM=K PM=K RS0 FPD0 IPL=7 TBIT0 N0 Z0 V0 C0` — and the decoder's "and there is

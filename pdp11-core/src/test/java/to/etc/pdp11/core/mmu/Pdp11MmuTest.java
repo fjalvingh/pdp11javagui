@@ -95,6 +95,35 @@ class Pdp11MmuTest {
 	}
 
 	/**
+	 * A translation that carries past the top of the bus wraps, as the hardware's adder does.
+	 *
+	 * <p>The physical address is a PAF shifted up six bits plus a 13-bit displacement, and both
+	 * of those are wider than they need to be: a PAF of all ones over a full-length page runs
+	 * 0140 words past the top of a 22-bit bus. The machine's adder is 22 bits wide and the carry
+	 * out of the top is simply lost, so the page continues at zero.</p>
+	 *
+	 * <p>This was an {@link IllegalArgumentException} from {@code Address.of}, which is worse
+	 * than a wrong answer: the MMU window builds its map from 65536 of these per redraw, so one
+	 * page register left the window showing whatever it had said last - including "Not connected
+	 * to a machine" - beside a Refresh button that was enabled and worked.</p>
+	 */
+	@Test
+	void aTranslationThatCarriesPastTheTopOfTheBusWrapsRatherThanThrowing() {
+		poke(0177572, 1);                                   // MMR0: relocation on
+		poke(0177776, 0);                                   // PSW: kernel mode
+		poke(0172300, pdrUp(0177));                         // Kernel I PDR 0: whole page
+		poke(0172340, 0177777);                             // Kernel I PAR 0: PAF of all ones
+
+		//-- 0177777 << 6 is 037777700, a 23-bit number; the top bit is the carry the bus does
+		//-- not have, so the page starts at 017777700 - 0100 short of the top of memory.
+		assertEquals(017777700L, m_mmu.translateInstruction(virt(0)).address().val());
+		assertEquals(017777776L, m_mmu.translateInstruction(virt(076)).address().val());
+		//-- And over the top, where the carry is lost.
+		assertEquals(0L, m_mmu.translateInstruction(virt(0100)).address().val());
+		assertEquals(0100L, m_mmu.translateInstruction(virt(0200)).address().val());
+	}
+
+	/**
 	 * Correction 1. The displacement is the low <b>13</b> bits. The Pascal masks with
 	 * {@code $1777}, which is {@code 0001011101110111} - not a contiguous field at all - so
 	 * bits 3, 7 and 11 fall out of the middle of every offset.
