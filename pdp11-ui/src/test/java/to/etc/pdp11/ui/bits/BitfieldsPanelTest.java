@@ -205,6 +205,51 @@ class BitfieldsPanelTest {
 		assertFalse(panel.getNoDefinitionsText().isEmpty());
 	}
 
+	/**
+	 * The whole point of making the address field editable: reaching a register without first
+	 * having to find it in another window.
+	 */
+	@Test
+	void typingAnAddressPointsTheWindowAtIt(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		definePsw(ctx);
+		BitfieldsPanel panel = Edt.call(() -> new BitfieldsPanel(ctx));
+
+		assertTrue(panel.getAddressField().isEditable(), "the address can be typed in");
+
+		Edt.run(() -> panel.showAddress(Address.of(MemoryAddressType.PHYSICAL16, 0177776)));
+		assertEquals("177776", panel.getAddressField().getText());
+		assertEquals(8, panel.getTable().getRowCount(), "the PSW's bits, with nothing selected anywhere");
+		assertEquals("?", panel.getValueField().getText(), "nothing read it yet");
+		assertTrue(panel.getInfoText().contains("Bits.CPU.PSW"), panel.getInfoText());
+
+		//-- And typing over it moves on, dropping what belonged to the old register.
+		Edt.run(() -> panel.getValueField().setText("000340"));
+		assertEquals(0340, panel.getCell().getEditValue().word());
+		Edt.run(() -> panel.showAddress(Address.of(MemoryAddressType.PHYSICAL16, 0177570)));
+		assertEquals("177570", panel.getAddressField().getText());
+		assertFalse(panel.getCell().getEditValue().isKnown(), "the old value did not come along");
+		assertTrue(panel.getNoDefinitionsText().contains("No bit field definitions"), panel.getNoDefinitionsText());
+	}
+
+	/** A typed address is the same location as everybody else's, so the propagation bus still works. */
+	@Test
+	void aTypedAddressStaysOnTheBus(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		definePsw(ctx);
+		BitfieldsPanel panel = Edt.call(() -> new BitfieldsPanel(ctx));
+		MemoryCell theirs = pswCell(ctx, 0);
+
+		Edt.run(() -> panel.showAddress(theirs.getAddr()));
+		assertNotSame(theirs, panel.getCell());
+
+		Edt.run(() -> {
+			panel.getCell().setPdpValue(CellValue.of(0777));
+			ctx.getMemoryCellGroups().syncMemoryCells(panel.getCell());
+		});
+		assertEquals(0777, theirs.getPdpValue().word());
+	}
+
 	@Test
 	void renderToAFileForLookingAt(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);

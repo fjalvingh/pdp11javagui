@@ -46,6 +46,16 @@ import java.util.List;
  * and for the same reason - a Swing document listener firing a table update that fires a
  * document listener is exactly the same loop.</p>
  *
+ * <h2>Divergence: the address field is typeable</h2>
+ *
+ * <p>The Pascal declares {@code AddrEdit} as {@code ReadOnly = True}
+ * ({@code FormBitfieldsU.dfm:59}) and yet hangs an {@code OnKeyPress} handler off it that
+ * filters keystrokes down to octal digits and backspace ({@code :151-156}) - a filter that can
+ * never fire, on a field that can never be typed in. The window was reachable only from a
+ * selection somewhere else, which makes looking at one register of a device you are not already
+ * displaying a detour through a memory window. The field is editable here: Enter points the
+ * window at what was typed, and Examine reads it.</p>
+ *
  * <h2>It works on its own copy</h2>
  *
  * <p>{@code ShowNewAddr} does {@code memorycell.Assign(mc)} ({@code :414}): the window holds its
@@ -111,7 +121,6 @@ public final class BitfieldsPanel extends JPanel {
 
 		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_value.getFont().getSize());
 		m_address.setFont(mono);
-		m_address.setEditable(false);
 		m_value.setFont(mono);
 
 		m_table.setFont(mono);
@@ -147,6 +156,13 @@ public final class BitfieldsPanel extends JPanel {
 			public void changedUpdate(DocumentEvent e) {
 				onValueTyped();
 			}
+		});
+		//-- Enter in the address field is the "go there" gesture; Examine reads it when there
+		//-- is a machine to read it from. Not examining while disconnected keeps Enter from
+		//-- being a "Not connected" dialog every time somebody types an address offline.
+		m_address.addActionListener(e -> {
+			if(applyTypedAddress() && m_context.getConnectionManager().isConnected())
+				examine();
 		});
 		showCell(null);
 	}
@@ -228,13 +244,7 @@ public final class BitfieldsPanel extends JPanel {
 				m_value.setText(m_cell.getEditValue().toOctal());
 				m_info.setText(describe(source));
 			}
-			m_scroll.setVisible(m_def != null);
-			m_noDefinitions.setVisible(m_def == null);
-			m_noDefinitions.setText(m_def != null ? ""
-				: source == null
-					? "Select a register in a memory or device window to see its bits."
-					: "No bit field definitions for " + m_cell.getAddr().toOctal()
-						+ " in the loaded machine description.");
+			showDefinitionOrReason(source != null);
 			m_model.fireTableDataChanged();
 			updateValueColour();
 		} finally {
@@ -242,6 +252,76 @@ public final class BitfieldsPanel extends JPanel {
 		}
 		revalidate();
 		repaint();
+	}
+
+	/**
+	 * Point the window at an address nobody selected, and forget what was in the old one.
+	 *
+	 * <p>The values are dropped rather than carried across, because they belonged to the
+	 * register that was being shown: {@link MemoryCellGroup#shiftRange} is called without the
+	 * optimise flag exactly so the new cell starts unknown. Examine fills it in.</p>
+	 */
+	public void showAddress(Address addr) {
+		m_updating = true;
+		try {
+			if(m_group.size() != 1 || !addr.equals(m_cell.getAddr())) {
+				m_group.shiftRange(addr, 1, false);
+				m_cell = m_group.cell(0);
+			}
+			m_def = m_context.getBitfieldDefs().findByAddress(m_cell.getAddr());
+			m_address.setText(m_cell.getAddr().toOctal());
+			m_value.setText(m_cell.getEditValue().toOctal());
+			//-- No group and no name to put in front of it: this address came from the keyboard,
+			//-- so the only thing known about it is what the machine description calls its bits.
+			String what = m_def == null ? "" : m_def.getName();
+			m_info.setText(m_cell.getAddr().toOctal() + (what.isEmpty() ? "" : "  -  " + what));
+			showDefinitionOrReason(true);
+			m_model.fireTableDataChanged();
+			updateValueColour();
+		} finally {
+			m_updating = false;
+		}
+		revalidate();
+		repaint();
+	}
+
+	/**
+	 * Move to whatever the address field says, if it says something and it has changed.
+	 *
+	 * <p>Read at the group's own width, which is the width of the last register shown here, so
+	 * an address typed after selecting a 22-bit cell is a 22-bit address. Bad text is reported
+	 * rather than swallowed - it is a deliberate action with a visible result, unlike the value
+	 * field, where half-typed text is normal and the panel simply waits.</p>
+	 *
+	 * @return false when there is nothing usable in the field, and the caller should stop
+	 */
+	private boolean applyTypedAddress() {
+		String text = m_address.getText().trim();
+		if(text.isEmpty()) {
+			m_context.reportFailure("Type the octal address of a register to look at", null);
+			return false;
+		}
+		Address addr;
+		try {
+			addr = Address.parseOctal(text, m_group.getType());
+		} catch(RuntimeException x) {
+			m_context.reportFailure("\"" + text + "\" is not an octal address", null);
+			return false;
+		}
+		if(!addr.equals(m_cell.getAddr()))
+			showAddress(addr);
+		return true;
+	}
+
+	/** Either the table of fields, or the line saying why there is not one. */
+	private void showDefinitionOrReason(boolean haveAddress) {
+		m_scroll.setVisible(m_def != null);
+		m_noDefinitions.setVisible(m_def == null);
+		m_noDefinitions.setText(m_def != null ? ""
+			: !haveAddress
+				? "Select a register in a memory or device window, or type an address above, to see its bits."
+				: "No bit field definitions for " + m_cell.getAddr().toOctal()
+					+ " in the loaded machine description.");
 	}
 
 	/** {@code "CPU . PSW"}, or the address when the cell has no name ({@code :404-412}). */
@@ -363,6 +443,9 @@ public final class BitfieldsPanel extends JPanel {
 	// -------------------------------------------------------------------------------------
 
 	private void examine() {
+		//-- An address typed but not Entered is still what the user is pointing at.
+		if(!applyTypedAddress())
+			return;
 		Address addr = m_cell.getAddr();
 		m_context.onConsole("Examining " + addr.toOctal(), console -> {
 			CellValue v = console.examine(addr);
@@ -375,6 +458,8 @@ public final class BitfieldsPanel extends JPanel {
 	}
 
 	private void deposit() {
+		if(!applyTypedAddress())
+			return;
 		if(!m_cell.getEditValue().isKnown()) {
 			m_context.reportFailure("There is no value to deposit", null);
 			return;
