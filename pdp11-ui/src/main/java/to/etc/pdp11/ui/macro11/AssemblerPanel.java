@@ -253,7 +253,7 @@ public final class AssemblerPanel extends JPanel {
 		m_depositAll.addActionListener(e -> m_model.deposit(owner(), this::showCode));
 		m_depositAll.setToolTipText("Write every word of the program into the machine");
 		m_depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
-		m_examine.addActionListener(e -> m_grid.examineAll(false, owner()));
+		m_examine.addActionListener(e -> verifyCode());
 		m_examine.setToolTipText("Read the same addresses back off the machine and compare");
 		return p;
 	}
@@ -410,6 +410,27 @@ public final class AssemblerPanel extends JPanel {
 		markListing();
 	}
 
+	/**
+	 * Read the program back off the machine and say where it disagrees.
+	 *
+	 * <p>What the button has always claimed to do. It used to call {@code examineAll}, which
+	 * copies what the machine said over the edit value of every cell - so the assembled program
+	 * was replaced by the machine's contents, nothing could ever show as differing, and a
+	 * corrupt load reported success. The code group's {@code pdpOverwritesEdit} is off for
+	 * exactly this, the same as the Memory Loader's.</p>
+	 */
+	private void verifyCode() {
+		m_grid.verifyAll(owner(), wrong -> {
+			int words = m_model.getGroup().size();
+			m_codeStatus.setText(wrong == 0
+				? "The machine holds exactly the " + words + " assembled word"
+					+ (words == 1 ? "" : "s")
+				: wrong + " word" + (wrong == 1 ? "" : "s") + " of " + words
+					+ " differ from the assembled program");
+			m_codeStatus.setForeground(wrong == 0 ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+		});
+	}
+
 	private void showCode() {
 		Macro11Listing listing = m_model.getListing();
 		Address start = listing == null ? null : listing.getStartAddress();
@@ -429,7 +450,7 @@ public final class AssemblerPanel extends JPanel {
 		boolean haveAssembler = Macro11.isAvailable();
 
 		m_save.setEnabled(m_model.isChanged() || m_model.getSourceFile() == null);
-		m_compile.setEnabled(m_model.canAssemble() && haveAssembler);
+		m_compile.setEnabled(m_model.canAssemble() && haveAssembler && !m_model.isAssembling());
 		if(!haveAssembler)
 			m_compile.setToolTipText(Macro11.notInstalledMessage());
 
@@ -642,6 +663,10 @@ public final class AssemblerPanel extends JPanel {
 
 	public JButton getDepositAllButton() {
 		return m_depositAll;
+	}
+
+	public JButton getVerifyButton() {
+		return m_examine;
 	}
 
 	public JTextField getStartAddressField() {

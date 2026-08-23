@@ -4,6 +4,28 @@
 
 ### Fixes
 
+- **The Assembler window's *Verify* threw away the program it was supposed to be checking.** The
+  Memory Loader's Verify reads the machine back without touching the loaded values, so anything
+  the machine disagrees about colours itself — that is what the group's `pdpOverwritesEdit` is
+  off for. The assembler's button carried the same label and the tooltip *"Read the same
+  addresses back off the machine and compare"*, but called `examineAll`, which copies what the
+  machine said over every cell's edit value once the read is done. The assembled words were
+  silently replaced by the machine's contents, so nothing could ever show as differing and a
+  program that had never been loaded reported agreement. There is now a real
+  `MemoryCellGroupTable.verifyAll`, which all three Verify buttons — assembler, loader and the
+  memory window's popup — go through, and the Code tab reports the count: *"3 words of 4 differ
+  from the assembled program"*.
+- **Assembling built the code group from the assembler worker, while the event thread painted it
+  and the command thread walked it.** `Macro11ListingParser.parse` cleared a `MemoryCellGroup` and
+  refilled it on whatever thread called it, and for an assembly that is an ad-hoc
+  `macro11-assemble` thread — a third one, writing an unsynchronised `ArrayList` and the
+  application-wide propagation index that a Code grid repaint and a mid-examine console job are
+  both reading. Parsing and installing are now separate: the worker parses into a detached
+  `Macro11ListingParser.Parsed` that holds no group at all, and the event thread calls
+  `installInto`, which empties the group and refills it in one step. Two assemblies at once are
+  refused as well — the Assembler window's *Compile* and the Execution window's *New program* both
+  install into the same group, and the second now says *"An assembly is already running"* rather
+  than starting a second worker. Compile stays disabled while one runs.
 - **A file loaded into the Memory Loader could be silently replaced by what was already in the
   machine, before it was deposited.** The loader, the dumper and the assembler each turn their
   group's `pdpOverwritesEdit` off permanently in their constructors — that flag is the whole

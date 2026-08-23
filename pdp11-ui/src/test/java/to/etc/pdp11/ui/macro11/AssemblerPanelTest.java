@@ -349,6 +349,38 @@ class AssemblerPanelTest {
 		}
 	}
 
+	/**
+	 * A second assembly while one is in flight is refused, rather than racing it into the group.
+	 *
+	 * <p>Two windows assemble - Compile here and "New program" on the Execution window - and both
+	 * install their listing into the one code group. Two workers doing that at once is what the
+	 * detached parse cannot protect against on its own.</p>
+	 *
+	 * <p>No {@code macro11} needed: both calls are made inside one block on the event thread, so
+	 * the first worker cannot have got as far as its {@code onUi} step whatever it found.</p>
+	 */
+	@Test
+	void aSecondAssemblyIsRefusedWhileOneIsRunning(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		Path src = write(dir, "p.mac", "\t.asect\n\t.=1000\n\thalt\n\t.end\n");
+		StringBuilder reported = new StringBuilder();
+
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+			assertFalse(ctx.getAssembler().isAssembling());
+			ctx.getAssembler().assemble(null);
+			//-- Only now is the failure handler armed: what the worker eventually reports is not
+			//-- what this is about.
+			ctx.setFailureHandler((message, cause) -> reported.append(message));
+			ctx.getAssembler().assemble(outcome -> assertFalse(outcome.ok()));
+		});
+		assertTrue(reported.toString().contains("already running"), reported.toString());
+	}
+
 	/** Assembling with no source file says so rather than running the assembler on nothing. */
 	@Test
 	void assemblingWithoutAFileIsRefusedWithASentence(@TempDir Path dir) {
@@ -360,6 +392,57 @@ class AssemblerPanelTest {
 		Edt.run(() -> ctx.getAssembler().setSourceText("\thalt\n"));
 		Edt.run(() -> ctx.getAssembler().assemble(outcome -> assertFalse(outcome.ok())));
 		assertTrue(reported.toString().contains("Save the source to a file"), reported.toString());
+	}
+
+	/**
+	 * Verify compares the assembled program with the machine instead of replacing it.
+	 *
+	 * <p>The button used to call {@code examineAll}, which copies what the machine said over
+	 * every cell's edit value. The assembled words were silently thrown away, nothing could ever
+	 * show as differing, and a program that had not been loaded at all - or loaded wrongly -
+	 * reported agreement. Same label as the Memory Loader's Verify, and now the same
+	 * semantics.</p>
+	 *
+	 * <p>Needs no {@code macro11}: a listing on disk is a whole program.</p>
+	 */
+	@Test
+	void verifyingComparesTheCodeWithTheMachineRatherThanReplacingIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		Path lst = write(dir, "p.lst", LISTING);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			Edt.run(() -> {
+				try {
+					ctx.getAssembler().loadListing(lst);
+				} catch(Exception x) {
+					throw new IllegalStateException(x);
+				}
+			});
+			assertEquals(4, ctx.getAssembler().getGroup().size());
+
+			//-- Nothing deposited yet, so the machine holds zeros and three of the four words
+			//-- disagree - the fourth is the halt, which is 000000 and genuinely agrees with an
+			//-- empty machine. A verify that says "4 of 4" is not comparing, it is guessing.
+			Edt.run(() -> panel.getVerifyButton().doClick());
+			until("the verify to finish", () -> panel.getCodeStatusText().contains("differ from")
+				|| panel.getCodeStatusText().contains("holds exactly"));
+			assertTrue(panel.getCodeStatusText().contains("3 words of 4 differ"), panel.getCodeStatusText());
+			//-- And the program is still in the grid rather than having been overwritten by the
+			//-- machine's zeros, which is the part that used to be lost.
+			assertEquals(012706, ctx.getAssembler().getGroup().cell(0).getEditValue().word());
+			assertTrue(ctx.getAssembler().getGroup().cell(0).isEdited());
+
+			//-- Load it and verify again: now the machine holds the program.
+			Edt.run(() -> panel.getDepositAllButton().doClick());
+			until("the deposit", () -> !ctx.getAssembler().getGroup().cell(0).isEdited());
+			Edt.run(() -> panel.getVerifyButton().doClick());
+			until("the second verify", () -> panel.getCodeStatusText().contains("holds exactly"));
+			assertEquals(012706, ctx.getAssembler().getGroup().cell(0).getEditValue().word());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
 	}
 
 	// -------------------------------------------------------------------------------------

@@ -47,6 +47,13 @@ import java.util.function.Consumer;
  * runs on a worker; every callback and every listener runs on the event thread. Nothing here
  * touches the console except {@link #deposit}, which goes through
  * {@link AppContext#onConsole}.</p>
+ *
+ * <p>The worker parses the listing but does <b>not</b> put it into {@link #getGroup()}. That
+ * group is on the propagation bus: the Code grid paints from it on the event thread and the
+ * command thread walks the bus index during an examine, and nothing in the memory-cell layer is
+ * synchronised. So the worker builds a detached {@link Macro11ListingParser.Parsed} and the
+ * event thread installs it in one step. For the same reason a second assembly is refused while
+ * one is in flight - see {@link #isAssembling()}.</p>
  */
 public final class AssemblerModel {
 	/** Told whenever the source, the file name or the listing changed. Always on the EDT. */
@@ -87,6 +94,12 @@ public final class AssemblerModel {
 
 	/** True after an assembly that produced no errors. {@code TFormMacro11Source.Translated}. */
 	private boolean m_translated;
+
+	/**
+	 * Whether a worker is assembling right now. Event thread only, which is the whole point: two
+	 * assemblies would install two listings into the one code group.
+	 */
+	private boolean m_assembling;
 
 	public AssemblerModel(AppContext context) {
 		m_context = context;
@@ -141,12 +154,24 @@ public final class AssemblerModel {
 		return m_translated;
 	}
 
+	/**
+	 * Whether an assembly is running. Both windows that assemble ask, so neither offers the
+	 * button that {@link #assemble} would refuse.
+	 */
+	public boolean isAssembling() {
+		return m_assembling;
+	}
+
 	/** Whether the editor holds something the file does not. */
 	public boolean isChanged() {
 		return !m_sourceText.equals(m_savedText);
 	}
 
-	/** Whether there is anything worth assembling: a name to save under, and some text. */
+	/**
+	 * Whether there is anything worth assembling: a name to save under, and some text. Says
+	 * nothing about whether an assembly is already running - {@link #isAssembling()} does, and
+	 * the two mean different things to the user.
+	 */
 	public boolean canAssemble() {
 		return m_sourceFile != null && !m_sourceText.isBlank();
 	}
@@ -256,6 +281,12 @@ public final class AssemblerModel {
 	 * ({@code :351-353}) and is what makes Compile mean "compile what I am looking at".</p>
 	 */
 	public void assemble(Consumer<Outcome> whenDone) {
+		if(m_assembling) {
+			//-- Two assemblies would race to install into the one code group, and the Execution
+			//-- window's "New program" can be pressed while the Assembler window is compiling.
+			fail(whenDone, "An assembly is already running", null);
+			return;
+		}
 		if(m_sourceFile == null) {
 			fail(whenDone, "Save the source to a file before assembling it - MACRO-11 reads a file,"
 				+ " not an editor", null);
@@ -268,8 +299,12 @@ public final class AssemblerModel {
 		Path source = m_sourceFile;
 		String text = m_sourceText;
 		boolean needsSave = isChanged();
-		//-- Made here, on the event thread, so the worker never has to.
+		//-- Made here, on the event thread, so the worker never has to. The worker needs its
+		//-- width, and nothing else about it.
 		MemoryCellGroup group = getGroup();
+		MemoryAddressType type = group.getType();
+		m_assembling = true;
+		fire();
 
 		Thread worker = new Thread(() -> {
 			try {
@@ -277,9 +312,12 @@ public final class AssemblerModel {
 					Files.writeString(source, text, StandardCharsets.ISO_8859_1);
 				Macro11.Result result = Macro11.assemble(source, m_context.getLogger());
 				//-- Parsed off the worker as well: it is a few hundred lines of string work and
-				//-- the event thread has nothing to add to it.
-				Macro11Listing listing = Macro11ListingParser.parse(result.listing(), group);
+				//-- the event thread has nothing to add to it. Detached, though - the group it
+				//-- ends up in belongs to the event thread.
+				Macro11ListingParser.Parsed parsed = Macro11ListingParser.parse(result.listing(), type);
 				AppContext.onUi(() -> {
+					m_assembling = false;
+					Macro11Listing listing = parsed.installInto(group);
 					if(needsSave)
 						m_savedText = text;
 					m_listing = listing;
@@ -300,6 +338,7 @@ public final class AssemblerModel {
 				});
 			} catch(IOException | RuntimeException x) {
 				AppContext.onUi(() -> {
+					m_assembling = false;
 					m_translated = false;
 					fire();
 					fail(whenDone, "Could not assemble " + source.getFileName(), x);

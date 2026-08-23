@@ -235,12 +235,7 @@ public final class MemoryPanel extends JPanel {
 
 	/** Read it all back without touching the edits, so disagreements light up. */
 	private void verify() {
-		MemoryCellGroup group = m_group;
-		to.etc.pdp11.ui.ProgressDialog progress = new to.etc.pdp11.ui.ProgressDialog(owner());
-		m_context.onConsole("Verifying memory", console -> {
-			console.examine(group, false, progress);
-			AppContext.onUi(m_grid::refresh);
-		});
+		m_grid.verifyAll(owner(), null);
 	}
 
 	private void exportSimhScript() {

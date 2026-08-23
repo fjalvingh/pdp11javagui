@@ -10,7 +10,6 @@ import to.etc.pdp11.core.memfile.MemoryFileLoader;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
-import to.etc.pdp11.ui.ProgressDialog;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.mem.MemoryCellGroupTable;
 
@@ -266,18 +265,11 @@ public final class MemoryLoaderPanel extends JPanel {
 	 * file's values instead of being compared with them.</p>
 	 */
 	private void verify() {
-		MemoryCellGroup group = m_group;
-		ProgressDialog progress = new ProgressDialog(owner());
-		m_context.onConsole("Verifying against the machine", console -> {
-			console.examine(group, false, progress);
-			AppContext.onUi(() -> {
-				m_grid.refresh();
-				long wrong = group.getCells().stream().filter(c -> c.isEdited()).count();
-				m_status.setText(wrong == 0
-					? "The machine holds exactly what was loaded"
-					: wrong + " word" + (wrong == 1 ? "" : "s") + " differ from the file");
-				m_status.setForeground(wrong == 0 ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
-			});
+		m_grid.verifyAll(owner(), wrong -> {
+			m_status.setText(wrong == 0
+				? "The machine holds exactly what was loaded"
+				: wrong + " word" + (wrong == 1 ? "" : "s") + " differ from the file");
+			m_status.setForeground(wrong == 0 ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
 		});
 	}
 

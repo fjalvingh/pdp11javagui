@@ -5,6 +5,8 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.macro11.Macro11Listing.Problem;
 import to.etc.pdp11.core.macro11.Macro11Listing.ProblemKind;
+import to.etc.pdp11.core.macro11.Macro11ListingParser.Parsed;
+import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
@@ -15,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -290,5 +294,71 @@ class Macro11ListingParserTest {
 		assertTrue(r.isOk());
 		assertEquals(0, r.getWordCount());
 		assertNull(r.getStartAddress());
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Parsing detached from the group
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * The parse itself writes to no group at all.
+	 *
+	 * <p>This is what lets an assembly parse on a worker while the event thread paints the code
+	 * grid built on the same group and the command thread walks the propagation index it is in.
+	 * The parse used to clear and refill that group from whichever thread called it, which is
+	 * three threads in one unsynchronised {@code ArrayList}.</p>
+	 */
+	@Test
+	void parsingWritesNothingUntilItIsInstalled() {
+		MemoryCellGroup g = group();
+		g.add(Address.of(MemoryAddressType.VIRTUAL, 000100)).setEditValue(CellValue.of(0177));
+
+		Parsed p = Macro11ListingParser.parse(
+			List.of("       1 001000 012706  000400          \tmov"), MemoryAddressType.VIRTUAL);
+		assertEquals(2, p.getWordCount(), "the words are in the parse");
+		assertEquals(1, g.size(), "and not one of them is in the group yet");
+		assertEquals(0177, wordAt(g, 000100), "which still holds only what it held before");
+
+		Macro11Listing r = p.installInto(g);
+		assertEquals(2, g.size(), "installing empties the group and fills it in one step");
+		assertEquals(0012706, wordAt(g, 001000));
+		assertEquals(0000400, wordAt(g, 001002));
+		assertSame(g, r.getGroup());
+		assertEquals(2, r.getWordCount());
+	}
+
+	/** Every byte-merge and duplicate-address rule survives the detour through {@link Parsed}. */
+	@Test
+	void installingProducesExactlyWhatParsingIntoTheGroupDid() {
+		List<String> listing = List.of(
+			"       3 173000    104     104          start:\t.ascii\t\"DD\"",
+			"       4 173002 000022                  \t.word\tlast-.",
+			"       5 173004    110     145     154  tst0:\t.ascii\t\"Hello\"",
+			"         173007    154     157");
+
+		MemoryCellGroup direct = group();
+		Macro11ListingParser.parse(listing, direct);
+
+		MemoryCellGroup staged = group();
+		Macro11ListingParser.parse(listing, MemoryAddressType.VIRTUAL).installInto(staged);
+
+		assertEquals(direct.size(), staged.size());
+		for(int i = 0; i < direct.size(); i++) {
+			MemoryCell a = direct.cell(i);
+			MemoryCell b = staged.cell(i);
+			assertEquals(a.getAddr(), b.getAddr(), "cell " + i);
+			assertEquals(a.getEditValue(), b.getEditValue(), "cell " + i);
+			assertEquals(a.getListingLineNr(), b.getListingLineNr(), "cell " + i);
+			assertFalse(b.getPdpValue().isKnown(), "cell " + i + " has not been read off a machine");
+		}
+	}
+
+	/** A listing parsed at one width cannot be dropped into a group of another. */
+	@Test
+	void installingIntoAGroupOfAnotherWidthIsRefused() {
+		MemoryCellGroup g = new MemoryCellGroups().addGroup(MemoryAddressType.PHYSICAL16, "code");
+		Parsed p = Macro11ListingParser.parse(
+			List.of("       1 001000 012706                  \tmov"), MemoryAddressType.VIRTUAL);
+		assertThrows(IllegalArgumentException.class, () -> p.installInto(g));
 	}
 }

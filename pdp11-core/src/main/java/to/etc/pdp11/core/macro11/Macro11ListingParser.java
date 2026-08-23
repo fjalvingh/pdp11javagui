@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.macro11;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.macro11.Macro11Listing.Problem;
 import to.etc.pdp11.core.macro11.Macro11Listing.ProblemKind;
 import to.etc.pdp11.core.mem.CellValue;
@@ -13,7 +14,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Reads a MACRO-11 listing and turns its code column into memory cells.
@@ -76,6 +79,19 @@ import java.util.List;
  *       first byte lands on an odd address produces {@code 177777} with the byte in it rather
  *       than the byte.</li>
  * </ul>
+ *
+ * <h2>Parsing and installing are two steps</h2>
+ *
+ * <p>{@link #parse(List, MemoryAddressType)} reads a listing and touches no
+ * {@link MemoryCellGroup} at all; {@link Parsed#installInto} puts the result into one. That
+ * split is a threading rule, not a tidiness one. A code group is registered on the
+ * {@code MemoryCellGroups} propagation bus, a grid paints from it on the event thread, and the
+ * command thread walks the bus index during an examine - and none of the memory-cell types is
+ * synchronised. An assembly runs the tool on a worker, so the worker parses and the event thread
+ * installs.</p>
+ *
+ * <p>The two-argument {@code parse} overloads still do both halves on the caller's thread, which
+ * is what anything already on the event thread wants.</p>
  */
 public final class Macro11ListingParser {
 	/** Columns 1-8 of the listing, 1-based, hold the source line number. */
@@ -95,22 +111,134 @@ public final class Macro11ListingParser {
 	private Macro11ListingParser() {
 	}
 
-	public static Macro11Listing parse(Path listingFile, MemoryCellGroup group) throws IOException {
-		//-- ISO-8859-1 rather than the platform default: a listing is bytes from an assembler
-		//-- that predates the concept, and a stray high byte must not fail the read.
-		List<String> lines = Files.readAllLines(listingFile, StandardCharsets.ISO_8859_1);
-		return parse(lines, group);
+	// -------------------------------------------------------------------------------------
+	// Parsing, which never touches a live group
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * One word of code, as the parse builds it: everything a {@link MemoryCell} would hold,
+	 * without being one.
+	 *
+	 * <p>Mutable because a byte at an odd address goes into the <i>high</i> half of the word
+	 * below it, so a word already made has to be reached back into. See {@link #fillValue}.</p>
+	 */
+	private static final class Word {
+		private final long m_addrValue;
+
+		private CellValue m_value = CellValue.UNKNOWN;
+
+		private int m_listingLine = -1;
+
+		private Word(long addrValue) {
+			m_addrValue = addrValue;
+		}
 	}
 
 	/**
-	 * Parse {@code lines} into {@code group}, which is cleared first.
+	 * What one listing parsed to, holding no reference to any {@link MemoryCellGroup}.
 	 *
-	 * @param group where the code goes. Its address type is what the cells get; the Pascal uses
-	 *              {@code matVirtual}, because a listing's addresses are what the program will
-	 *              see, not where a console will put them.
+	 * <p>This split exists because parsing is slow enough to want off the event thread while the
+	 * code group is not something a third thread may touch: it is on the propagation bus, a grid
+	 * paints from it, and the command thread walks the bus index during an examine. None of
+	 * {@link MemoryCell}, {@link MemoryCellGroup} or {@code MemoryCellGroups} is synchronised, so
+	 * the worker builds this and the event thread calls {@link #installInto} - which is the only
+	 * step that writes to the group.</p>
 	 */
-	public static Macro11Listing parse(List<String> lines, MemoryCellGroup group) {
-		group.clear();
+	public static final class Parsed {
+		private final List<String> m_lines;
+
+		private final int[] m_sourceLineOf;
+
+		private final List<Problem> m_problems;
+
+		private final List<Word> m_words;
+
+		private final MemoryAddressType m_type;
+
+		private Parsed(List<String> lines, int[] sourceLineOf, List<Problem> problems,
+			List<Word> words, MemoryAddressType type) {
+			m_lines = lines;
+			m_sourceLineOf = sourceLineOf;
+			m_problems = problems;
+			m_words = words;
+			m_type = type;
+		}
+
+		/** The address width this was parsed at; {@link #installInto} needs a group of the same. */
+		public MemoryAddressType getType() {
+			return m_type;
+		}
+
+		/** What MACRO-11 and this parser objected to, known before anything is installed. */
+		public List<Problem> getProblems() {
+			return m_problems;
+		}
+
+		/** How many words of code came out. */
+		public int getWordCount() {
+			return m_words.size();
+		}
+
+		/**
+		 * Empty {@code group} and put this listing's words in it.
+		 *
+		 * <p><b>Event thread only</b>, and the whole of the mutation: the group is emptied and
+		 * refilled in one go, so nothing else ever sees it half built.</p>
+		 */
+		public Macro11Listing installInto(MemoryCellGroup group) {
+			if(group.getType() != m_type)
+				throw new IllegalArgumentException("Listing parsed at " + m_type
+					+ " cannot be installed into a " + group.getType() + " group");
+			group.clear();
+			for(Word w : m_words) {
+				MemoryCell mc = group.add(Address.of(m_type, w.m_addrValue));
+				mc.setEditValue(w.m_value);
+				mc.setListingLineNr(w.m_listingLine);
+				//-- What the machine holds at this address is still unknown; the file says what it
+				//-- *should* hold. That difference is what makes every word show as changed until
+				//-- it has been deposited, and it is the same rule the Memory Loader follows.
+				mc.setPdpValue(CellValue.UNKNOWN);
+			}
+			return new Macro11Listing(m_lines, m_sourceLineOf, m_problems, group);
+		}
+	}
+
+	/** The words made so far, with the same "first one wins" lookup a group has. */
+	private static final class Words {
+		private final List<Word> m_list = new ArrayList<>();
+
+		private final Map<Long, Word> m_byAddress = new HashMap<>();
+
+		private Word add(long addrValue) {
+			Word w = new Word(addrValue);
+			m_list.add(w);
+			//-- putIfAbsent, matching MemoryCellGroup.add: several cells may share an address and
+			//-- the lookup answers with the first one declared there.
+			m_byAddress.putIfAbsent(addrValue, w);
+			return w;
+		}
+
+		private Word find(long addrValue) {
+			return m_byAddress.get(addrValue);
+		}
+	}
+
+	/** Read a listing file and parse it at {@code type}, touching no group. */
+	public static Parsed parse(Path listingFile, MemoryAddressType type) throws IOException {
+		//-- ISO-8859-1 rather than the platform default: a listing is bytes from an assembler
+		//-- that predates the concept, and a stray high byte must not fail the read.
+		return parse(Files.readAllLines(listingFile, StandardCharsets.ISO_8859_1), type);
+	}
+
+	/**
+	 * Parse {@code lines} at {@code type}, touching no group.
+	 *
+	 * @param type the address width the cells will get. The Pascal uses {@code matVirtual},
+	 *             because a listing's addresses are what the program will see, not where a
+	 *             console will put them.
+	 */
+	public static Parsed parse(List<String> lines, MemoryAddressType type) {
+		Words words = new Words();
 		int[] sourceLineOf = new int[lines.size()];
 		List<Problem> problems = new ArrayList<>();
 		int currentSourceLine = 0;
@@ -142,22 +270,42 @@ public final class Macro11ListingParser {
 			long addrValue = Octal.parseOr(addrText, -1);
 			if(addrValue < 0)
 				continue;                                    // not an address: the hex listing, or junk
-			Address addr = addressOrNull(group, addrValue);
+			Address addr = addressOrNull(type, addrValue);
 			if(addr == null)
 				continue;                                    // wider than this group's machine
-			scanCodeColumn(code, addr, group, i, currentSourceLine, problems);
+			scanCodeColumn(code, addr, words, type, i, currentSourceLine, problems);
 		}
-		return new Macro11Listing(lines, sourceLineOf, problems, group);
+		return new Parsed(List.copyOf(lines), sourceLineOf, List.copyOf(problems), words.m_list, type);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Parse and install in one step
+	// -------------------------------------------------------------------------------------
+
+	/** Parse a listing file straight into {@code group}. Caller's thread does both halves. */
+	public static Macro11Listing parse(Path listingFile, MemoryCellGroup group) throws IOException {
+		return parse(listingFile, group.getType()).installInto(group);
+	}
+
+	/**
+	 * Parse {@code lines} into {@code group}, which is cleared first.
+	 *
+	 * <p>Both halves on the caller's thread, which is right for anything already on the event
+	 * thread. A worker parses with {@link #parse(List, MemoryAddressType)} and installs from the
+	 * event thread instead.</p>
+	 */
+	public static Macro11Listing parse(List<String> lines, MemoryCellGroup group) {
+		return parse(lines, group.getType()).installInto(group);
 	}
 
 	// -------------------------------------------------------------------------------------
 	// The code column
 	// -------------------------------------------------------------------------------------
 
-	/** An address at this group's width, or null when the value is too wide for it. */
-	private static Address addressOrNull(MemoryCellGroup group, long value) {
+	/** An address at this width, or null when the value is too wide for it. */
+	private static Address addressOrNull(MemoryAddressType type, long value) {
 		try {
-			return Address.of(group.getType(), value);
+			return Address.of(type, value);
 		} catch(IllegalArgumentException x) {
 			return null;
 		}
@@ -166,7 +314,7 @@ public final class Macro11ListingParser {
 	/**
 	 * Read octal values off the front of {@code code} until something is not one.
 	 */
-	private static void scanCodeColumn(String code, Address addr, MemoryCellGroup group,
+	private static void scanCodeColumn(String code, Address addr, Words words, MemoryAddressType type,
 		int listingLine, int sourceLine, List<Problem> problems) {
 		for(String word : code.split("[ \t]+")) {
 			if(word.isEmpty())
@@ -177,7 +325,7 @@ public final class Macro11ListingParser {
 			if(digits.isEmpty())
 				break;                                       // the source text has begun
 			String suffix = word.substring(digits.length());
-			addr = fillValue(group, addr, digits, listingLine);
+			addr = fillValue(words, type, addr, digits, listingLine);
 			switch(suffix) {
 				case "" -> {
 				}
@@ -204,44 +352,41 @@ public final class Macro11ListingParser {
 	}
 
 	/**
-	 * Put one value into the group and step the address past it.
+	 * Put one value into the parse and step the address past it.
 	 *
 	 * <p>Ported from {@code FillVal2MemoryCell} ({@code :447-495}). The byte case is the whole
 	 * of the interest: an odd address is the <b>high</b> half of the word below it, so it must
-	 * find that word rather than make a second cell at the same place.</p>
+	 * find that word rather than make a second one at the same place.</p>
 	 *
 	 * @return where the next value in this line would go, or null at the top of memory
 	 */
-	private static Address fillValue(MemoryCellGroup group, Address addr, String digits, int listingLine) {
+	private static Address fillValue(Words words, MemoryAddressType type, Address addr, String digits,
+		int listingLine) {
 		int byteCount = digits.length() <= 3 ? 1 : 2;
 		int value = (int) (Octal.parseOr(digits, 0) & 0xFFFF);
 		boolean odd = (addr.val() & 1) != 0;
 
-		MemoryCell mc = null;
+		Word w = null;
 		if(byteCount == 1 && odd)
-			mc = group.findByAddress(Address.of(group.getType(), addr.val() - 1));
-		if(mc == null)
-			mc = group.add(Address.of(group.getType(), addr.val() & ~1L));
+			w = words.find(addr.val() - 1);
+		if(w == null)
+			w = words.add(addr.val() & ~1L);
 
 		if(byteCount == 1) {
 			if(!odd) {
-				mc.setEditValue(CellValue.of(value & 0xFF));
+				w.m_value = CellValue.of(value & 0xFF);
 			} else {
 				//-- Unknown counts as zero here, unlike in the Pascal, where ORing into the
 				//-- all-ones sentinel turns a single byte into 177777.
-				int low = mc.getEditValue().wordOr(0) & 0xFF;
-				mc.setEditValue(CellValue.of(low | ((value & 0xFF) << 8)));
+				int low = w.m_value.wordOr(0) & 0xFF;
+				w.m_value = CellValue.of(low | ((value & 0xFF) << 8));
 			}
 		} else {
-			mc.setEditValue(CellValue.of(value));
+			w.m_value = CellValue.of(value);
 		}
-		mc.setListingLineNr(listingLine);
-		//-- What the machine holds at this address is still unknown; the file says what it
-		//-- *should* hold. That difference is what makes every word show as changed until it has
-		//-- been deposited, and it is the same rule the Memory Loader follows.
-		mc.setPdpValue(CellValue.UNKNOWN);
+		w.m_listingLine = listingLine;
 		//-- Null at the very top of memory, where there is no next address to step to.
-		return addressOrNull(group, addr.val() + byteCount);
+		return addressOrNull(type, addr.val() + byteCount);
 	}
 
 	/** The leading run of octal digits, which may be empty. */

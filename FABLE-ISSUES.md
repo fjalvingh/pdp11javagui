@@ -15,7 +15,8 @@ Each finding carries a status line under its heading as it is dealt with:
 - **WON'T FIX** — deliberately left, with the reason.
 - **SUPERSEDED** — no longer applies after another fix.
 
-No status line means not yet looked at.
+No status line means not yet looked at. Anything found *after* the review is added under
+"Found while fixing" at the end, keeping the severity-ordered list's numbers stable.
 
 ---
 
@@ -157,6 +158,24 @@ that declared a permanent `false` alone.
 ### 5. Assembly worker mutates the live, bus-registered code group off both sanctioned threads
 `pdp11-ui/.../macro11/AssemblerModel.java:274-311`; `pdp11-core/.../macro11/Macro11ListingParser.java:112-150`
 
+**FIXED.** Parsing and installing are now two steps. `Macro11ListingParser.parse(lines, MemoryAddressType)`
+reads the listing into a detached `Parsed` - a plain list of address/value/listing-line triples,
+carrying no reference to any group - and `Parsed.installInto(group)` empties the group and refills
+it in one go. The worker does the first half, the existing `AppContext.onUi` block does the second,
+so the only thread that ever writes to the bus-registered code group is the event thread. The
+detached build keeps the group's own "first cell declared at an address wins" lookup rule, because
+the odd-byte merge depends on it; a test asserts the two routes produce identical cells. The
+two-argument `parse(..., MemoryCellGroup)` overloads remain and do both halves on the caller's
+thread, which is right for `loadListing` and for every test.
+
+Overlapping assemblies are refused rather than serialised: `AssemblerModel` carries an
+event-thread-only `m_assembling`, set before the worker starts and cleared in both `onUi` paths,
+and a second `assemble()` fails with "An assembly is already running" instead of starting a second
+worker that would install into the same group. `isAssembling()` is public so the Assembler
+window's Compile button stays disabled for the duration; `canAssemble()` deliberately still means
+only "there is something worth assembling", because the Execution window's "New program" uses it
+to decide whether to say *open a source first*.
+
 `assemble()` runs `Macro11ListingParser.parse(result.listing(), group)` on an ad-hoc
 `macro11-assemble` thread. `parse` does `group.clear()` and repopulates it — mutating the
 group's plain `ArrayList` and the `MemoryCellGroups` propagation index from a third thread
@@ -171,6 +190,25 @@ against overlapping assemblies.
 
 ### 6. The assembler's "Verify" destroys the comparison it claims to make
 `pdp11-ui/.../macro11/AssemblerPanel.java:118,256-257`; mechanism at `mem/MemoryCellGroupTable.java:279-291`
+
+**FIXED.** The assembler got a real verify path rather than a relabel: the button promised the
+right thing and the Loader beside it already did it. `MemoryCellGroupTable` now has
+`verifyAll(owner, whenDone)` next to `examineAll` - the same examine without the
+`setEditValue(getPdpValue())` loop, followed by a count of the cells the machine disagreed about,
+handed to the caller on the event thread. `examineAll`'s Javadoc now says why its edit-copy is
+right for *Examine all* and wrong for *Verify*, since that one line is the whole difference.
+
+All three Verify buttons go through it now. The Memory Loader and the memory window's popup were
+already doing the right thing by hand, in three near-identical copies of the same five lines;
+they delegate, and the Loader keeps its "n words differ from the file" message through the
+callback. The assembler says the same thing in its own words in the Code tab's status line, and
+counts against the assembled total: *"3 words of 4 differ from the assembled program"*.
+
+The regression test loads a listing, verifies against an empty machine, and asserts both halves -
+that the disagreement is reported **and** that `cell(0)` still holds the assembled `012706` rather
+than the machine's zero. It expects 3 of 4, not 4 of 4: the fourth word is the `halt`, which is
+`000000` and genuinely agrees with an empty machine. Without the fix the test times out, because
+the status line it waits for is never written at all.
 
 The Memory Loader's Verify deliberately examines raw so that disagreements colour
 themselves (the documented `pdpOverwritesEdit` design). The assembler Code tab's button is
@@ -756,6 +794,54 @@ constructor and on every `setProfile`.
 - Dumper: the entry-address field sits in the range bar but its visibility is toggled by
   the format selector in the file bar below (`dump/MemoryDumperPanel.java:113-127,176-177`);
   the Loader groups the equivalent field with the load controls.
+
+---
+
+## Found while fixing
+
+Issues found after the review, while working through the list above. Numbering continues from
+it rather than being folded into it: the list is ordered by severity and its numbers are already
+referenced from `CHANGES.md` and from the commits.
+
+### 64. Two connect attempts walk and mutate the one `MemoryCellGroups` at the same time — intermittent `ConcurrentModificationException` out of `connect()`
+`pdp11-core/.../conn/ConnectionManager.java:288,359-365,640`; `pdp11-core/.../mmu/Pdp11Mmu.java:147`;
+`pdp11-core/.../fake/FakePdp11.java:296-305`
+
+Fixing #1 serialised the *publication* of a connection, deliberately not the blocking part of an
+attempt — which is the whole point of that fix, since a disconnect must not wait on an attempt
+that is waiting on a machine. But an attempt does more than block: `createConsole` builds a
+`Pdp11Mmu`, which calls `groups.addGroup("MMU")` and fills it with register cells, and an attempt
+that loses the race unpublishes by calling `m_groups.removeGroup(...)`, which clears that group's
+cell list. Both of those mutate the application-wide `MemoryCellGroups` and one of its groups,
+from the attempt's own thread. Meanwhile the *other* attempt is at line 288 walking
+`groups.getGroups()` and `g.getCells()` inside `FakePdp11.resetIoPageValidMap`. Neither
+`MemoryCellGroups` nor `MemoryCellGroup` is synchronised, and `getGroups()`/`getCells()` hand out
+unmodifiable *views* of the live `ArrayList`s rather than copies — so the walk sees the other
+thread's `add`/`clear` and throws.
+
+Observed, not theorised: `ConnectionManagerTest.anOvertakenAttemptDoesNotTakeTheLiveConnectionWithIt`
+errors with
+
+```
+java.util.ConcurrentModificationException
+	at to.etc.pdp11.core.fake.FakePdp11.resetIoPageValidMap(FakePdp11.java:299)
+	at to.etc.pdp11.core.conn.ConnectionManager.connect(ConnectionManager.java:288)
+```
+
+intermittently — reproduced on a clean `4dc1952` with everything else stashed, in one of two full
+`mvn test` runs, and not at all when the class is run on its own. So it is a **flaky test in the
+suite as it stands**, which is the part worth fixing first: a race that fails one run in two is
+one that gets re-run until it passes and then believed.
+
+The fake is where it lands but not where the problem is. `resetIoPageValidMap` iterating copies
+would silence this trace and would be worth doing anyway — it is two short-lived lists — but the
+next walk of `m_groups` from another thread finds the same hole. The real question is who owns
+`MemoryCellGroups`: today it is touched from the EDT (every window), from the command thread
+(`syncMemoryCells` during a bulk examine) and from every connect worker, with nothing coordinating
+them. Same family as #16 (Pdp11Mmu's listener list), #30 (command-thread iteration versus EDT
+`shiftRange`) and the one just fixed in #5, and it is the third of the four to be found by an
+exception rather than by reading — which is the argument for settling the ownership rule once,
+in `PLAN.md` §1, rather than fixing the traces one at a time.
 
 ---
 

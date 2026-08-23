@@ -305,11 +305,15 @@ public final class MemoryCellGroupTable extends JPanel {
 	// -------------------------------------------------------------------------------------
 
 	/**
-	 * Read the group back from the machine.
+	 * Read the group back from the machine and show what it said.
 	 *
 	 * <p>Ported from {@code ExamineCells} ({@code :198-211}), including the part that is easy to
 	 * miss: after examining, every cell's edit value is set to what the machine said, so the
 	 * grid shows the machine rather than showing yesterday's edits over the top of it.</p>
+	 *
+	 * <p>Which is right for <i>Examine all</i> and wrong for <i>Verify</i>: it is the step that
+	 * throws away the thing a verify would have compared against. Use {@link #verifyAll} for
+	 * that.</p>
 	 *
 	 * @param unknownOnly skip the cells that already have a value
 	 */
@@ -324,6 +328,40 @@ public final class MemoryCellGroupTable extends JPanel {
 				mc.setEditValue(mc.getPdpValue());
 			}
 			AppContext.onUi(this::refresh);
+		});
+	}
+
+	/**
+	 * Read the group back from the machine <b>without touching the edit values</b>, so the two
+	 * can be compared.
+	 *
+	 * <p>This is what every window that offers a "Verify" button means by it: the grid holds
+	 * what should be there - a file, an assembled program, something typed - the examine fills
+	 * in what the machine actually has, and {@link MemoryCell#isEdited()} is then "the machine
+	 * disagrees about this word", which is what colours it.</p>
+	 *
+	 * <p>It only says anything when the group's {@code pdpOverwritesEdit} is off. With it on,
+	 * the arriving values replace the edits as they land and every word agrees by construction -
+	 * which is the whole reason the loader, the dumper and the assembler turn it off for good.
+	 * The plain memory window leaves it to {@link OverwritePolicy#FOLLOW_EDITS}, so a verify
+	 * there compares when there is something to compare and is a plain read when there is
+	 * not.</p>
+	 *
+	 * @param whenDone told, on the event thread, how many words the machine disagreed about.
+	 *                 May be null.
+	 */
+	public void verifyAll(java.awt.Window owner, java.util.function.LongConsumer whenDone) {
+		MemoryCellGroup group = m_group;
+		if(group == null)
+			return;
+		to.etc.pdp11.ui.ProgressDialog progress = new to.etc.pdp11.ui.ProgressDialog(owner);
+		m_context.onConsole("Verifying against the machine", console -> {
+			console.examine(group, false, progress);
+			AppContext.onUi(() -> {
+				refresh();
+				if(whenDone != null)
+					whenDone.accept(group.getCells().stream().filter(MemoryCell::isEdited).count());
+			});
 		});
 	}
 
