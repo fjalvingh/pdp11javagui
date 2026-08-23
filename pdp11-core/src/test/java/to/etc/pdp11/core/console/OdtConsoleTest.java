@@ -67,6 +67,101 @@ class OdtConsoleTest {
 		}
 	}
 
+	/**
+	 * The command timeout is a setting, and every wait in an exchange honours it.
+	 *
+	 * <p>FABLE-ISSUES #54: {@code checkPromptAfter} asked for the current value while the waits
+	 * inside examine, deposit and halt named the {@code CMD_TIMEOUT_MS} constant directly. Moving
+	 * the setting therefore moved some of each exchange and left the rest where it was - which is
+	 * worse than not being able to change it at all, because the console then behaves as though
+	 * two timeouts were in force at once.</p>
+	 *
+	 * <p>The transport here is one that never answers, so what is measured is the wait itself: a
+	 * quarter of the default has to give up in well under the default.</p>
+	 */
+	@Test
+	void everyWaitInAnExchangeHonoursTheTimeoutSetting() throws Exception {
+		SilentTransport silent = new SilentTransport();
+		ConsoleConnection connection = new ConsoleConnection(silent, Logger.NULL);
+		OdtConsole console = new OdtConsole(new MemoryCellGroups(), MAT, OdtDialect.DEC, Logger.NULL);
+		connection.attach(console);
+		try {
+			//-- Connected as far as this console is concerned - there is simply nothing at the
+			//-- other end. The handshake cannot succeed against silence, and is not the point.
+			connection.run(() -> {
+				try {
+					console.init(connection);
+				} catch(ConsoleException x) {
+					//-- Expected: nothing answered the wake-up. What matters is that the console
+					//-- now has its connection and will write and wait like any other.
+				}
+			});
+
+			console.setCommandTimeoutMillis(OdtConsole.CMD_TIMEOUT_MS / 4);
+			long started = System.nanoTime();
+			//-- An examine against silence is two waits: for the answer, and for the prompt. At a
+			//-- quarter of the default they come to half of it; with either of them still naming
+			//-- the constant they come to more than the whole of it.
+			assertThrows(NoConsolePromptException.class,
+				() -> connection.call(() -> console.examine(phys(01000))));
+			long tookMillis = (System.nanoTime() - started) / 1_000_000;
+
+			assertTrue(tookMillis < OdtConsole.CMD_TIMEOUT_MS,
+				"the examine waited " + tookMillis + " ms; the setting said "
+					+ console.getCommandTimeoutMillis() + " ms and the constant says "
+					+ OdtConsole.CMD_TIMEOUT_MS);
+		} finally {
+			connection.close();
+		}
+	}
+
+	/** A transport that takes everything and answers nothing, until it is closed. */
+	private static final class SilentTransport implements to.etc.pdp11.core.io.PhysicalTransport {
+		private final Object m_lock = new Object();
+
+		private boolean m_closed;
+
+		@Override
+		public int read(byte[] buf, int off, int len) {
+			synchronized(m_lock) {
+				while(!m_closed) {
+					try {
+						m_lock.wait();
+					} catch(InterruptedException x) {
+						Thread.currentThread().interrupt();
+						return -1;
+					}
+				}
+				return -1;
+			}
+		}
+
+		@Override
+		public void write(byte[] buf, int off, int len) {
+			//-- Into the void, which is the point.
+		}
+
+		@Override
+		public boolean isOpen() {
+			synchronized(m_lock) {
+				return !m_closed;
+			}
+		}
+
+		@Override
+		public String describe() {
+			return "a machine that never answers";
+		}
+
+		@Override
+		public void close() {
+			synchronized(m_lock) {
+				m_closed = true;
+				m_lock.notifyAll();
+			}
+		}
+	}
+
 	private static Address phys(long v) {
 		return Address.of(MAT, v);
 	}

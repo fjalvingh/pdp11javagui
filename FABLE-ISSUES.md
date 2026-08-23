@@ -958,6 +958,27 @@ fixing the rest.
 ### 41. Settings dialog ignores dialog conventions, and Close ≠ titlebar X
 `pdp11-ui/.../settings/SettingsDialog.java:26-66`, `settings/ConnectionSettingsPanel.java:272-282`
 
+**FIXED**, all four parts.
+
+Enter connects (Connect is the root pane's default button), Escape closes, and the title-bar X now
+runs what the Close button runs rather than disposing straight out - which is the asymmetry that
+mattered, because Close saves the settings and the X did not, so which of two gestures that both
+mean "I am done here" the user happened to choose decided whether their saved profiles reached
+disk.
+
+Delete asks first. Forgetting a saved profile is the one destructive gesture in the panel - a
+serial port, a baud rate, a SimH configuration file, all typed by hand - and it happened on the
+click. It asks through the same `DiscardConfirmer` interface the unsaved-source confirmation of #7
+uses, so there is one way of asking this question in the application and a test can answer it.
+
+ProgressDialog binds Escape to Cancel, which is the only interruption offered while a long console
+operation runs.
+
+`ConnectionSettingsPanelTest` covers Delete both ways round, headless;
+`WindowsBuildTest.theSettingsDialogHasADefaultButtonAnEscapeAndOneWayOut` builds the dialog without
+showing it - `SettingsDialog.create` exists for that - and closes it by dispatching the window event
+the title-bar X sends, then looks for the settings file.
+
 No default button (Enter does not Connect), no Escape binding (non-standard for a modal
 dialog), and asymmetric close paths: the "Close" button calls `saveSettings()` (persisting
 profile edits) while the title-bar X (`DISPOSE_ON_CLOSE`) skips the save — the same
@@ -967,6 +988,24 @@ with no confirmation. ProgressDialog likewise has no Escape→Cancel.
 ### 42. Connect/Disconnect menu items ignore connection state; connecting has no busy affordance and no cancel
 `pdp11-ui/.../MainWindow.java:91-103,240-260`
 
+**FIXED**, and half of it had already gone with #8.
+
+Disconnect is now enabled only while something is connected. It used to be enabled always, so
+choosing it with nothing connected started a worker, tore down nothing and printed
+"[disconnected]" in the terminal. Connect deliberately stays enabled while connected: connecting
+again is how the user moves to another machine, and `ConnectionManager.connect` is documented to
+double as a reconnect. Both are off while a connect or disconnect worker is running - that was #8's
+`m_changingConnection` guard, which is what already stopped a second Connect spawning a second
+worker.
+
+The busy affordance is a wait cursor, not a ProgressDialog. Every other long operation in the
+application gets a dialog with a Cancel in it and this one cannot honestly have one: SimH is being
+launched, or a port opened, or a handshake is in flight, and none of that is cancellable - a Cancel
+button would be a lie and a dialog without one would be a modal window whose only content is the
+word "Working". Cursor, greyed-out menu and the status bar naming the machine being connected to are
+what is left that is true. `ConnectionManager.connect`'s own javadoc asked for the enablement half
+of this - "The UI should still not offer it" - and now nothing does.
+
 Both items are always enabled: Disconnect while disconnected silently appends
 "[disconnected]"; a second Connect during a slow connect spawns another worker (see issue
 1 for what that races). Feedback is a status-bar "Connecting…" and a terminal line — every
@@ -975,6 +1014,14 @@ Both items are always enabled: Disconnect while disconnected silently appends
 ### 43. Escape in the Number Converter silently zeroes the value
 `pdp11-ui/.../numbers/NumberConverterPanel.java:162-170`
 
+**FIXED** by removing the binding and giving the action a button. The original clears with Escape
+({@code FormNumberconverterU.pas:268}) and that was ported with the rest of its keys; but Escape is
+what people press to mean "never mind", nowhere else in this application does it change anything,
+and here it destroyed the number being inspected with no feedback and nothing to undo it. Clearing
+is now a **Clear** button beside the note - the same word the Log and SimH Console windows use for
+the same act. The Alt-O/Alt-H/Alt-D bindings the original also has are untouched: those move the
+caret and destroy nothing.
+
 Window-wide Escape is bound to "clear to 0". Everywhere else Escape does nothing or is
 Swing's cancel-cell-edit; here the same key destroys the number being inspected with no
 feedback and no undo. A Pascal carry-over that now collides with normal Escape habits.
@@ -982,12 +1029,38 @@ feedback and no undo. A Pascal carry-over that now collides with normal Escape h
 ### 44. Settings object is mutated from the connect worker while the EDT reads and saves it
 `pdp11-ui/.../MainWindow.java:250-252`
 
+**FIXED** as suggested: the post-connect write goes through `AppContext.onUi`. What was missing
+though was anywhere that said so, so `Settings` now carries a "Who owns it" section - the event
+thread, and nothing else; it is unsynchronized, it is edited from the settings dialog and from
+every window that remembers its geometry, and `saveSettings()` hands the whole object to Gson to
+walk. One string was not worth a data race over that tree.
+`WindowsBuildTest.connectingRecordsTheProfileOnTheEventThread` connects from the menu and pumps the
+event thread to find the write, which is the marshalling itself rather than a proxy for it.
+
 The worker calls `getSettings().setLastProfileName(...)` after connect; the EDT mutates
 the same unsynchronized Settings (profiles, geometry) and Gson-serializes it in `save()`.
 A benign-looking data race today; marshal the post-connect write to the EDT.
 
 ### 45. Listener exceptions during connect can convert a successful connection into FAILED
 `pdp11-core/.../conn/ConnectionManager.java:173-180`
+
+**FIXED**, in the two parts of it that were still there.
+
+Each listener is now told inside its own `try`: one throwing is logged as the bug in that listener
+that it is, and the state still lands, and the listeners behind it in the list still hear it. Before
+this, a panel lambda that threw on CONNECTED unwound out of `setState`, out of the loop, and into
+`connect()`'s catch - which closed the connection that had just succeeded and reported FAILED.
+`ConnectionManagerTest.aListenerThatThrowsDoesNotCostTheConnection` puts a throwing listener in
+front of a recording one and then examines a word through the connection that was supposedly lost.
+
+The `Error` leak is closed by moving the cleanup out of the two catches into a `finally` guarded by
+a `published` flag: every way out of the attempt that did not end with the fields holding this
+attempt's plumbing now closes what it built, `Error` included, and `Error` also gets the state
+reported rather than leaving the manager saying CONNECTING for ever.
+
+The third part - "`m_console`/`m_connection` are published before `init()` runs" - is
+**SUPERSEDED**: #1's rework already keeps everything an attempt builds in locals and publishes the
+fields in one guarded block after `init()` has returned.
 
 `setState` iterates listeners unguarded on the connecting worker; one RuntimeException
 from an arbitrary panel lambda propagates into `connect()`'s catch, closes the just-built
@@ -1003,6 +1076,25 @@ listener try/catch in `setState`; publish the fields only on success.
 
 ### 46. Stop event can be lost when `clearAnswers()` races the halt-then-prompt decode pair
 `pdp11-core/.../console/OdtConsole.java:370-375`, `SimhConsole.java:466-482`, `Pdp1144Console.java:268-275`
+
+**FIXED**, though not by locking - locking cannot fix it. The halt and the prompt arrive in
+*separate* reads, so taking the decode lock in `clearAnswers()` closes only the window inside one
+decode pass and leaves the one between two passes, which is the window that matters.
+
+What was wrong is where the pairing was kept. All three decoders remembered "a halt was reported"
+by looking back in `AnswerCollector` - the last phrase, or two back on the 11/44, whose stop report
+is also an examine answer - and that list is not theirs: the command thread empties it immediately
+before every command it sends. The decoder now keeps the halt itself, in
+`AbstractConsole.m_haltAwaitingPrompt`, set when a `Halt` is published and taken by whichever prompt
+decodes next. It is reader-thread state under the decode lock, and nothing on the command thread can
+reach it; only `resetScanner()` - a real resync, which throws the whole conversation away - drops
+one unreported. The 11/44's "look two back, because the examine came in between" special case goes
+away with it.
+
+`clearAnswers()` takes the decode lock anyway, for the smaller property that a decode pass is now
+either entirely before it or entirely after it.
+`SimhDecoderTest.aCommandBetweenTheHaltAndItsPromptDoesNotSwallowTheStop` steps into the millisecond
+on purpose - halt, `clearAnswers()`, prompt - and fails when the old lookup is put back.
 
 All three decoders detect a stop by finding the preceding `Halt` from the prompt;
 `clearAnswers()` synchronizes only on the collector, not `m_decodeLock`, so it can run
@@ -1030,6 +1122,21 @@ byte directly to the transport and letting the queued `haltCpu` do the bookkeepi
 ### 49. TOCTOU on the live console across the EDT→command-thread boundary
 `pdp11-ui/.../simh/SimhConsolePanel.java:216-228`, `mmu/MmuPanel.java:296-310`
 
+**FIXED** as suggested, in both: the job re-resolves from the console it is handed rather than
+trusting what the event thread saw a moment earlier.
+
+`SimhConsolePanel.send` asks whether the console it was given is a SimH one and says so in the
+transcript if it is not, instead of casting it and reaching the user as a `ClassCastException`
+inside a failure dialog. `MmuPanel.refresh` takes `console.getMmu()` on the command thread; the
+event-thread check stays, but only as "is there anything to read", because the register group it
+used to capture could by then have been evicted from the groups with the connection it belonged to
+- the answers went nowhere and the window showed a map of a machine that had gone.
+
+Both job bodies are package-visible methods now, which is what makes them testable at all: the race
+window itself cannot be hit on purpose, but handing the job the wrong kind of console is exactly
+what the race does. `SimhConsolePanelTest.aCommandArrivingAtSomethingThatIsNotSimhIsNotSent` throws
+the reported `ClassCastException` when the cast is put back.
+
 `SimhConsolePanel.submit` checks `simh() != null` on the EDT but the job casts
 `((SimhConsole) console)` on the command thread — a reconnect to a non-SimH machine in
 between yields a ClassCastException surfaced as a confusing failure dialog. MmuPanel's
@@ -1040,6 +1147,14 @@ the job.
 
 ### 50. Bitfields examine/deposit jobs read `m_cell` at execution time, not capture time
 `pdp11-ui/.../bits/BitfieldsPanel.java:445-476`
+
+**FIXED** as suggested: both jobs capture the cell before queueing and are handed it as an
+argument, so the answer lands in the cell that was asked about even when the window has been
+re-pointed meanwhile - by a click in a register window, or by the selection bus - and a deposit
+marks the cell it actually wrote. `BitfieldsPanelTest.anExamineAnswersIntoTheCellItWasQueuedForAndNotTheCurrentOne`
+points the panel at a second cell at a *different* address before the job runs, so what lands where
+is a fact about the job rather than about propagation, and it fails when the body writes through
+`m_cell` again.
 
 The queued job captures the local `addr` but writes results through the `m_cell` field; if
 the user re-points the panel between queueing and execution, the old address's value is
@@ -1057,6 +1172,12 @@ subscribe under one lock — its javadoc names the gap); UiLogger should do the 
 ### 52. `FakePdp11.m_runMode` is written without the fake's monitor
 `pdp11-core/.../fake/FakePdp11.java:96,172-174`; `conn/ConnectionManager.java:295-301`
 
+**FIXED**: `volatile`, which is the second of the two suggestions and the right one here. The field
+is one boolean with no invariant tying it to anything else in the fake, so what it needs is the
+visibility edge, not mutual exclusion - and taking the fake's monitor to write it would mean the
+execution window's job blocking behind a keystroke handler for the sake of a flag. No test: a
+missing happens-before edge is not something a test can be made to observe on demand.
+
 `setSimulatedRunMode` writes the plain boolean from an arbitrary thread while keystroke
 handlers read it under the fake's monitor — no happens-before edge, so the fake may
 lawfully keep seeing the old RUN/HALT switch position. Make it synchronized (the class
@@ -1071,6 +1192,18 @@ default; move the sleep outside the lock if the feature is ever used interactive
 
 ### 54. Command-timeout setter is honoured by only half of each exchange
 `pdp11-core/.../console/AbstractConsole.java` (`setCommandTimeoutMillis`) vs hard-coded `CMD_TIMEOUT_MS` at `SimhConsole.java:767`, `OdtConsole.java:470,503`, `Pdp1144Console.java:392,588`
+
+**FIXED** as suggested: every wait asks `getCommandTimeoutMillis()`, and each console's
+`CMD_TIMEOUT_MS` is now only the default it hands to `setCommandTimeoutMillis` in its constructor.
+Seven waits across the three consoles were naming the constant.
+
+`OdtConsoleTest.everyWaitInAnExchangeHonoursTheTimeoutSetting` drives an examine against a transport
+that answers nothing, with the timeout set to a quarter of the default: the two waits an examine
+makes then come to half the default, and to more than the whole of it if either still names the
+constant - 1253 ms against a 1000 ms bar when the old line is put back. It is measured this way
+because it cannot be checked structurally: `CMD_TIMEOUT_MS` is a compile-time constant, so javac
+inlines it and ArchUnit sees no field access at all. (Tried, and it passed against a deliberate
+violation, which is worse than no test.)
 
 `checkPromptAfter` and SimhConsole's `sendCommand`/`command()` use the getter; the
 examine/deposit/step waits in all three consoles hard-code the static constant. Changing
@@ -1188,6 +1321,29 @@ referenced from `CHANGES.md` and from the commits.
 ### 64. Two connect attempts walk and mutate the one `MemoryCellGroups` at the same time — intermittent `ConcurrentModificationException` out of `connect()`
 `pdp11-core/.../conn/ConnectionManager.java:288,359-365,640`; `pdp11-core/.../mmu/Pdp11Mmu.java:147`;
 `pdp11-core/.../fake/FakePdp11.java:296-305`
+
+**FIXED** by settling the ownership question rather than by patching the trace, which is what the
+finding asks for. `MemoryCellGroups` now has one monitor - `lock()` - guarding the group list, the
+address index and every group's cell list, index and range; `getGroups()`, `getCells()` and
+`cellsAt()` hand out immutable copies instead of views over the live `ArrayList`s; `syncMemoryCells`
+decides who is affected under the lock and notifies listeners after releasing it, with the
+propagation-depth counter moved to a `ThreadLocal` now that two threads can legitimately propagate
+at once; and a `MemoryCell`'s own fields are `volatile`, which is the visibility half without a lock
+per word of a bulk examine. The rule is written down in PLAN.md §1 ("Who owns the memory cells") and
+in CLAUDE.md, because the old contract *was* documented - `getCells()`' javadoc told every caller to
+copy the list first, which the panels did and the fakes and the connect path did not. A rule kept by
+whoever remembers it is not a rule.
+
+`MemoryCellGroupsThreadingTest` reproduces the reported trace's shape - one thread adding, filling
+and removing a group the way building and abandoning a console does, one thread walking the groups
+the way `resetIoPageValidMap` does - and fails with the reported `ConcurrentModificationException`
+within a few dozen iterations when the views are put back. `ShiftRangeTest`'s
+`iteratingTheLiveViewWhileTheRangeMovesIsWhyJobsCopyItFirst` asserted the *old* contract and now
+asserts the new one under a name that says so.
+
+Note on the flakiness this entry reports: re-measured on 2026-08-23 before the fix, the named test
+passed 15 runs out of 15 and two full `verify` runs were green, so the window had closed again on
+this machine. The race was still there to read; it is the reading that this fixes.
 
 Fixing #1 serialised the *publication* of a connection, deliberately not the blocking part of an
 attempt — which is the whole point of that fix, since a disconnect must not wait on an attempt

@@ -4,14 +4,17 @@ import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.util.ProgressMonitor;
 
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.Dialog;
 import java.awt.Window;
+import java.awt.event.KeyEvent;
 
 /**
  * The dialog a long console operation puts up, and the way it gets cancelled.
@@ -158,11 +161,16 @@ public final class ProgressDialog implements ProgressMonitor {
 		m_bar.setStringPainted(true);
 		content.add(m_bar, "growx, w 320!, wrap");
 		JButton cancel = new JButton("Cancel");
-		cancel.addActionListener(e -> {
+		Runnable stop = () -> {
 			m_cancelled = true;
 			cancel.setEnabled(false);
 			m_label.setText("Stopping ...");
-		});
+		};
+		cancel.addActionListener(e -> stop.run());
+		//-- Escape is Cancel, which is what Escape means in a dialog with a Cancel in it. This is
+		//-- the only interruption offered while a long console operation runs (FABLE-ISSUES #41).
+		content.registerKeyboardAction(e -> stop.run(),
+			KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 		content.add(cancel, "align right");
 
 		//-- Modal: while a console operation is in flight the only useful thing to do is wait

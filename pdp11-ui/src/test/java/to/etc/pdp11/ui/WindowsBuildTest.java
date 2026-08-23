@@ -13,12 +13,18 @@ import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.microcode.MicrocodeWindow;
 import to.etc.pdp11.ui.mmu.MmuWindow;
 import to.etc.pdp11.ui.numbers.NumberConverterWindow;
+import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.simh.SimhConsoleWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowType;
 
+import javax.swing.JDialog;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
+import java.awt.event.KeyEvent;
+import java.awt.event.WindowEvent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +84,119 @@ class WindowsBuildTest {
 			assertEquals(3, w.getJMenuBar().getMenuCount(), "File, Windows, Help");
 			assertFalse(w.isVisible(), "built, not shown");
 		} finally {
+			onEdt(() -> {
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * The Settings dialog behaves like a dialog: Enter connects, Escape closes, and the
+	 * title-bar X does what Close does.
+	 *
+	 * <p>FABLE-ISSUES #41: it had no default button and no Escape binding, and its X was wired
+	 * to {@code DISPOSE_ON_CLOSE} while Close called {@code saveSettings()} - so which of two
+	 * gestures that both mean "I am done here" the user chose silently decided whether their
+	 * saved profiles reached disk.</p>
+	 */
+	@Test
+	void theSettingsDialogHasADefaultButtonAnEscapeAndOneWayOut(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		SettingsDialog dialog = onEdt(() -> SettingsDialog.create(null, ctx, profile -> {
+		}));
+		try {
+			assertEquals("Connect", onEdt(() -> dialog.getRootPane().getDefaultButton().getText()),
+				"Enter connects");
+			assertNotNull(onEdt(() -> dialog.getRootPane().getActionForKeyStroke(
+				KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0))), "Escape does something");
+			assertEquals(JDialog.DO_NOTHING_ON_CLOSE, onEdt(dialog::getDefaultCloseOperation),
+				"the X is handled rather than taken literally");
+
+			//-- And handled the way Close is: the settings are written before it goes.
+			onEdt(() -> {
+				dialog.dispatchEvent(new WindowEvent(dialog, WindowEvent.WINDOW_CLOSING));
+				return null;
+			});
+			assertFalse(onEdt(dialog::isVisible), "it closed");
+			assertTrue(Files.exists(dir.resolve("settings.json")), "and saved on the way out");
+		} finally {
+			onEdt(() -> {
+				dialog.dispose();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * Connecting records which profile it was, on the event thread that owns the settings.
+	 *
+	 * <p>FABLE-ISSUES #44: the connect worker wrote {@code setLastProfileName} into the shared
+	 * {@link to.etc.pdp11.ui.settings.Settings} directly, while the EDT could be editing profiles
+	 * or handing the same object to Gson in {@code saveSettings()}. What is asserted here is the
+	 * marshalling: pumping the event thread is what makes the write appear.</p>
+	 */
+	@Test
+	void connectingRecordsTheProfileOnTheEventThread(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			onEdt(() -> {
+				w.getConnectToSimulatedMenu().getItem(0).doClick();
+				return null;
+			});
+			long deadline = System.currentTimeMillis() + 20_000;
+			while(ctx.getConnectionManager().getState() != ConnectionManager.State.CONNECTED) {
+				if(System.currentTimeMillis() > deadline)
+					throw new AssertionError("the connect never finished");
+				Thread.sleep(5);
+			}
+			//-- Everything the worker had to say reaches the settings by way of the event thread.
+			onEdt(() -> null);
+			onEdt(() -> null);
+			assertFalse(ctx.getSettings().getLastProfileName() == null
+				|| ctx.getSettings().getLastProfileName().isEmpty(), "the profile was recorded");
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * Disconnect is on offer when there is a connection, and not otherwise.
+	 *
+	 * <p>FABLE-ISSUES #42: it was enabled at all times, so choosing it with nothing connected
+	 * started a worker, tore down nothing, and printed "[disconnected]" in the terminal - the
+	 * application answering a question about a machine it does not have. Connect is the other
+	 * way round and stays on: connecting while connected is how the user moves to another
+	 * machine.</p>
+	 */
+	@Test
+	void disconnectIsOfferedOnlyWhenThereIsSomethingToDisconnect(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			assertFalse(onEdt(() -> w.getDisconnectItem().isEnabled()), "nothing is connected yet");
+			assertTrue(onEdt(() -> w.getConnectItem().isEnabled()), "and connecting is the thing to do");
+
+			ctx.getConnectionManager().connect(
+				to.etc.pdp11.core.conn.ConnectionProfile.simulated(
+					to.etc.pdp11.core.conn.ConsoleProtocol.ODT_18));
+			onEdt(() -> null);                              // let the state change reach the window
+			assertTrue(onEdt(() -> w.getDisconnectItem().isEnabled()), "there is a machine to let go of");
+			assertTrue(onEdt(() -> w.getConnectItem().isEnabled()), "and connecting again is a reconnect");
+
+			ctx.getConnectionManager().disconnect();
+			onEdt(() -> null);
+			assertFalse(onEdt(() -> w.getDisconnectItem().isEnabled()), "and not once it is gone");
+		} finally {
+			ctx.getConnectionManager().close();
 			onEdt(() -> {
 				w.dispose();
 				return null;

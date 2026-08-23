@@ -149,6 +149,39 @@ class ConnectionManagerTest {
 		}
 	}
 
+	/**
+	 * A listener that throws is a bug in that listener, and nothing more than that.
+	 *
+	 * <p>FABLE-ISSUES #45: the notification loop ran unguarded on the connecting worker inside
+	 * {@code connect()}'s own try, so one panel lambda throwing on CONNECTED propagated into the
+	 * catch that abandons a failed attempt - the connection was closed, the state was reported
+	 * FAILED, and every listener after the offender in the list heard neither state. The
+	 * connection had in fact succeeded.</p>
+	 */
+	@Test
+	void aListenerThatThrowsDoesNotCostTheConnection() throws Exception {
+		try(ConnectionManager m = manager()) {
+			List<ConnectionManager.State> after = new ArrayList<>();
+			m.addListener((mgr, state) -> {
+				throw new IllegalStateException("a bug in some window");
+			});
+			m.addListener((mgr, state) -> after.add(state));
+
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+
+			assertEquals(ConnectionManager.State.CONNECTED, m.getState(), "it connected, so it is connected");
+			assertNotNull(m.getConsole());
+			assertNotNull(m.getConnection());
+			assertEquals(List.of(ConnectionManager.State.CONNECTING, ConnectionManager.State.CONNECTED), after,
+				"the listener behind the throwing one is told both states");
+
+			//-- And the connection is not just reported live, it is live.
+			CellValue word = m.getConnection().call(() -> m.getConsole().examine(
+				Address.of(m.getConsole().physicalAddressType(), 01000)));
+			assertTrue(word.isKnown(), "the machine answered");
+		}
+	}
+
 	@Test
 	void aProfileThatCannotWorkIsRefusedBeforeAnythingIsOpened() throws Exception {
 		try(ConnectionManager m = manager()) {

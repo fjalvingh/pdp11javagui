@@ -366,8 +366,8 @@ public final class SimhConsole extends AbstractConsole {
 	 * console commands, and it can only do that once SimH is listening again.</p>
 	 */
 	private AnswerPhrase decodePrompt(String curline) {
-		AnswerPhrase previous = getAnswers().getLast();
-		if(previous instanceof AnswerPhrase.Halt halt) {
+		AnswerPhrase.Halt halt = takeHaltAwaitingPrompt();
+		if(halt != null) {
 			signalExecutionStop(halt.haltAddr());
 		} else {
 			clearExecutionStop();
@@ -772,7 +772,7 @@ public final class SimhConsole extends AbstractConsole {
 		int echo = sendCommand("E " + operand);
 		//-- The reply is "<addr>: <val>" followed by the prompt.
 		AnswerPhrase.ExamineResult r = getAnswers().waitFor(AnswerPhrase.ExamineResult.class,
-			echo + 1, CMD_TIMEOUT_MS);
+			echo + 1, getCommandTimeoutMillis());
 		CellValue result;
 		if(r == null) {
 			result = CellValue.UNKNOWN;                     // no answer, or an error
@@ -995,7 +995,7 @@ public final class SimhConsole extends AbstractConsole {
 	@Override
 	public void singleStep() throws ConsoleException {
 		int echo = sendCommand("STEP 1");
-		AnswerPhrase.Halt halt = getAnswers().waitFor(AnswerPhrase.Halt.class, echo + 1, CMD_TIMEOUT_MS);
+		AnswerPhrase.Halt halt = getAnswers().waitFor(AnswerPhrase.Halt.class, echo + 1, getCommandTimeoutMillis());
 		if(halt == null)
 			throw new ConsoleException("Single step failed, no answer");
 		checkPromptAfter(echo + 1, "Single Step failed, no prompt");

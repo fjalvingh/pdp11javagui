@@ -4,6 +4,7 @@ import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.TextChannel;
 import to.etc.pdp11.core.console.Console;
+import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.SimhConsole;
 import to.etc.pdp11.core.console.TerminalProfile;
 import to.etc.pdp11.ui.AppContext;
@@ -214,13 +215,29 @@ public final class SimhConsolePanel extends JPanel {
 		m_command.setText("");
 		remember(cmd);
 		m_transcript.append("> " + cmd + "\n", TerminalStyle.USER);
-		m_context.onConsole("SimH command \"" + cmd + "\"", console -> {
-			SimhConsole.CommandResult r = ((SimhConsole) console).command(cmd);
-			if(!r.prompted()) {
-				AppContext.onUi(() -> note("[no sim> prompt within the command timeout - "
-					+ "the simulation is probably running; Halt (^E) stops it]"));
-			}
-		});
+		m_context.onConsole("SimH command \"" + cmd + "\"", console -> send(console, cmd));
+	}
+
+	/**
+	 * Send one command, on the command thread, to whichever console the job was handed.
+	 *
+	 * <p>Package-visible so a test can hand it a console that is not SimH's, which is the thing
+	 * this guards against: {@link #submit} asks {@link #simh()} on the event thread and the job
+	 * runs later, on another thread, against the console that was live when it was queued. A
+	 * reconnect to an 11/44 in between used to arrive as {@code ClassCastException} inside a
+	 * failure dialog, which says nothing about what happened (FABLE-ISSUES #49). The console the
+	 * job is given is the only one it may talk to, so it is the one that is asked.</p>
+	 */
+	void send(Console console, String cmd) throws ConsoleException {
+		if(!(console instanceof SimhConsole simh)) {
+			AppContext.onUi(() -> note("[this is not a SimH connection any more; the command was not sent]"));
+			return;
+		}
+		SimhConsole.CommandResult r = simh.command(cmd);
+		if(!r.prompted()) {
+			AppContext.onUi(() -> note("[no sim> prompt within the command timeout - "
+				+ "the simulation is probably running; Halt (^E) stops it]"));
+		}
 	}
 
 	/**

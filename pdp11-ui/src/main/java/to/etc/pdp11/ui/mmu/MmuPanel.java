@@ -318,11 +318,18 @@ public final class MmuPanel extends JPanel {
 	 * the MMU's <b>own</b> register group never reaches the MMU's own listener.</p>
 	 */
 	private void refresh() {
-		Pdp11Mmu mmu = mmu();
-		if(mmu == null)
+		if(mmu() == null)
 			return;
 		ProgressDialog progress = new ProgressDialog(owner());
 		m_context.onConsole("Reading the MMU registers", console -> {
+			//-- The MMU of the console this job was handed, asked for on the command thread. The
+			//-- check above is on the event thread and only says there is something to read; a
+			//-- reconnect between the two used to leave this examining the *old* connection's
+			//-- register group - evicted from the groups, so the answers went nowhere and the
+			//-- window quietly showed a map of a machine that had gone (FABLE-ISSUES #49).
+			Pdp11Mmu mmu = console.getMmu();
+			if(mmu == null)
+				return;
 			console.examine(mmu.getRegisterGroup(), false, progress);
 			mmu.evalAll();
 			AppContext.onUi(() -> {

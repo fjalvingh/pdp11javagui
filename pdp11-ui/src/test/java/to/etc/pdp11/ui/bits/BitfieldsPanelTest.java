@@ -115,6 +115,47 @@ class BitfieldsPanelTest {
 		return mc;
 	}
 
+	/**
+	 * An examine writes its answer into the cell it was queued for, not into whatever the window
+	 * is showing when it comes back.
+	 *
+	 * <p>FABLE-ISSUES #50: the job captured the address and then wrote the result through the
+	 * {@code m_cell} field. Re-pointing the window - a click in a register window, the selection
+	 * bus - between pressing Examine and the machine answering put one address's value into
+	 * another address's cell. Every other panel captures the cell object; this one now does too,
+	 * which is what handing the job a cell asserts.</p>
+	 */
+	@Test
+	void anExamineAnswersIntoTheCellItWasQueuedForAndNotTheCurrentOne(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		definePsw(ctx);
+		BitfieldsPanel panel = Edt.call(() -> new BitfieldsPanel(ctx));
+		MemoryCell queuedFor = pswCell(ctx, 0);
+		//-- A different address, so that what lands where is a fact about the job and not about
+		//-- propagation between two cells at the same word.
+		MemoryCell nowShowing = ctx.getMemoryCellGroups()
+			.addGroup(MemoryAddressType.PHYSICAL16, "switches").add(0177570);
+		Edt.run(() -> panel.showCell(queuedFor));
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			//-- The window moved on while the job was in flight.
+			Edt.run(() -> panel.showCell(nowShowing));
+
+			ctx.getConnectionManager().getConnection().run(() -> {
+				try {
+					panel.examineInto(ctx.getConnectionManager().getConsole(), queuedFor);
+				} catch(Exception x) {
+					throw new IllegalStateException(x);
+				}
+			});
+
+			assertTrue(queuedFor.getPdpValue().isKnown(), "the answer landed in the cell asked about");
+			assertFalse(nowShowing.getPdpValue().isKnown(), "and not in the one now on screen");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void itShowsOneRowPerNamedBitfieldWithTheValueSplitOut(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);

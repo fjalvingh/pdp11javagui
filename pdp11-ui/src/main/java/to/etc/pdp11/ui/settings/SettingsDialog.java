@@ -5,10 +5,15 @@ import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.ui.AppContext;
 
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JPanel;
+import javax.swing.KeyStroke;
 import java.awt.Dialog;
 import java.awt.Window;
+import java.awt.event.KeyEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.util.function.Consumer;
 
 /**
@@ -54,15 +59,34 @@ public final class SettingsDialog extends JDialog {
 			dispose();
 			onConnect.accept(profile);
 		});
-		close.addActionListener(e -> {
-			context.saveSettings();
-			setVisible(false);
-			dispose();
-		});
+		close.addActionListener(e -> closeAndSave(context));
 		m_connect.setEnabled(m_panel.getProfile().isValid());
-		setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+
+		//-- The three things a dialog is expected to do, none of which this one did
+		//-- (FABLE-ISSUES #41).
+		//-- Enter connects, when there is something to connect with.
+		getRootPane().setDefaultButton(m_connect);
+		//-- Escape closes, like every other modal dialog in every other application.
+		getRootPane().registerKeyboardAction(e -> closeAndSave(context),
+			KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
+		//-- And the title-bar X does what the Close button does. It used to dispose straight out,
+		//-- skipping the save that Close does - so which of two gestures that mean "I am done
+		//-- here" the user chose silently decided whether their saved profiles reached disk.
+		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing(WindowEvent e) {
+				closeAndSave(context);
+			}
+		});
 		pack();
 		setLocationRelativeTo(owner);
+	}
+
+	private void closeAndSave(AppContext context) {
+		context.saveSettings();
+		setVisible(false);
+		dispose();
 	}
 
 	public ConnectionSettingsPanel getPanel() {
@@ -71,6 +95,17 @@ public final class SettingsDialog extends JDialog {
 
 	/** Put it up. Returns when the user has closed it; {@code onConnect} runs first if they connected. */
 	public static void open(Window owner, AppContext context, Consumer<ConnectionProfile> onConnect) {
-		new SettingsDialog(owner, context, onConnect).setVisible(true);
+		create(owner, context, onConnect).setVisible(true);
+	}
+
+	/**
+	 * Build it without showing it, so a test can ask what the keyboard does with it.
+	 *
+	 * <p>Everything worth asserting here is decided in the constructor - the default button, the
+	 * Escape binding, what the title-bar X is wired to - and showing a modal dialog in a test
+	 * means never getting to the assertion.</p>
+	 */
+	public static SettingsDialog create(Window owner, AppContext context, Consumer<ConnectionProfile> onConnect) {
+		return new SettingsDialog(owner, context, onConnect);
 	}
 }

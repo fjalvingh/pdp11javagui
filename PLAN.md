@@ -198,6 +198,31 @@ Notes on the signature changes:
   and let the UI decide what to ask. `EAbort`-style silent unwinding becomes
   `OperationCancelledException`.
 
+### Who owns the memory cells
+
+The three threads above meet in one place that is not a queue: the single
+`MemoryCellGroups`. Every window adds a group on the EDT when it opens and removes it when it
+closes, the command thread writes values into cells and propagates them during a bulk examine,
+and every connect worker adds a group (building a console builds an MMU) and removes it again
+when its attempt is overtaken. Nothing coordinated that, and it was found three times over —
+FABLE-ISSUES #16, #30 and #64, the last of them as an intermittent
+`ConcurrentModificationException` out of `connect()`.
+
+The rule, implemented in `MemoryCellGroups` and `MemoryCellGroup`:
+
+1. **One monitor.** `MemoryCellGroups.lock()` guards the group list, the address index, and
+   every group's cell list, index and range. It is the innermost lock in the application:
+   nothing that could block on anything else is called while holding it.
+2. **Copies cross the boundary, never views.** `getGroups()`, `getCells()` and `cellsAt()`
+   answer with an immutable copy, so a caller walks what it was given, on any thread, for as
+   long as it likes. That buys safety, not relevance: `holdsExactly` is still how a job asks
+   whether the group it read is the group it is about to write back into.
+3. **Listeners are told outside the monitor.** `syncMemoryCells` decides who is affected under
+   the lock and notifies after releasing it; a listener is arbitrary window code.
+4. **A `MemoryCell`'s own fields are `volatile`, not lock-guarded.** They are single references
+   written by the command thread and read by the EDT one word at a time; a lock per word of a
+   bulk examine would buy an exclusion nobody needs.
+
 ### Preserving execution-stop ordering
 
 `MonitorTimerCallback` (`ConsoleGenericU.pas:521-525`) deliberately fires `OnExecutionStop`

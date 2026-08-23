@@ -29,25 +29,32 @@ public final class MemoryCell {
 	 * target machine changes. The {@link Address} itself stays immutable - what moves is which
 	 * address this cell points at, and the group's index is rebuilt to match.
 	 */
-	private Address m_addr;
+	private volatile Address m_addr;
 
-	/** What the machine last reported. Only this value propagates between groups. */
-	private CellValue m_pdpValue = CellValue.UNKNOWN;
+	/**
+	 * What the machine last reported. Only this value propagates between groups.
+	 *
+	 * <p>Volatile, like every other field here: the command thread writes a word and the event
+	 * thread paints it, and without this there is no edge saying the painter must see it. Not
+	 * lock-guarded - see "Who owns this, and on which thread" in {@link MemoryCellGroups} for
+	 * why a cell's own fields sit outside that monitor.</p>
+	 */
+	private volatile CellValue m_pdpValue = CellValue.UNKNOWN;
 
 	/**
 	 * What the user typed. Never propagates: another window's refresh must not overwrite an
 	 * edit that has not been deposited yet.
 	 */
-	private CellValue m_editValue = CellValue.UNKNOWN;
+	private volatile CellValue m_editValue = CellValue.UNKNOWN;
 
 	/** The register's name, when this address is a known one. Empty otherwise. */
-	private String m_name = "";
+	private volatile String m_name = "";
 
 	/** Description, shown as a tooltip. */
-	private String m_info = "";
+	private volatile String m_info = "";
 
 	/** Line in the MACRO-11 listing this came from, or -1. First line is 0. */
-	private int m_listingLineNr = -1;
+	private volatile int m_listingLineNr = -1;
 
 	MemoryCell(MemoryCellGroup group, Address addr) {
 		m_group = group;

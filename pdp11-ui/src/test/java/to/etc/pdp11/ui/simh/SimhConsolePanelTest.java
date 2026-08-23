@@ -5,6 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.console.Console;
+import to.etc.pdp11.core.console.Pdp1144Console;
+import to.etc.pdp11.core.console.Pdp1144Firmware;
+import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -139,6 +144,35 @@ class SimhConsolePanelTest {
 			assertTrue(text.contains("> show cpu"), "the mark: " + text);
 			assertEquals(List.of("show cpu"), Edt.call(panel::getHistory));
 			assertEquals("", Edt.call(() -> panel.getCommandField().getText()), "and the field is cleared");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * A command that arrives at a console which is no longer SimH's says so and stops.
+	 *
+	 * <p>FABLE-ISSUES #49: {@code submit()} asks whether the live console is a SimH one on the
+	 * event thread, and the job it queues runs later on the command thread against the console
+	 * that was live when it was queued. A reconnect to an 11/44 in between reached the user as a
+	 * {@code ClassCastException} in a failure dialog. The job is handed a console and that is the
+	 * one it asks - which is what this hands it a different kind of.</p>
+	 */
+	@Test
+	void aCommandArrivingAtSomethingThatIsNotSimhIsNotSent(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.SIMH);
+		try {
+			SimhConsolePanel panel = Edt.call(() -> new SimhConsolePanel(ctx));
+			Edt.run(panel::attach);
+
+			//-- The console of an 11/44, built the way ConnectionManager builds one. Nothing is
+			//-- connected to it: the guard has to answer before anything is asked of it.
+			Console notSimh = new Pdp1144Console(new MemoryCellGroups(), Pdp1144Firmware.CLASSIC, Logger.NULL);
+			panel.send(notSimh, "show cpu");
+
+			Edt.run(() -> {
+			});                                             // let the note reach the transcript
+			assertTrue(transcript(panel).contains("not a SimH connection any more"), transcript(panel));
 		} finally {
 			ctx.getConnectionManager().close();
 		}

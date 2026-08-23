@@ -7,6 +7,7 @@ import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.UiRenderer;
 
 import javax.swing.JTextField;
+import javax.swing.JComponent;
 import javax.swing.KeyStroke;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
@@ -14,6 +15,7 @@ import java.awt.event.KeyEvent;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -195,11 +197,25 @@ class NumberConverterPanelTest {
 	// Keys
 	// ---------------------------------------------------------------------------------------
 
+	/**
+	 * Escape leaves the number alone; the button clears it.
+	 *
+	 * <p>FABLE-ISSUES #43: the original's Escape-to-clear ({@code :268}) was ported with the rest
+	 * of its keys. Escape is the key people press to mean "never mind", and here it destroyed the
+	 * number being inspected - silently, with nothing to undo it. Nowhere else in this
+	 * application does Escape change anything.</p>
+	 */
 	@Test
-	void escapeClearsEverything() {
+	void escapeDoesNotDestroyTheNumberAndClearIsAButton() {
 		NumberConverterPanel panel = panel();
 		setText(panel, Base.OCTAL, "12345");
-		press(panel, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0));
+
+		assertNull(Edt.call(() -> panel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+			.get(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0))), "Escape is bound to nothing at all");
+		assertEquals("12345", text(panel, Base.OCTAL), "so the number is still there");
+		assertEquals(012345, Edt.call(panel::getValue), "and so is the value");
+
+		Edt.run(() -> panel.getClearButton().doClick());
 		assertEquals("0", text(panel, Base.OCTAL));
 		assertEquals("0", text(panel, Base.DECIMAL));
 		assertEquals("0", text(panel, Base.HEX));

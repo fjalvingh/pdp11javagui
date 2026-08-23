@@ -246,16 +246,14 @@ public final class Pdp1144Console extends AbstractConsole {
 	/**
 	 * A prompt, and with it the stop event for a halt reported just before it.
 	 *
-	 * <p>Note it looks <b>two</b> phrases back, not one ({@code :275-277}). The line that reported
-	 * the halt also produced an examine answer, which was published after it, so one back is the
-	 * examine and two back is the halt.</p>
+	 * <p>It used to have to look <b>two</b> phrases back rather than one ({@code :275-277}),
+	 * because this console's stop report is also an examine answer and the examine was published
+	 * after the halt. The decoder keeps the halt itself now, so how many phrases separate the two
+	 * no longer comes into it - see {@code AbstractConsole.takeHaltAwaitingPrompt}.</p>
 	 */
 	private AnswerPhrase makePrompt(String curline) {
-		//-- One locked look back, not size() then get(): a command thread clearing the list in
-		//-- the gap between the two used to throw IndexOutOfBoundsException here, on the reader
-		//-- thread, which reads any throwable as the transport dying.
-		AnswerPhrase beforeLast = getAnswers().getFromEnd(1);
-		if(beforeLast instanceof AnswerPhrase.Halt halt)
+		AnswerPhrase.Halt halt = takeHaltAwaitingPrompt();
+		if(halt != null)
 			signalExecutionStop(halt.haltAddr());
 		else
 			clearExecutionStop();
@@ -377,7 +375,7 @@ public final class Pdp1144Console extends AbstractConsole {
 
 		clearAnswers();
 		writeToPdp(cmd + CR);
-		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, CMD_TIMEOUT_MS);
+		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, getCommandTimeoutMillis());
 		CellValue result;
 		if(at < 0) {
 			result = CellValue.UNKNOWN;                     // no answer at all
@@ -566,7 +564,7 @@ public final class Pdp1144Console extends AbstractConsole {
 		}
 		writeToPdp("H" + CR);
 		int at = getAnswers().waitForIndex(
-			p -> p instanceof AnswerPhrase.Halt || p instanceof AnswerPhrase.Prompt, 0, CMD_TIMEOUT_MS);
+			p -> p instanceof AnswerPhrase.Halt || p instanceof AnswerPhrase.Prompt, 0, getCommandTimeoutMillis());
 		if(at < 0)
 			throw new ConsoleException("Stopping the CPU failed: no answer");
 		if(!(getAnswers().get(at) instanceof AnswerPhrase.Halt halt)) {
@@ -587,7 +585,7 @@ public final class Pdp1144Console extends AbstractConsole {
 	public void singleStep() throws ConsoleException {
 		clearAnswers();
 		writeToPdp("N 1" + CR);
-		AnswerPhrase.Halt halt = getAnswers().waitFor(AnswerPhrase.Halt.class, CMD_TIMEOUT_MS);
+		AnswerPhrase.Halt halt = getAnswers().waitFor(AnswerPhrase.Halt.class, getCommandTimeoutMillis());
 		if(halt == null)
 			throw new ConsoleException("Single step failed: no answer");
 		checkPrompt("Single Step failed, no prompt");

@@ -1,6 +1,8 @@
 package to.etc.pdp11.ui.bits;
 
 import net.miginfocom.swing.MigLayout;
+import to.etc.pdp11.core.console.Console;
+import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.bits.BitfieldDef;
@@ -490,15 +492,23 @@ public final class BitfieldsPanel extends JPanel {
 		//-- An address typed but not Entered is still what the user is pointing at.
 		if(!applyTypedAddress())
 			return;
-		Address addr = m_cell.getAddr();
-		m_context.onConsole("Examining " + addr.toOctal(), console -> {
-			CellValue v = console.examine(addr);
-			m_cell.setPdpValue(v);
-			m_cell.setEditValue(v);
-			if(m_group.getOwner() != null)
-				m_group.getOwner().syncMemoryCells(m_cell);
-			AppContext.onUi(this::refreshValue);
-		});
+		//-- The cell as it is now, not as the field will be when the answer comes back. Every
+		//-- other panel captures the cell; this one used to capture the address and then write
+		//-- the answer through m_cell, so re-pointing the window between pressing Examine and
+		//-- the machine answering put one address's value into another address's cell
+		//-- (FABLE-ISSUES #50).
+		MemoryCell cell = m_cell;
+		m_context.onConsole("Examining " + cell.getAddr().toOctal(), console -> examineInto(console, cell));
+	}
+
+	/** One examine, on the command thread, into the cell the job was queued for. */
+	void examineInto(Console console, MemoryCell cell) throws ConsoleException {
+		CellValue v = console.examine(cell.getAddr());
+		cell.setPdpValue(v);
+		cell.setEditValue(v);
+		if(m_group.getOwner() != null)
+			m_group.getOwner().syncMemoryCells(cell);
+		AppContext.onUi(this::refreshValue);
 	}
 
 	private void deposit() {
@@ -508,15 +518,18 @@ public final class BitfieldsPanel extends JPanel {
 			m_status.error("There is no value to deposit");
 			return;
 		}
-		Address addr = m_cell.getAddr();
-		int value = m_cell.getEditValue().word();
-		m_context.onConsole("Depositing " + addr.toOctal(), console -> {
-			console.deposit(addr, value);
-			m_cell.setDeposited();
-			if(m_group.getOwner() != null)
-				m_group.getOwner().syncMemoryCells(m_cell);
-			AppContext.onUi(this::refreshValue);
-		});
+		MemoryCell cell = m_cell;                           // see examine(): the cell, not the field
+		int value = cell.getEditValue().word();
+		m_context.onConsole("Depositing " + cell.getAddr().toOctal(), console -> depositFrom(console, cell, value));
+	}
+
+	/** One deposit, on the command thread, of the value the job was queued with. */
+	void depositFrom(Console console, MemoryCell cell, int value) throws ConsoleException {
+		console.deposit(cell.getAddr(), value);
+		cell.setDeposited();
+		if(m_group.getOwner() != null)
+			m_group.getOwner().syncMemoryCells(cell);
+		AppContext.onUi(this::refreshValue);
 	}
 
 	/** Redraw from the cell, without disturbing what is being typed. */

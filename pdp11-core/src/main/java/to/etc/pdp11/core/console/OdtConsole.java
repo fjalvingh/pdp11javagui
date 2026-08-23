@@ -368,8 +368,8 @@ public final class OdtConsole extends AbstractConsole {
 	 * prompting again.</p>
 	 */
 	private AnswerPhrase makePrompt() {
-		AnswerPhrase previous = getAnswers().getLast();
-		if(previous instanceof AnswerPhrase.Halt halt)
+		AnswerPhrase.Halt halt = takeHaltAwaitingPrompt();
+		if(halt != null)
 			signalExecutionStop(halt.haltAddr());
 		else
 			clearExecutionStop();
@@ -453,7 +453,7 @@ public final class OdtConsole extends AbstractConsole {
 		clearAnswers();
 		writeToPdp(addressText(physical) + "/");
 
-		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, CMD_TIMEOUT_MS);
+		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, getCommandTimeoutMillis());
 		CellValue result;
 		if(at < 0) {
 			result = CellValue.UNKNOWN;                     // no answer at all
@@ -486,7 +486,7 @@ public final class OdtConsole extends AbstractConsole {
 		writeToPdp(addressText(physical) + "/");
 
 		//-- CheckAddrOpen: the location has to be open before a value means anything.
-		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, CMD_TIMEOUT_MS);
+		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, getCommandTimeoutMillis());
 		if(at < 0)
 			throw new NoConsolePromptException("DEPOSIT failed, the address did not open",
 				getUnconsumedInput(), getAnswers().snapshot());

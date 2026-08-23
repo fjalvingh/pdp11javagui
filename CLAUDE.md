@@ -65,6 +65,14 @@ silently diverging.
   accident; the job then calls the console as often as it likes and marshals anything it wants to
   show back with `AppContext.onUi`. Long operations take a `ProgressDialog`, which is the UI's
   implementation of the core's `ProgressMonitor`.
+- **The memory cells are guarded by one monitor, and hand out copies.** `MemoryCellGroups`,
+  every `MemoryCellGroup` under it and their indexes are guarded by `MemoryCellGroups.lock()` -
+  the innermost lock in the application, never held across a call that leaves those two classes.
+  `getGroups()`, `getCells()` and `cellsAt()` answer with an immutable copy, so a job may walk
+  what it was handed on any thread; `holdsExactly` is how it then asks whether that is still
+  what the group holds. A cell's own fields are `volatile` rather than lock-guarded. Do not
+  reintroduce a live view "for speed": three separate bugs came out of the old one. PLAN.md §1,
+  "Who owns the memory cells".
 - **No window tells another window anything.** Shared machine state - is it running, where is the
   PC, where does a just-loaded program start - lives on `MachineState`, and which cell the user is
   looking at lives on `CellSelection`.

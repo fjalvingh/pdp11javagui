@@ -4,7 +4,6 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,31 +26,43 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <h2>The listener list</h2>
  *
  * <p>A real list, not the Pascal's single delegate. See {@link MemoryCellListener}.</p>
+ *
+ * <h2>Threading</h2>
+ *
+ * <p>The cell list, its index and the range are guarded by the owning
+ * {@link MemoryCellGroups}' one monitor - see "Who owns this, and on which thread" there for
+ * why it is that object's and not this one's. {@link #getCells} answers with a copy.</p>
  */
 public final class MemoryCellGroup {
 	private final MemoryCellGroups m_owner;
 
-	private MemoryAddressType m_type;
+	/**
+	 * Volatile rather than lock-guarded: {@link #getType} is asked from every thread there is,
+	 * including inside {@code toString} on a group being rebuilt, and it is a single reference.
+	 * It only ever moves under the owner's monitor, in {@link #shiftRange} and
+	 * {@link #changeWidthInternal}.
+	 */
+	private volatile MemoryAddressType m_type;
 
 	/** Free-form tag naming where this group came from, so a reload can drop just those. */
-	private String m_usageTag = "";
+	private volatile String m_usageTag = "";
 
-	private String m_groupName = "";
+	private volatile String m_groupName = "";
 
-	private String m_groupInfo = "";
+	private volatile String m_groupInfo = "";
 
 	private final List<MemoryCell> m_cells = new ArrayList<>();
 
 	/** Address value to cell, so a lookup is not a scan. */
 	private final Map<Long, MemoryCell> m_byAddress = new HashMap<>();
 
-	private AddressRange m_range;
+	private volatile AddressRange m_range;
 
 	/**
 	 * Whether a value arriving from the machine may overwrite this group's cells. False for
 	 * windows the user edits in.
 	 */
-	private boolean m_pdpOverwritesEdit = true;
+	private volatile boolean m_pdpOverwritesEdit = true;
 
 	private final List<MemoryCellListener> m_listeners = new CopyOnWriteArrayList<>();
 
@@ -103,27 +114,39 @@ public final class MemoryCellGroup {
 	}
 
 	public AddressRange getRange() {
-		return m_range;
+		synchronized(m_owner.lock()) {
+			return m_range;
+		}
 	}
 
 	public int size() {
-		return m_cells.size();
+		synchronized(m_owner.lock()) {
+			return m_cells.size();
+		}
 	}
 
 	public boolean isEmpty() {
-		return m_cells.isEmpty();
+		synchronized(m_owner.lock()) {
+			return m_cells.isEmpty();
+		}
 	}
 
 	/**
 	 * The cells, in insertion order unless {@link #sort()} has been called.
 	 *
-	 * <p>An unmodifiable <b>view</b>, not a copy. Anything iterating this off the event thread -
-	 * a job on the command thread, say - takes {@code List.copyOf} of it first, because the EDT
-	 * can {@link #shiftRange} or {@link #clear} the group underneath and a view over a plain
-	 * ArrayList answers that with {@link java.util.ConcurrentModificationException}.</p>
+	 * <p>An immutable <b>copy</b>, taken under the owner's monitor, so it can be walked on any
+	 * thread for as long as the caller likes. It used to be a view over the live list with a
+	 * note telling every caller to copy it first; that note was obeyed in the panels and missed
+	 * in the fakes and in the connect path, which is FABLE-ISSUES #64. A rule kept by whoever
+	 * remembers it is not a rule.</p>
+	 *
+	 * <p>What the copy does not say is whether the group still holds these cells - see
+	 * {@link #holdsExactly}.</p>
 	 */
 	public List<MemoryCell> getCells() {
-		return Collections.unmodifiableList(m_cells);
+		synchronized(m_owner.lock()) {
+			return List.copyOf(m_cells);
+		}
 	}
 
 	/**
@@ -136,17 +159,21 @@ public final class MemoryCellGroup {
 	 * Identity, not equality: a cell is the thing the grid holds a reference to.</p>
 	 */
 	public boolean holdsExactly(List<MemoryCell> snapshot) {
-		if(m_cells.size() != snapshot.size())
-			return false;
-		for(int i = 0; i < snapshot.size(); i++) {
-			if(m_cells.get(i) != snapshot.get(i))
+		synchronized(m_owner.lock()) {
+			if(m_cells.size() != snapshot.size())
 				return false;
+			for(int i = 0; i < snapshot.size(); i++) {
+				if(m_cells.get(i) != snapshot.get(i))
+					return false;
+			}
+			return true;
 		}
-		return true;
 	}
 
 	public MemoryCell cell(int index) {
-		return m_cells.get(index);
+		synchronized(m_owner.lock()) {
+			return m_cells.get(index);
+		}
 	}
 
 	/**
@@ -168,14 +195,16 @@ public final class MemoryCellGroup {
 	}
 
 	public MemoryCell add(Address addr) {
-		if(addr.type() != m_type)
-			throw new IllegalArgumentException("Cell address " + addr + " does not match this group's " + m_type);
-		MemoryCell mc = new MemoryCell(this, addr);
-		m_cells.add(mc);
-		m_byAddress.putIfAbsent(addr.val(), mc);
-		m_range = m_range.extend(addr.val());
-		m_owner.indexAdd(mc);
-		return mc;
+		synchronized(m_owner.lock()) {
+			if(addr.type() != m_type)
+				throw new IllegalArgumentException("Cell address " + addr + " does not match this group's " + m_type);
+			MemoryCell mc = new MemoryCell(this, addr);
+			m_cells.add(mc);
+			m_byAddress.putIfAbsent(addr.val(), mc);
+			m_range = m_range.extend(addr.val());
+			m_owner.indexAdd(mc);
+			return mc;
+		}
 	}
 
 	/**
@@ -184,30 +213,38 @@ public final class MemoryCellGroup {
 	 * because PDP-11 words are two bytes apart.
 	 */
 	public void add(long startAddrValue, int wordCount) {
-		for(int i = 0; i < wordCount; i++) {
-			add(startAddrValue + 2L * i);
+		synchronized(m_owner.lock()) {
+			for(int i = 0; i < wordCount; i++) {
+				add(startAddrValue + 2L * i);
+			}
 		}
 	}
 
 	/** The cell at this address, or {@code null}. Ported from {@code CellIndexByAddr}. */
 	public MemoryCell findByAddress(Address addr) {
-		if(addr == null || addr.type() != m_type)
-			return null;
-		return m_byAddress.get(addr.val());
+		synchronized(m_owner.lock()) {
+			if(addr == null || addr.type() != m_type)
+				return null;
+			return m_byAddress.get(addr.val());
+		}
 	}
 
 	public MemoryCell findByAddress(long addrValue) {
-		return m_byAddress.get(addrValue);
+		synchronized(m_owner.lock()) {
+			return m_byAddress.get(addrValue);
+		}
 	}
 
 	public void remove(MemoryCell cell) {
-		if(!m_cells.remove(cell))
-			return;
-		m_owner.indexRemove(cell);
-		//-- Rebuild rather than remove: another cell may share this address and has to become
-		//-- the one findByAddress answers with.
-		reindex();
-		recalcRange();
+		synchronized(m_owner.lock()) {
+			if(!m_cells.remove(cell))
+				return;
+			m_owner.indexRemove(cell);
+			//-- Rebuild rather than remove: another cell may share this address and has to become
+			//-- the one findByAddress answers with.
+			reindex();
+			recalcRange();
+		}
 	}
 
 	private void reindex() {
@@ -219,12 +256,14 @@ public final class MemoryCellGroup {
 
 	/** Drop every cell. Ported from {@code Clear} ({@code :269-274}). */
 	public void clear() {
-		for(MemoryCell mc : m_cells) {
-			m_owner.indexRemove(mc);
+		synchronized(m_owner.lock()) {
+			for(MemoryCell mc : m_cells) {
+				m_owner.indexRemove(mc);
+			}
+			m_cells.clear();
+			m_byAddress.clear();
+			m_range = AddressRange.empty(m_type);
 		}
-		m_cells.clear();
-		m_byAddress.clear();
-		m_range = AddressRange.empty(m_type);
 	}
 
 	/**
@@ -233,8 +272,10 @@ public final class MemoryCellGroup {
 	 * previously read can still be trusted.
 	 */
 	public void invalidate() {
-		for(MemoryCell mc : m_cells) {
-			mc.setPdpValue(CellValue.UNKNOWN);
+		synchronized(m_owner.lock()) {
+			for(MemoryCell mc : m_cells) {
+				mc.setPdpValue(CellValue.UNKNOWN);
+			}
 		}
 	}
 
@@ -266,34 +307,36 @@ public final class MemoryCellGroup {
 	public void shiftRange(Address start, int count, boolean optimize) {
 		if(start == null)
 			throw new IllegalArgumentException("A range has to start somewhere");
-		if(count < 0)
-			count = m_cells.size();
+		synchronized(m_owner.lock()) {
+			if(count < 0)
+				count = m_cells.size();
 
-		//-- Snapshot before anything moves, keyed at the *new* width, so the lookup below is a
-		//-- comparison of locations rather than of numbers that happen to be equal.
-		Map<Long, MemoryCell> previous = new HashMap<>();
-		if(optimize) {
-			for(MemoryCell mc : m_cells) {
-				Long key = sameLocationAs(mc.getAddr(), start.type());
-				if(key != null)
-					previous.putIfAbsent(key, mc);
+			//-- Snapshot before anything moves, keyed at the *new* width, so the lookup below is a
+			//-- comparison of locations rather than of numbers that happen to be equal.
+			Map<Long, MemoryCell> previous = new HashMap<>();
+			if(optimize) {
+				for(MemoryCell mc : m_cells) {
+					Long key = sameLocationAs(mc.getAddr(), start.type());
+					if(key != null)
+						previous.putIfAbsent(key, mc);
+				}
 			}
-		}
 
-		clear();
-		m_type = start.type();
-		m_range = AddressRange.empty(m_type);
-		for(int i = 0; i < count; i++) {
-			MemoryCell mc = add(start.val() + 2L * i);
-			MemoryCell old = previous.get(mc.getAddr().val());
-			if(old == null)
-				continue;
-			//-- Everything but the address, which is the one thing that just changed.
-			mc.setPdpValue(old.getPdpValue());
-			mc.setEditValue(old.getEditValue());
-			mc.setName(old.getName());
-			mc.setInfo(old.getInfo());
-			mc.setListingLineNr(old.getListingLineNr());
+			clear();
+			m_type = start.type();
+			m_range = AddressRange.empty(m_type);
+			for(int i = 0; i < count; i++) {
+				MemoryCell mc = add(start.val() + 2L * i);
+				MemoryCell old = previous.get(mc.getAddr().val());
+				if(old == null)
+					continue;
+				//-- Everything but the address, which is the one thing that just changed.
+				mc.setPdpValue(old.getPdpValue());
+				mc.setEditValue(old.getEditValue());
+				mc.setName(old.getName());
+				mc.setInfo(old.getInfo());
+				mc.setListingLineNr(old.getListingLineNr());
+			}
 		}
 	}
 
@@ -308,7 +351,9 @@ public final class MemoryCellGroup {
 
 	/** Sort by address. Ported from {@code Sort} ({@code :520-545}). */
 	public void sort() {
-		m_cells.sort((a, b) -> Long.compareUnsigned(a.getAddr().val(), b.getAddr().val()));
+		synchronized(m_owner.lock()) {
+			m_cells.sort((a, b) -> Long.compareUnsigned(a.getAddr().val(), b.getAddr().val()));
+		}
 	}
 
 	public void addListener(MemoryCellListener listener) {
@@ -331,6 +376,7 @@ public final class MemoryCellGroup {
 	 * {@link MemoryCellGroups#changeAddressWidth}.
 	 */
 	void changeWidthInternal(MemoryAddressType newType) {
+		assert Thread.holdsLock(m_owner.lock());
 		if(newType == m_type)
 			return;
 		//-- Convert first, index after: a half-converted index would answer lookups wrongly,
@@ -363,6 +409,8 @@ public final class MemoryCellGroup {
 
 	@Override
 	public String toString() {
-		return m_groupName + " [" + m_cells.size() + " cells, " + m_range + "]";
+		synchronized(m_owner.lock()) {
+			return m_groupName + " [" + m_cells.size() + " cells, " + m_range + "]";
+		}
 	}
 }

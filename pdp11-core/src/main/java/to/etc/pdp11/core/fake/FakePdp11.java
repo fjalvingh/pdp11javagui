@@ -77,8 +77,17 @@ public abstract class FakePdp11 {
 
 	private final long m_iopageBase;
 
-	/** The pretend front-panel RUN/HALT switch. Not used by the 11/44 or SimH consoles. */
-	private boolean m_runMode;
+	/**
+	 * The pretend front-panel RUN/HALT switch. Not used by the 11/44 or SimH consoles.
+	 *
+	 * <p>Volatile rather than guarded by this class's monitor, which everything else here holds:
+	 * it is written from whatever thread the execution window's job is on and read inside the
+	 * keystroke handlers, and a plain field between two threads has no edge between the write and
+	 * the read - so the fake could lawfully go on seeing the switch where it used to be
+	 * (FABLE-ISSUES #52). One boolean, one flag, no invariant with anything else: the visibility
+	 * is all it needs.</p>
+	 */
+	private volatile boolean m_runMode;
 
 	private final Scheduler m_scheduler;
 

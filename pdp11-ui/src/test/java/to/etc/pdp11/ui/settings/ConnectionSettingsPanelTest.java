@@ -10,8 +10,11 @@ import to.etc.pdp11.core.conn.TransportKind;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.UiRenderer;
 
+import javax.swing.JButton;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -146,5 +149,74 @@ class ConnectionSettingsPanelTest {
 		Path file = UiRenderer.renderToFile(panel, 620, 300,
 			Path.of("target", "ui-render", "connection-settings.png"));
 		assertTrue(Files.size(file) > 0);
+	}
+
+	// ---------------------------------------------------------------------------------------
+	// Deleting a saved profile
+	// ---------------------------------------------------------------------------------------
+
+	private static Settings settingsWith(String... names) {
+		Settings settings = new Settings();
+		for(String name : names) {
+			settings.putProfile(new ConnectionProfile(name, ConsoleProtocol.ODT_18,
+				TransportConfig.telnet("localhost", 2323)));
+		}
+		return settings;
+	}
+
+	/** The Delete button, wherever it has been laid out. */
+	private static JButton deleteButton(java.awt.Container c) {
+		for(java.awt.Component child : c.getComponents()) {
+			if(child instanceof JButton b && "Delete".equals(b.getText()))
+				return b;
+			if(child instanceof java.awt.Container inner) {
+				JButton deeper = deleteButton(inner);
+				if(deeper != null)
+					return deeper;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Forgetting a saved connection asks first.
+	 *
+	 * <p>FABLE-ISSUES #41: Delete removed the profile on the click - a serial port, a baud rate,
+	 * a SimH configuration file, all typed by hand - with nothing asked and no way back. It is
+	 * the one destructive gesture in this panel.</p>
+	 */
+	@Test
+	void deletingASavedProfileAsksFirst() {
+		Settings settings = settingsWith("the 11/44 in the shed", "simh");
+		ConnectionSettingsPanel panel = panel(settings);
+
+		List<String> asked = new ArrayList<>();
+		Edt.run(() -> {
+			panel.setConfirmer(question -> {
+				asked.add(question);
+				return false;                               // the user says no
+			});
+			panel.getProfileList().setSelectedItem("the 11/44 in the shed");
+			deleteButton(panel).doClick();
+		});
+
+		assertEquals(1, asked.size(), "it asked");
+		assertTrue(asked.get(0).contains("the 11/44 in the shed"), asked.get(0));
+		assertEquals(2, settings.profiles().size(), "and kept it, because the answer was no");
+	}
+
+	@Test
+	void sayingYesDeletesIt() {
+		Settings settings = settingsWith("the 11/44 in the shed", "simh");
+		ConnectionSettingsPanel panel = panel(settings);
+
+		Edt.run(() -> {
+			panel.setConfirmer(question -> true);
+			panel.getProfileList().setSelectedItem("the 11/44 in the shed");
+			deleteButton(panel).doClick();
+		});
+
+		assertEquals(1, settings.profiles().size());
+		assertEquals("simh", settings.profiles().get(0).name());
 	}
 }

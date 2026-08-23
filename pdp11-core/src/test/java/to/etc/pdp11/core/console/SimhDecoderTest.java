@@ -106,6 +106,28 @@ class SimhDecoderTest {
 		assertEquals(SimhConsole.CpuState.HALTED, c.getCpuState());
 	}
 
+	/**
+	 * A command sent between the halt and its prompt does not swallow the stop event.
+	 *
+	 * <p>FABLE-ISSUES #46: the stop is deliberately fired from the prompt rather than from the
+	 * halt line, and the decoder used to find the halt by looking back in {@link AnswerCollector}
+	 * - a list the command thread empties with {@code clearAnswers()} immediately before every
+	 * command it sends. A command issued in the millisecond between the two therefore left the
+	 * prompt finding nothing, and nothing was ever told that the machine had stopped. Here that
+	 * millisecond is stepped into on purpose.</p>
+	 */
+	@Test
+	void aCommandBetweenTheHaltAndItsPromptDoesNotSwallowTheStop() {
+		SimhConsole c = console();
+		c.onSerialReceive("HALT instruction, PC: 001234 (HALT)\r\n");
+		//-- What the command thread does the moment before it sends anything.
+		c.clearAnswers();
+		c.onSerialReceive("sim> ");
+
+		assertTrue(c.isExecutionStopDetected(), "the machine stopped and the prompt said so");
+		assertEquals(01234, c.getExecutionStopPc().val());
+	}
+
 	@Test
 	void everyShapeOfStopReportIsAHalt() {
 		for(String line : List.of(

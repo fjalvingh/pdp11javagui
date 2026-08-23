@@ -4,7 +4,6 @@ import to.etc.pdp11.core.addr.Address;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +29,39 @@ import java.util.Map;
  * Pascal does, gets that wrong in both directions. Widening never overflows, so the
  * normalisation is total. Virtual addresses key separately: a virtual address is not a
  * physical one and must not sync with it.</p>
+ *
+ * <h2>Who owns this, and on which thread</h2>
+ *
+ * <p>There is one of these in the application and three kinds of thread reach it: the event
+ * thread (every window adds a group when it opens and removes it when it closes), the command
+ * thread (a bulk examine writes values in and calls {@link #syncMemoryCells}), and any connect
+ * worker (building a console builds an MMU, which adds a group; an attempt that is overtaken
+ * removes it again). Nothing coordinated them, and the groups and their cell lists are plain
+ * {@code ArrayList}s - so a walk from one thread saw another thread's {@code add} and threw
+ * {@link java.util.ConcurrentModificationException}. That was observed, intermittently, out of
+ * {@code ConnectionManager.connect} (FABLE-ISSUES #64), and the same hole is what #16 and #30
+ * were each one instance of.</p>
+ *
+ * <p>The rule, which PLAN.md §1 states and this class implements:</p>
+ * <ol>
+ *   <li><b>One monitor.</b> This object's {@link #lock()} guards the group list, the address
+ *       index, and the cell list, index and range of every {@link MemoryCellGroup} under it.
+ *       Every method here and there takes it. It is the innermost lock in the application:
+ *       nothing is called while holding it that could go and wait for something else.</li>
+ *   <li><b>Copies cross the boundary, never views.</b> {@link #getGroups}, {@link #cellsAt} and
+ *       {@link MemoryCellGroup#getCells} answer with an immutable copy, so a caller may walk
+ *       what it was given for as long as it likes on whatever thread it likes. What that does
+ *       <i>not</i> buy is relevance - a group re-ranged meanwhile is showing something else
+ *       now, which is what {@link MemoryCellGroup#holdsExactly} is for.</li>
+ *   <li><b>Listeners are told outside the monitor</b>, because a listener is arbitrary code
+ *       from a window and the one thing an innermost lock may not do is call out.</li>
+ * </ol>
+ *
+ * <p>A {@link MemoryCell}'s own fields are not covered by the monitor - they are written by the
+ * command thread and read by the event thread one word at a time, and taking a lock per word of
+ * a bulk examine would be a lock per word for a value that is a single reference. They are
+ * {@code volatile} instead, which is the visibility half without the mutual exclusion nobody
+ * needs there.</p>
  *
  * <h2>The three propagation guards</h2>
  *
@@ -60,37 +92,65 @@ public final class MemoryCellGroups {
 	private record CellKey(MemoryAddressType space, long value) {
 	}
 
+	/**
+	 * The one monitor of the rule above. Held by everything in this class and in
+	 * {@link MemoryCellGroup}; taken by nothing else, and never held across a call that leaves
+	 * these two classes.
+	 */
+	private final Object m_lock = new Object();
+
 	private final List<MemoryCellGroup> m_groups = new ArrayList<>();
 
 	private final Map<CellKey, List<MemoryCell>> m_byAddress = new HashMap<>();
 
-	private int m_syncDepth;
+	/**
+	 * Propagation depth, per thread. Recursion is a listener writing back on the thread it was
+	 * called on, so this is a property of that thread and not of the object - and it has to be,
+	 * now that two threads can legitimately be propagating at the same time.
+	 */
+	private static final ThreadLocal<int[]> m_syncDepth = ThreadLocal.withInitial(() -> new int[1]);
 
-	public MemoryCellGroup addGroup(MemoryAddressType type, String groupName) {
-		MemoryCellGroup g = new MemoryCellGroup(this, type, groupName);
-		m_groups.add(g);
-		return g;
+	/** The monitor guarding this object and every group under it. */
+	Object lock() {
+		return m_lock;
 	}
 
+	public MemoryCellGroup addGroup(MemoryAddressType type, String groupName) {
+		synchronized(m_lock) {
+			MemoryCellGroup g = new MemoryCellGroup(this, type, groupName);
+			m_groups.add(g);
+			return g;
+		}
+	}
+
+	/** Every group, as a copy: walk it on whatever thread you like. */
 	public List<MemoryCellGroup> getGroups() {
-		return Collections.unmodifiableList(m_groups);
+		synchronized(m_lock) {
+			return List.copyOf(m_groups);
+		}
 	}
 
 	public int size() {
-		return m_groups.size();
+		synchronized(m_lock) {
+			return m_groups.size();
+		}
 	}
 
 	public MemoryCellGroup findByName(String groupName) {
-		for(MemoryCellGroup g : m_groups) {
-			if(g.getGroupName().equalsIgnoreCase(groupName))
-				return g;
+		synchronized(m_lock) {
+			for(MemoryCellGroup g : m_groups) {
+				if(g.getGroupName().equalsIgnoreCase(groupName))
+					return g;
+			}
+			return null;
 		}
-		return null;
 	}
 
 	public void removeGroup(MemoryCellGroup group) {
-		if(m_groups.remove(group))
-			group.clear();
+		synchronized(m_lock) {
+			if(m_groups.remove(group))
+				group.clear();
+		}
 	}
 
 	/**
@@ -99,24 +159,30 @@ public final class MemoryCellGroups {
 	 * can be found again on the way out.
 	 */
 	public void removeGroupsByUsageTag(String usageTag) {
-		for(MemoryCellGroup g : new ArrayList<>(m_groups)) {
-			if(g.getUsageTag().equals(usageTag))
-				removeGroup(g);
+		synchronized(m_lock) {
+			for(MemoryCellGroup g : new ArrayList<>(m_groups)) {
+				if(g.getUsageTag().equals(usageTag))
+					removeGroup(g);
+			}
 		}
 	}
 
 	public void clear() {
-		for(MemoryCellGroup g : new ArrayList<>(m_groups)) {
-			g.clear();
+		synchronized(m_lock) {
+			for(MemoryCellGroup g : new ArrayList<>(m_groups)) {
+				g.clear();
+			}
+			m_groups.clear();
+			m_byAddress.clear();
 		}
-		m_groups.clear();
-		m_byAddress.clear();
 	}
 
-	/** Every cell at this address, across all groups. Empty list if none. */
+	/** Every cell at this address, across all groups, as a copy. Empty list if none. */
 	public List<MemoryCell> cellsAt(Address addr) {
-		List<MemoryCell> l = m_byAddress.get(keyOf(addr));
-		return l == null ? List.of() : Collections.unmodifiableList(l);
+		synchronized(m_lock) {
+			List<MemoryCell> l = m_byAddress.get(keyOf(addr));
+			return l == null ? List.of() : List.copyOf(l);
+		}
 	}
 
 	/**
@@ -124,33 +190,46 @@ public final class MemoryCellGroups {
 	 * same value and tell that group's listeners.
 	 *
 	 * <p>Ported from {@code SyncMemoryCells} ({@code :793-812}), guards and all.</p>
+	 *
+	 * <p>Who is told what is decided under the monitor; the telling happens after it is
+	 * released, so a listener is free to do anything at all - including coming back in here,
+	 * which is what the depth guard is about.</p>
 	 */
 	public void syncMemoryCells(MemoryCell source) {
-		List<MemoryCell> at = m_byAddress.get(keyOf(source.getAddr()));
-		if(at == null)
+		List<MemoryCell> targets;
+		CellValue value = source.getPdpValue();
+		synchronized(m_lock) {
+			List<MemoryCell> at = m_byAddress.get(keyOf(source.getAddr()));
+			if(at == null)
+				return;
+			targets = new ArrayList<>(at.size());
+			for(MemoryCell mc : at) {
+				if(mc == source)                                    // (2) self-exclusion
+					continue;
+				if(!mc.getGroup().isPdpOverwritesEdit())            // (1) per-group opt-out
+					continue;
+				if(mc.getPdpValue().equals(value))                  // (3) equality terminates
+					continue;
+				targets.add(mc);
+			}
+		}
+		if(targets.isEmpty())
 			return;
 
-		if(m_syncDepth >= MAX_SYNC_DEPTH) {
+		int[] depth = m_syncDepth.get();
+		if(depth[0] >= MAX_SYNC_DEPTH) {
 			throw new IllegalStateException("Memory cell propagation is " + MAX_SYNC_DEPTH
 				+ " deep at " + source.getAddr().toOctal()
 				+ "; a MemoryCellListener is writing back a different value than it was given");
 		}
-		m_syncDepth++;
+		depth[0]++;
 		try {
-			//-- Copy: a listener may legitimately add or remove cells while being notified.
-			for(MemoryCell mc : new ArrayList<>(at)) {
-				if(mc == source)                                    // (2) self-exclusion
-					continue;
-				MemoryCellGroup group = mc.getGroup();
-				if(!group.isPdpOverwritesEdit())                    // (1) per-group opt-out
-					continue;
-				if(mc.getPdpValue().equals(source.getPdpValue()))   // (3) equality terminates
-					continue;
-				mc.setPdpValue(source.getPdpValue());
-				group.fireMemoryCellChanged(mc);
+			for(MemoryCell mc : targets) {
+				mc.setPdpValue(value);
+				mc.getGroup().fireMemoryCellChanged(mc);
 			}
 		} finally {
-			m_syncDepth--;
+			depth[0]--;
 		}
 	}
 
@@ -161,14 +240,16 @@ public final class MemoryCellGroups {
 	 * the label.
 	 */
 	public MemoryCell findNamedCellAt(MemoryCell cell) {
-		List<MemoryCell> at = m_byAddress.get(keyOf(cell.getAddr()));
-		if(at == null)
+		synchronized(m_lock) {
+			List<MemoryCell> at = m_byAddress.get(keyOf(cell.getAddr()));
+			if(at == null)
+				return null;
+			for(MemoryCell mc : at) {
+				if(mc != cell && !mc.getName().isEmpty())
+					return mc;
+			}
 			return null;
-		for(MemoryCell mc : at) {
-			if(mc != cell && !mc.getName().isEmpty())
-				return mc;
 		}
-		return null;
 	}
 
 	/**
@@ -188,33 +269,39 @@ public final class MemoryCellGroups {
 		if(!newType.isConcretePhysical())
 			throw new IllegalArgumentException("Can only change to a concrete physical width, not " + newType);
 
-		//-- Dry run first, so a group that cannot convert stops this before any state moves.
-		for(MemoryCellGroup g : m_groups) {
-			if(g.getType() == MemoryAddressType.VIRTUAL || g.getType() == newType)
-				continue;
-			for(MemoryCell mc : g.getCells()) {
-				mc.getAddr().withWidth(newType);                    // throws if it does not fit
+		synchronized(m_lock) {
+			//-- Dry run first, so a group that cannot convert stops this before any state moves.
+			for(MemoryCellGroup g : m_groups) {
+				if(g.getType() == MemoryAddressType.VIRTUAL || g.getType() == newType)
+					continue;
+				for(MemoryCell mc : g.getCells()) {
+					mc.getAddr().withWidth(newType);                // throws if it does not fit
+				}
 			}
-		}
-		for(MemoryCellGroup g : m_groups) {
-			if(g.getType() == MemoryAddressType.VIRTUAL)
-				continue;
-			g.changeWidthInternal(newType);
+			for(MemoryCellGroup g : m_groups) {
+				if(g.getType() == MemoryAddressType.VIRTUAL)
+					continue;
+				g.changeWidthInternal(newType);
+			}
 		}
 	}
 
 	void indexAdd(MemoryCell cell) {
-		m_byAddress.computeIfAbsent(keyOf(cell.getAddr()), k -> new ArrayList<>()).add(cell);
+		synchronized(m_lock) {
+			m_byAddress.computeIfAbsent(keyOf(cell.getAddr()), k -> new ArrayList<>()).add(cell);
+		}
 	}
 
 	void indexRemove(MemoryCell cell) {
-		CellKey key = keyOf(cell.getAddr());
-		List<MemoryCell> l = m_byAddress.get(key);
-		if(l == null)
-			return;
-		l.remove(cell);
-		if(l.isEmpty())
-			m_byAddress.remove(key);
+		synchronized(m_lock) {
+			CellKey key = keyOf(cell.getAddr());
+			List<MemoryCell> l = m_byAddress.get(key);
+			if(l == null)
+				return;
+			l.remove(cell);
+			if(l.isEmpty())
+				m_byAddress.remove(key);
+		}
 	}
 
 	private static CellKey keyOf(Address addr) {
@@ -225,6 +312,8 @@ public final class MemoryCellGroups {
 
 	@Override
 	public String toString() {
-		return m_groups.size() + " groups, " + m_byAddress.size() + " distinct addresses";
+		synchronized(m_lock) {
+			return m_groups.size() + " groups, " + m_byAddress.size() + " distinct addresses";
+		}
 	}
 }

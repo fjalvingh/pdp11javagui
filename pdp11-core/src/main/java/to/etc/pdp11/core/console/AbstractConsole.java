@@ -50,6 +50,12 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 	/** Held while decoding, and by anything that clears the scanner out from under it. */
 	private final Object m_decodeLock = new Object();
 
+	/**
+	 * A stop report waiting for the prompt that makes it safe to act on. Reader thread only,
+	 * under {@link #m_decodeLock}. See {@link #takeHaltAwaitingPrompt}.
+	 */
+	private AnswerPhrase.Halt m_haltAwaitingPrompt;
+
 	/** Volatile: set on the command thread, read by the reader thread's decoder. */
 	private volatile ConsoleConnection m_connection;
 
@@ -176,8 +182,32 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 
 	/** Publish a decoded phrase. Called from the decoder, on the reader thread. */
 	protected void publish(AnswerPhrase phrase) {
+		if(phrase instanceof AnswerPhrase.Halt halt)
+			m_haltAwaitingPrompt = halt;
 		m_logger.log(LogChannel.PROTOCOL, phrase.asText());
 		m_answers.publish(phrase);
+	}
+
+	/**
+	 * The stop report the prompt now being decoded completes, or {@code null}. Consumes it.
+	 *
+	 * <p>All three consoles fire the stop event from the <b>prompt</b> rather than from the halt
+	 * line, because a handler goes straight on to issue console commands and can only do that
+	 * once the machine is listening again. Which means each of them has to remember, across
+	 * decode passes, that a halt was reported.</p>
+	 *
+	 * <p>They used to remember it by looking back in {@link AnswerCollector} - the last phrase,
+	 * or two back on the 11/44, whose stop report is also an examine answer. That list is not
+	 * theirs: {@code clearAnswers()} empties it from the command thread immediately before every
+	 * command, and a command issued in the millisecond between the halt and its prompt left the
+	 * prompt finding nothing, so the stop was never reported and the window stayed saying the
+	 * machine was running (FABLE-ISSUES #46). Here it is the decoder's own state, on the reader
+	 * thread under the decode lock, and nothing on the command thread can reach it.</p>
+	 */
+	protected final AnswerPhrase.Halt takeHaltAwaitingPrompt() {
+		AnswerPhrase.Halt halt = m_haltAwaitingPrompt;
+		m_haltAwaitingPrompt = null;
+		return halt;
 	}
 
 	/**
@@ -190,6 +220,9 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 		synchronized(m_decodeLock) {
 			getScanner().clear();
 			m_answers.clear();
+			//-- A resync throws the conversation away, and a halt nobody has been told about is
+			//-- part of it. This is the only thing that drops one unreported.
+			m_haltAwaitingPrompt = null;
 		}
 	}
 
@@ -205,9 +238,18 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 		c.write(text);
 	}
 
-	/** Forget everything said so far. Done immediately before sending a command. */
+	/**
+	 * Forget everything said so far. Done immediately before sending a command.
+	 *
+	 * <p>Under the decode lock, so that a decode pass is either entirely before this or entirely
+	 * after it - a phrase decoded from a chunk of input is not thrown away while its siblings
+	 * survive. What this no longer decides is whether a stop event happens: see
+	 * {@link #takeHaltAwaitingPrompt}.</p>
+	 */
 	protected void clearAnswers() {
-		m_answers.clear();
+		synchronized(m_decodeLock) {
+			m_answers.clear();
+		}
 	}
 
 	protected <T extends AnswerPhrase> T waitForAnswer(Class<T> type, long timeoutMillis) {

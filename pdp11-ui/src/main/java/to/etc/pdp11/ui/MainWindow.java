@@ -25,6 +25,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
@@ -117,6 +118,16 @@ public final class MainWindow extends JFrame {
 	public JMenu getWindowsMenuRebuilt() {
 		rebuildWindowsMenu();
 		return m_windowsMenu;
+	}
+
+	/** The "Connect to simulated" submenu, so a test can pick a machine the way the user does. */
+	public JMenu getConnectToSimulatedMenu() {
+		return m_connectToMenu;
+	}
+
+	/** The Connect menu item, for a test that asks whether it is on offer. */
+	public JMenuItem getConnectItem() {
+		return m_connectItem;
 	}
 
 	/** The Disconnect menu item, so a test can press what the user presses. */
@@ -320,13 +331,16 @@ public final class MainWindow extends JFrame {
 			m_context.getLogger().log(LogChannel.OTHER, "Connect ignored: already connecting");
 			return;
 		}
-		m_changingConnection = true;
-		setConnectionControlsEnabled(false);
+		setChangingConnection(true);
 		m_panel.getTerminal().append("\n[connecting to " + profile.describe() + "]\n", TerminalStyle.SYSTEM);
 		Thread worker = new Thread(() -> {
 			try {
 				m_context.getConnectionManager().connect(profile);
-				m_context.getSettings().setLastProfileName(profile.name());
+				//-- On the event thread, because that is who owns Settings. This worker used to
+				//-- write it directly while the EDT was editing profiles, moving windows and
+				//-- handing the same object to Gson in save() - an unsynchronized object with a
+				//-- writer nobody had noticed (FABLE-ISSUES #44).
+				AppContext.onUi(() -> m_context.getSettings().setLastProfileName(profile.name()));
 			} catch(ConnectionSupersededException x) {
 				//-- Somebody asked for a different connection while this one was being made. The
 				//-- one they asked for is the one that is live; there is nothing to report.
@@ -335,7 +349,7 @@ public final class MainWindow extends JFrame {
 				m_context.reportFailure("Could not connect to " + profile.describe(), x);
 			} finally {
 				SwingUtilities.invokeLater(() -> {
-					m_changingConnection = false;
+					setChangingConnection(false);
 					onConnectionState(m_context.getConnectionManager());
 				});
 			}
@@ -362,8 +376,7 @@ public final class MainWindow extends JFrame {
 			m_context.getLogger().log(LogChannel.OTHER, "Disconnect ignored: already connecting or disconnecting");
 			return;
 		}
-		m_changingConnection = true;
-		setConnectionControlsEnabled(false);
+		setChangingConnection(true);
 		Thread worker = new Thread(() -> {
 			try {
 				m_context.getConnectionManager().disconnect();
@@ -371,7 +384,7 @@ public final class MainWindow extends JFrame {
 				m_context.reportFailure("Could not disconnect cleanly", x);
 			} finally {
 				SwingUtilities.invokeLater(() -> {
-					m_changingConnection = false;
+					setChangingConnection(false);
 					m_panel.getTerminal().append("\n[disconnected]\n", TerminalStyle.SYSTEM);
 					onConnectionState(m_context.getConnectionManager());
 				});
@@ -382,19 +395,45 @@ public final class MainWindow extends JFrame {
 	}
 
 	/**
-	 * Turn the three ways to start or end a connection on or off together.
+	 * A connect or disconnect worker has started or finished: remember it, show it, and turn the
+	 * menu items to match.
 	 *
-	 * <p>Connecting is not cancellable and not re-entrant: while it is happening the machine is
-	 * being launched or a port opened, and a second Connect - or a Disconnect - would be racing
-	 * that. See {@link ConnectionManager#connect}.</p>
+	 * <p>The wait cursor is the busy affordance. Every other long operation in the application
+	 * gets a {@code ProgressDialog} with a Cancel in it, and this one deliberately does not: a
+	 * connection being made is not cancellable - SimH is being launched, or a port opened, or a
+	 * handshake is in flight - so a Cancel button would be a lie, and the dialog without one
+	 * would be a modal window whose only content is the word "Working". What is left that is
+	 * honest is the cursor, the greyed-out menu and the status bar, which says which machine is
+	 * being connected to.</p>
 	 */
-	private void setConnectionControlsEnabled(boolean enabled) {
+	private void setChangingConnection(boolean changing) {
+		m_changingConnection = changing;
+		setCursor(changing ? Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR) : Cursor.getDefaultCursor());
+		updateConnectionControls();
+	}
+
+	/**
+	 * Offer the three ways to start or end a connection when they mean something.
+	 *
+	 * <p>Connecting is not re-entrant: while one is happening the machine is being launched or a
+	 * port opened, and a second Connect - or a Disconnect - would be racing that. See
+	 * {@link ConnectionManager#connect}.</p>
+	 *
+	 * <p>Disconnect is offered only when there <i>is</i> a connection. It used to be enabled at
+	 * all times, so choosing it with nothing connected started a worker, tore down nothing and
+	 * printed "[disconnected]" in the terminal - the application answering a question about a
+	 * machine it does not have (FABLE-ISSUES #42). Connect stays enabled while connected,
+	 * because connecting again is how the user moves to another machine and
+	 * {@code connect()} is documented to double as a reconnect.</p>
+	 */
+	private void updateConnectionControls() {
+		boolean idle = !m_changingConnection;
 		if(m_connectItem != null)
-			m_connectItem.setEnabled(enabled);
+			m_connectItem.setEnabled(idle);
 		if(m_connectToMenu != null)
-			m_connectToMenu.setEnabled(enabled);
+			m_connectToMenu.setEnabled(idle);
 		if(m_disconnectItem != null)
-			m_disconnectItem.setEnabled(enabled);
+			m_disconnectItem.setEnabled(idle && m_lastState == ConnectionManager.State.CONNECTED);
 	}
 
 	private void onConnectionState(ConnectionManager manager) {
@@ -402,7 +441,7 @@ public final class MainWindow extends JFrame {
 		ConnectionManager.State was = m_lastState;
 		m_lastState = state;
 		m_panel.showConnectionState(state, manager.getMessage());
-		setConnectionControlsEnabled(!m_changingConnection && state != ConnectionManager.State.CONNECTING);
+		updateConnectionControls();
 		if(state == ConnectionManager.State.FAILED && was == ConnectionManager.State.CONNECTED) {
 			//-- The machine went away rather than the user going anywhere. Nothing else says so:
 			//-- the windows simply grey out, which on its own looks like the application broke.

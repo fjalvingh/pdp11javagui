@@ -6,6 +6,7 @@ import to.etc.pdp11.core.util.NumberConverter.Base;
 import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.AbstractAction;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -59,6 +60,8 @@ public final class NumberConverterPanel extends JPanel {
 	private final JLabel m_signed = new JLabel();
 
 	private final JLabel m_note = new JLabel();
+
+	private final JButton m_clear = new JButton("Clear");
 
 	/** The value every field is showing. */
 	private long m_value;
@@ -146,6 +149,11 @@ public final class NumberConverterPanel extends JPanel {
 		add(label);
 		add(m_signed, "growx, wrap");
 		add(m_note, "span 2, growx");
+		//-- Clearing is a button because it is an action, and because the key it used to be
+		//-- bound to is a key people press to mean "never mind" (FABLE-ISSUES #43).
+		m_clear.setToolTipText("Set the value back to zero");
+		m_clear.addActionListener(e -> setValue(0));
+		add(m_clear);
 	}
 
 	private static Font monospaced(int size) {
@@ -153,11 +161,18 @@ public final class NumberConverterPanel extends JPanel {
 	}
 
 	/**
-	 * Alt-O, Alt-H, Alt-D, and Escape to clear.
+	 * Alt-O, Alt-H and Alt-D, which move between the bases.
 	 *
 	 * <p>The same keys the original binds ({@code FormKeyDown}, {@code :246-271}), on the panel's
 	 * WHEN_IN_FOCUSED_WINDOW map so they work whichever field has the caret. The label mnemonics
 	 * would do it on their own on most platforms; these make it certain.</p>
+	 *
+	 * <p><b>Escape is not one of them any more.</b> The original clears the value with it
+	 * ({@code :268}) and that binding was ported with the rest; but Escape is the key people
+	 * press to mean "never mind", and here it silently destroyed the number being inspected -
+	 * with nothing to undo it and nothing to say it had happened. Nowhere else in this
+	 * application does Escape change anything. Clearing is the {@link #m_clear} button now
+	 * (FABLE-ISSUES #43).</p>
 	 */
 	private void installShortcuts() {
 		bind(KeyStroke.getKeyStroke(KeyEvent.VK_O, KeyEvent.ALT_DOWN_MASK), "focus-octal",
@@ -166,7 +181,6 @@ public final class NumberConverterPanel extends JPanel {
 			() -> m_fields.get(Base.HEX).requestFocusInWindow());
 		bind(KeyStroke.getKeyStroke(KeyEvent.VK_D, KeyEvent.ALT_DOWN_MASK), "focus-decimal",
 			() -> m_fields.get(Base.DECIMAL).requestFocusInWindow());
-		bind(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clear", () -> setValue(0));
 	}
 
 	private void bind(KeyStroke stroke, String name, Runnable action) {
@@ -283,6 +297,11 @@ public final class NumberConverterPanel extends JPanel {
 
 	public String getSignedText() {
 		return m_signed.getText();
+	}
+
+	/** The Clear button, for a test that presses what the user presses. */
+	public JButton getClearButton() {
+		return m_clear;
 	}
 
 	public String getNoteText() {

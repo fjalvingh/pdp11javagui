@@ -6,6 +6,7 @@ import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TransportConfig;
 import to.etc.pdp11.core.conn.TransportKind;
 import to.etc.pdp11.core.io.SerialTransport;
+import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.DefaultComboBoxModel;
@@ -13,6 +14,7 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import java.awt.CardLayout;
@@ -67,6 +69,17 @@ public final class ConnectionSettingsPanel extends JPanel {
 	private Runnable m_onChange = () -> {
 	};
 
+	/**
+	 * How Delete asks. A modal dialog on screen; something a test can answer, in a test.
+	 *
+	 * <p>Deleting a saved profile is the one destructive gesture in this panel and it used to
+	 * happen on the click, with no way back: the profile - a serial port, a baud rate, a SimH
+	 * configuration file, all typed by hand - was gone (FABLE-ISSUES #41). Same shape as
+	 * {@code AppContext.confirmDiscard}, and the same interface, so there is one way of asking
+	 * this question in the application.</p>
+	 */
+	private AppContext.DiscardConfirmer m_confirmer = this::askOnScreen;
+
 	public ConnectionSettingsPanel(Settings settings) {
 		super(new MigLayout("fillx, insets 10", "[][grow]", "[][]12[][]8[grow][]"));
 		m_settings = settings;
@@ -106,6 +119,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 		});
 		save.addActionListener(e -> saveProfile());
 		delete.addActionListener(e -> deleteProfile());
+		delete.setToolTipText("Forget this saved connection");
 		for(JTextField f : List.of(m_simhExecutable, m_simhConfig, m_host, m_port, m_baudRate, m_name)) {
 			f.addActionListener(e -> changed());
 			f.addFocusListener(new java.awt.event.FocusAdapter() {
@@ -269,9 +283,12 @@ public final class ConnectionSettingsPanel extends JPanel {
 		changed();
 	}
 
+	/** Ask, then delete. See {@link #m_confirmer}. */
 	private void deleteProfile() {
 		Object selected = m_profiles.getSelectedItem();
 		if(selected == null)
+			return;
+		if(!m_confirmer.confirmDiscard("Delete the saved connection \"" + selected + "\"?"))
 			return;
 		m_settings.profiles().removeIf(p -> p.name().equals(selected));
 		refreshProfileList();
@@ -279,6 +296,16 @@ public final class ConnectionSettingsPanel extends JPanel {
 			setProfile(ConnectionProfile.defaultProfile());
 		else
 			setProfile(m_settings.profiles().get(0));
+	}
+
+	/** For a test: answer the Delete question without a dialog. */
+	public void setConfirmer(AppContext.DiscardConfirmer confirmer) {
+		m_confirmer = confirmer == null ? q -> true : confirmer;
+	}
+
+	private boolean askOnScreen(String question) {
+		return JOptionPane.showConfirmDialog(this, question, "PDP11GUI",
+			JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 
 	private void refreshSerialPorts(String selected) {
@@ -311,6 +338,11 @@ public final class ConnectionSettingsPanel extends JPanel {
 	// -------------------------------------------------------------------------------------
 	// For tests
 	// -------------------------------------------------------------------------------------
+
+	/** The saved-profile picker, for a test that picks one the way the user does. */
+	public JComboBox<String> getProfileList() {
+		return m_profiles;
+	}
 
 	public JComboBox<ConsoleProtocol> getProtocolCombo() {
 		return m_protocol;

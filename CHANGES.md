@@ -121,6 +121,68 @@
 
 ### Internal
 
+- **One owner for the memory cells.** The application's single `MemoryCellGroups` is reached
+  from the event thread (every window adds a group when it opens), from the command thread (a
+  bulk examine writes values in and propagates them) and from every connect worker (building a
+  console builds an MMU, which adds a group, and an overtaken attempt removes it again), and
+  nothing coordinated the three. It threw `ConcurrentModificationException` out of `connect()`.
+  There is now one monitor guarding the group list, the address index and every group's cells,
+  `getGroups()`/`getCells()`/`cellsAt()` hand out copies rather than views of the live lists,
+  listeners are notified outside the lock, and a cell's own fields are `volatile`. The rule is
+  in PLAN.md §1 and CLAUDE.md; it is the same hole that was fixed one trace at a time in the
+  MMU's listener list and in the command thread's iteration of a group being scrolled.
+
+- **A command sent as the machine stops no longer swallows the stop.** All three consoles fire
+  the execution-stop event from the prompt that follows a halt report, and they found that halt by
+  looking back in the answer list - which the command thread empties immediately before every
+  command it sends. A command issued in the millisecond between the halt and its prompt therefore
+  left nothing to find, and the application went on believing the machine was running. The
+  decoder keeps the halt itself now, where only a resync can drop it.
+
+- **The command timeout is honoured by the whole of an exchange.** Each console's waits for an
+  examine answer, a step and a halt named their `CMD_TIMEOUT_MS` constant while the prompt checks
+  asked for the current setting, so changing the timeout moved half of each exchange and left the
+  rest. And the simulated machine's pretend RUN/HALT switch is `volatile`: it is written from the
+  execution window's worker and read in the fake's keystroke handlers, with no edge between them.
+
+- **Escape no longer wipes the Number Converter.** It cleared the value to zero - a key people
+  press to mean "never mind", silently destroying the number being inspected, with no undo.
+  Clearing is a **Clear** button now, which is what the Log and SimH Console windows call the
+  same act.
+
+- **The Settings dialog behaves like a dialog.** Enter connects, Escape closes, and the
+  title-bar X does what the Close button does - it used to skip the save that Close performs, so
+  which of two ways out the user chose decided whether their saved profiles reached disk.
+  Deleting a saved profile asks first; it is the one gesture in that panel with nothing behind
+  it. And Escape cancels the progress dialog, which is the only interruption a long console
+  operation offers.
+
+- **A queued job talks to the connection it was queued for.** Three places checked something on
+  the event thread and then used it on the command thread, where a reconnect in between made it
+  stale: a SimH command cast whatever console was live and could reach the user as a
+  `ClassCastException`, the MMU window examined the previous connection's register group into
+  nowhere, and the Bitfields window wrote a machine answer into whichever cell the window was
+  showing when it came back rather than the one that was asked about.
+
+- **The connect worker no longer writes into the settings behind the event thread's back.**
+  Recording which profile was last connected happened on the worker, while the EDT could be
+  editing profiles, saving window geometry or handing the same unsynchronized object to Gson.
+  `Settings` now says in so many words that the event thread owns it.
+
+- **Disconnect is offered only when there is something to disconnect**, and making or ending a
+  connection puts the window under a wait cursor. Disconnect used to be enabled at all times: with
+  nothing connected it started a worker, tore down nothing, and printed "[disconnected]" in the
+  terminal. Connect stays enabled while connected, because connecting again is how you move to
+  another machine.
+
+- **A listener that throws no longer costs the connection.** `ConnectionManager` told its
+  listeners from inside the connecting worker's own `try`, so one window's lambda throwing on
+  CONNECTED unwound into the catch that abandons a failed attempt: the just-built connection was
+  closed and reported FAILED, and the listeners behind the offender heard nothing. Each is now
+  told inside its own `try` and a listener that throws is logged. On the same path, an `Error`
+  out of `connect()` used to leave SimH running and the port open with nothing referencing
+  either; cleanup moved into a `finally`.
+
 - **The tests no longer run on the developer's desktop.** `WindowsBuildTest` opens sixteen real
   tool windows, two more tests build a `JFrame`, and a progress dialog that outlives its
   threshold is modal - so a build put windows on whoever's screen was attached, lost focus races

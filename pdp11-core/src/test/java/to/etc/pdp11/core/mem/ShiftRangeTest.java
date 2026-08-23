@@ -124,26 +124,28 @@ class ShiftRangeTest {
 
 	/**
 	 * A long console job iterates the cells on the command thread while the event thread can
-	 * shift the very same group - Show, {@code <}, {@code >}, a connection event. The list
-	 * {@link MemoryCellGroup#getCells()} hands out is an unmodifiable <b>view</b> over a plain
-	 * ArrayList, so iterating it across that is a ConcurrentModificationException, which reaches
-	 * the user as "Examining memory failed".
+	 * shift the very same group - Show, {@code <}, {@code >}, a connection event.
+	 *
+	 * <p>{@link MemoryCellGroup#getCells()} used to hand out an unmodifiable <b>view</b> over a
+	 * plain ArrayList, so iterating one across a shift threw ConcurrentModificationException,
+	 * which reached the user as "Examining memory failed". It hands out a copy now
+	 * (FABLE-ISSUES #64), and the job's iteration is safe without the caller having to know to
+	 * copy it - but surviving the shift is still not the same as still being relevant, which is
+	 * what {@link MemoryCellGroup#holdsExactly} is asked afterwards.</p>
 	 */
 	@Test
-	void iteratingTheLiveViewWhileTheRangeMovesIsWhyJobsCopyItFirst() {
+	void iteratingWhatGetCellsHandedOutSurvivesTheRangeMoving() {
 		MemoryCellGroup g = filled(groups(), 01000, 4);
-		java.util.Iterator<MemoryCell> live = g.getCells().iterator();
-		live.next();
+		java.util.Iterator<MemoryCell> handedOut = g.getCells().iterator();
+		handedOut.next();
 		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 02000), 4, false);
-		assertThrows(java.util.ConcurrentModificationException.class, live::next);
+		assertEquals(01002, handedOut.next().getAddr().val(), "the old range's second word, not a throw");
 
-		//-- Which is what List.copyOf is for: it survives the shift...
-		java.util.List<MemoryCell> snapshot = java.util.List.copyOf(g.getCells());
+		java.util.List<MemoryCell> snapshot = g.getCells();
 		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 03000), 4, false);
 		for(MemoryCell mc : snapshot) {
 			assertEquals(02000, mc.getAddr().val() & ~07L, "the cells it holds are the old range's");
 		}
-		//-- ...but surviving is not the same as still being relevant.
 		assertFalse(g.holdsExactly(snapshot), "the group is showing a different range now");
 	}
 

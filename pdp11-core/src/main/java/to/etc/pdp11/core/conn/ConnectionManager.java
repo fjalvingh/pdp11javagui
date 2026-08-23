@@ -206,6 +206,14 @@ public final class ConnectionManager implements AutoCloseable {
 	 * order the states happened in. They are expected not to block - every listener in the
 	 * application marshals to the event thread with {@code AppContext.onUi} and returns.</p>
 	 *
+	 * <p>Each of them is told inside its own {@code try}, which is not defensive
+	 * decoration. This runs on the connecting worker, inside {@code connect()}'s {@code try}:
+	 * one panel lambda throwing used to propagate out of the loop, out of {@code setState}, into
+	 * the catch that abandons the connection - so an arbitrary bug in an arbitrary window turned
+	 * a connection that had just succeeded into a FAILED one, and the listeners after it in the
+	 * list were never told either state. A listener that throws is a bug in that listener; it is
+	 * logged and the rest of the application carries on (FABLE-ISSUES #45).</p>
+	 *
 	 * @return whether this attempt was still the current one, and the state therefore changed
 	 */
 	private boolean setState(long generation, State state, String message) {
@@ -216,7 +224,11 @@ public final class ConnectionManager implements AutoCloseable {
 			m_message = message == null ? "" : message;
 			m_logger.log(LogChannel.OTHER, "Connection: " + state + (m_message.isEmpty() ? "" : " - " + m_message));
 			for(Listener l : m_listeners) {
-				l.onConnectionState(this, state);
+				try {
+					l.onConnectionState(this, state);
+				} catch(Exception x) {
+					m_logger.log(LogChannel.OTHER, "Connection: a listener threw on " + state + " - " + x);
+				}
 			}
 			return true;
 		}
@@ -268,6 +280,7 @@ public final class ConnectionManager implements AutoCloseable {
 		Thread drain = null;
 		AbstractConsole console = null;
 		ConsoleConnection connection = null;
+		boolean published = false;
 		try {
 			transport = openTransport(profile);
 			separateMachineConsole = transport instanceof SimhProcessTransport;
@@ -308,16 +321,26 @@ public final class ConnectionManager implements AutoCloseable {
 				m_protocolIsMachineConsole = protocolIsMachineConsole;
 				m_console = c;
 				m_connection = cc;
+				published = true;
 			}
 			setState(generation, State.CONNECTED, profile.describe());
 		} catch(IOException x) {
-			abandon(connection, consoleChannel, drain, transport, console);
 			setState(generation, State.FAILED, x.getMessage());
 			throw new ConsoleException("Could not open " + profile.transport().describe() + ": " + x, x);
 		} catch(ConsoleException | RuntimeException x) {
-			abandon(connection, consoleChannel, drain, transport, console);
 			setState(generation, State.FAILED, x.getMessage());
 			throw x;
+		} catch(Error x) {
+			//-- Not ours to handle - but the transport is ours to close. An Error thrown out of
+			//-- here used to leave SimH running, the port open and the reader thread alive, with
+			//-- nothing left holding a reference to any of them (FABLE-ISSUES #45).
+			setState(generation, State.FAILED, String.valueOf(x));
+			throw x;
+		} finally {
+			//-- One place, so that every way out of the try that is not "the fields now hold
+			//-- this attempt's plumbing" closes what this attempt built.
+			if(!published)
+				abandon(connection, consoleChannel, drain, transport, console);
 		}
 	}
 

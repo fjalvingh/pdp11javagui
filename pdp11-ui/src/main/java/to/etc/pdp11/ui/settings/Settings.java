@@ -20,6 +20,15 @@ import java.util.Map;
  * <p>A mutable class rather than a record, because that is what a settings tree is - things get
  * changed one at a time by whoever owns them. The fields are package-visible for the binder and
  * reached through accessors by everyone else.</p>
+ *
+ * <h2>Who owns it</h2>
+ *
+ * <p><b>The event thread, and nothing else.</b> It is unsynchronized, it is edited from the
+ * settings dialog and from every window that remembers where it was, and {@code saveSettings()}
+ * hands the whole object to Gson to walk. A worker that writes one field into it while the EDT
+ * is doing any of that is a data race over a whole object tree, for the sake of one string. The
+ * connect worker used to do exactly that with {@link #setLastProfileName} (FABLE-ISSUES #44);
+ * it marshals with {@code AppContext.onUi} now, and so must anything else off the EDT.</p>
  */
 public final class Settings {
 	/**
