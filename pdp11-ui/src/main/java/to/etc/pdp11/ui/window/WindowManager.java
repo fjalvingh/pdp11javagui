@@ -218,7 +218,18 @@ public final class WindowManager {
 	 * the discarded MDI Cascade command was actually for.</p>
 	 */
 	private void applyGeometry(ToolWindow w) {
-		WindowGeometry saved = m_settingsStore.get().getWindowGeometry(w.key().toStorageKey());
+		applyGeometry(w, w.key().toStorageKey());
+	}
+
+	/**
+	 * The same, for a frame that is not a tool window.
+	 *
+	 * <p>Which is the main window, and only the main window. It had no geometry persistence at
+	 * all: every tool window came back where it was left and the frame they all sit in came back
+	 * wherever the platform felt like putting it.</p>
+	 */
+	public void applyGeometry(JFrame w, String storageKey) {
+		WindowGeometry saved = m_settingsStore.get().getWindowGeometry(storageKey);
 		if(saved == null || !saved.isUsable()) {
 			w.setLocationByPlatform(true);
 			return;
@@ -231,16 +242,72 @@ public final class WindowManager {
 
 	/** Note where a window is now, so the next run can put it back. */
 	public void rememberGeometry(ToolWindow w) {
+		rememberGeometry(w, w.key().toStorageKey());
+	}
+
+	/** The same, for a frame that is not a tool window - see {@link #applyGeometry(JFrame, String)}. */
+	public void rememberGeometry(JFrame w, String storageKey) {
 		boolean maximized = (w.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
 		//-- A maximized window's getBounds() is the screen, which is no use as a restore size.
 		//-- What is wanted is where it would go back to, and Swing does not keep that - so a
 		//-- maximized window keeps whatever bounds were last recorded for it.
-		WindowGeometry previous = m_settingsStore.get().getWindowGeometry(w.key().toStorageKey());
+		WindowGeometry previous = m_settingsStore.get().getWindowGeometry(storageKey);
 		WindowGeometry now = maximized && previous != null
 			? new WindowGeometry(previous.x(), previous.y(), previous.width(), previous.height(),
 				w.isVisible(), true)
 			: WindowGeometry.of(w.getBounds(), w.isVisible(), maximized);
-		m_settingsStore.get().setWindowGeometry(w.key().toStorageKey(), now);
+		m_settingsStore.get().setWindowGeometry(storageKey, now);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Restoring the layout
+	// -------------------------------------------------------------------------------------
+
+	/** Where the main window's geometry is filed. It is not a {@link ToolWindow} and has no key. */
+	public static final String MAIN_WINDOW_KEY = "MAIN";
+
+	/**
+	 * Reopen every window the settings file says was open when the application last shut down.
+	 *
+	 * <p>The geometry record has carried a {@code visible} flag since the beginning and nothing
+	 * ever read it: every launch opened the main window alone, while the settings file recorded
+	 * in detail the layout it was not restoring. The Delphi original restores it
+	 * ({@code JH_Utilities.pas:1718-1767} stores {@code .Visible} and puts it back), and a
+	 * window layout is exactly the kind of thing worth not having to rebuild every morning.</p>
+	 *
+	 * <p><b>Every failure here is one window skipped, never a failed startup.</b> A saved entry
+	 * can name a window type this version no longer has, or a register group the currently
+	 * loaded machine description does not declare - the factory throws for that one on purpose -
+	 * and CLAUDE.md's rule is that nothing in settings may stop the application starting.</p>
+	 *
+	 * @return how many windows were reopened
+	 */
+	public int restoreVisibleWindows() {
+		int opened = 0;
+		//-- A copy: opening a window writes geometry back into the same map.
+		for(Map.Entry<String, WindowGeometry> e : new ArrayList<>(m_settingsStore.get().windows().entrySet())) {
+			if(MAIN_WINDOW_KEY.equals(e.getKey()))
+				continue;
+			WindowGeometry g = e.getValue();
+			if(g == null || !g.visible())
+				continue;
+			WindowKey key = WindowKey.fromStorageKey(e.getKey());
+			if(key == null || !isRegistered(key.type()))
+				continue;
+			try {
+				open(key);
+				opened++;
+			} catch(RuntimeException x) {
+				log("Could not reopen " + e.getKey() + ": " + x.getMessage());
+			}
+		}
+		return opened;
+	}
+
+	private void log(String message) {
+		AppContext ctx = m_context;
+		if(ctx != null)
+			ctx.getLogger().log(to.etc.pdp11.core.util.LogChannel.OTHER, message);
 	}
 
 	/** Note where everything is. Called on the way out. */

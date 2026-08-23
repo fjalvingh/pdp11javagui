@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.terminal;
 
 import to.etc.pdp11.core.console.TerminalProfile;
+import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
@@ -57,8 +58,8 @@ public final class GlassTerminalView implements TerminalView {
 
 	public GlassTerminalView() {
 		m_pane.setEditable(false);
-		m_pane.setBackground(new Color(0x12, 0x12, 0x14));
-		m_pane.setCaretColor(new Color(0xE0, 0xE0, 0xE0));
+		m_pane.setBackground(UiColors.TERMINAL_BACKGROUND);
+		m_pane.setCaretColor(UiColors.TERMINAL_CARET);
 		m_pane.setFont(monospaced());
 		//-- A terminal is not a text editor: it has to take keystrokes while being uneditable.
 		m_pane.setFocusable(true);
@@ -81,9 +82,9 @@ public final class GlassTerminalView implements TerminalView {
 		m_scroll.setViewportBorder(BorderFactory.createEmptyBorder());
 		m_scroll.getViewport().setBackground(m_pane.getBackground());
 
-		m_pdpStyle = style(new Color(0xD8, 0xD8, 0xD8));
-		m_userStyle = style(new Color(0x7F, 0xC7, 0xFF));
-		m_systemStyle = style(new Color(0xB0, 0x90, 0x50));
+		m_pdpStyle = style(UiColors.TERMINAL_PDP_TEXT);
+		m_userStyle = style(UiColors.TERMINAL_USER_TEXT);
+		m_systemStyle = style(UiColors.TERMINAL_SYSTEM_TEXT);
 	}
 
 	private static Font monospaced() {

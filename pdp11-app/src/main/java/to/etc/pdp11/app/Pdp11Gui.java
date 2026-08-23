@@ -62,6 +62,11 @@ public final class Pdp11Gui {
 			logger.log(LogChannel.OTHER, "PDP11GUI starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
 			new MainWindow(context).setVisible(true);
+			//-- After the main window, so the layout comes back stacked above it rather than
+			//-- behind it. A window that cannot be reopened is one window skipped; see there.
+			int reopened = context.getWindowManager().restoreVisibleWindows();
+			if(reopened > 0)
+				logger.log(LogChannel.OTHER, "Reopened " + reopened + " window(s) from the last session");
 		});
 	}
 

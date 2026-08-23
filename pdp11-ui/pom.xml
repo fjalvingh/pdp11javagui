@@ -48,5 +48,14 @@
             <groupId>com.fifesoft</groupId>
             <artifactId>rsyntaxtextarea</artifactId>
         </dependency>
+        <!--
+            For UiColorsTest, which holds down "nothing outside UiColors names a colour" the same
+            way pdp11-core's LayeringTest holds down its own structural rules: as a build failure
+            naming the offending class, rather than as a code review question.
+        -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+        </dependency>
     </dependencies>
 </project>

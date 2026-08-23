@@ -11,6 +11,7 @@ import to.etc.pdp11.core.memtest.MemoryTestResult;
 import to.etc.pdp11.core.memtest.MemoryTester;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.ProgressDialog;
 import to.etc.pdp11.ui.UiColors;
@@ -73,7 +74,10 @@ public final class MemoryTestPanel extends JPanel {
 
 	private final JTextArea m_log = new JTextArea();
 
-	private final JLabel m_status = new JLabel();
+	private final JLabel m_statusLabel = new JLabel();
+
+	/** The status line, and where a value that cannot be used is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_statusLabel, UiColors.SECONDARY_TEXT);
 
 	/** The Pascal's {@code TheState}: 0 until the range has been set, 1 after. */
 	private boolean m_rangeSet;
@@ -103,8 +107,7 @@ public final class MemoryTestPanel extends JPanel {
 		add(buildRangeBar(), "growx, wrap");
 		add(buildTestBar(), "growx, wrap");
 		add(new JScrollPane(m_log), "grow, wrap");
-		m_status.setForeground(UiColors.SECONDARY_TEXT);
-		add(m_status, "growx");
+		add(m_statusLabel, "growx");
 
 		resetRange();
 		updateButtons();
@@ -227,7 +230,7 @@ public final class MemoryTestPanel extends JPanel {
 		try {
 			return Address.parseOctal(field.getText().trim(), type);
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + field.getText().trim() + "\" is not an octal address", null);
+			m_status.error("\"" + field.getText().trim() + "\" is not an octal address");
 			return null;
 		}
 	}
@@ -306,7 +309,7 @@ public final class MemoryTestPanel extends JPanel {
 
 	private void run(String what, TestRun work) {
 		if(!m_rangeSet) {
-			m_context.reportFailure("Set the address range first", null);
+			m_status.error("Set the address range first");
 			return;
 		}
 		MemoryAddressType type = m_group.getType();
@@ -315,7 +318,7 @@ public final class MemoryTestPanel extends JPanel {
 		ChipSize size = chipSize();
 		m_running = true;
 		updateButtons();
-		m_status.setText("Testing " + what + " ...");
+		m_status.setText("Testing " + what + " ...", UiColors.SECONDARY_TEXT);
 
 		ProgressDialog progress = new ProgressDialog(owner());
 		boolean started = m_context.onConsole("Memory test", console -> {
@@ -342,16 +345,15 @@ public final class MemoryTestPanel extends JPanel {
 			+ (r.cancelled() ? "stopped early"
 				: r.passed() ? "passed"
 					: r.errorCount() + " bad word" + (r.errorCount() == 1 ? "" : "s")
-						+ (r.hasStuckLines() ? ", and a data line looks dead" : "")));
-		m_status.setForeground(r.passed() && !r.cancelled() ? UiColors.OK_TEXT
-			: r.cancelled() ? UiColors.SECONDARY_TEXT : UiColors.ERROR_TEXT);
+						+ (r.hasStuckLines() ? ", and a data line looks dead" : "")),
+			r.passed() && !r.cancelled() ? UiColors.OK_TEXT
+				: r.cancelled() ? UiColors.SECONDARY_TEXT : UiColors.ERROR_TEXT);
 	}
 
 	private void failed(String what) {
 		m_running = false;
 		updateButtons();
-		m_status.setText("Test of " + what + " could not run");
-		m_status.setForeground(UiColors.ERROR_TEXT);
+		m_status.setText("Test of " + what + " could not run", UiColors.ERROR_TEXT);
 	}
 
 	private void updateButtons() {

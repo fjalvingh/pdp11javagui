@@ -793,6 +793,13 @@ cells, wiping typed edits the examine never touched.
 ### 31. WindowManager's dispose path skips `onHiding()` — a window disposed while visible leaks its subscriptions
 `pdp11-ui/.../window/WindowManager.java:154,168`
 
+**FIXED** as suggested: `ToolWindow.dispose()` is overridden and unsubscribes first. It is
+driven by an `m_subscribed` flag rather than by `isVisible()`, so the pair is a pair whichever
+way the window leaves the screen and cannot run twice - `hideWindow()` then `closeAll()` still
+produces one `onHiding`. `RegisterGroupWindow` had already worked around this with a `dispose()`
+of its own - it is the one window type `closeAll(WindowType)` is called on - and that override is
+removed: it is the framework's job now.
+
 `closeAll()`/`closeAll(WindowType)` call `w.dispose()` directly; `onHiding()` — the
 documented unsubscribe point — runs only from `hideWindow()`. Today the damage is limited
 (shutdown exits anyway; REGISTER_GROUP windows disposed on machine-description reload
@@ -804,6 +811,11 @@ dead frame forever. Fix: run `onHiding` from an overridden `dispose()` when atta
 ### 32. Five hard-coded colours in the terminal violate "Only UiColors names a colour"
 `pdp11-ui/.../terminal/GlassTerminalView.java:60,61,84,85,86`
 
+**FIXED**: all five are `UiColors.TERMINAL_*` now. The rule itself is what was really missing,
+so `UiColorsTest` refuses any `new Color(...)` outside `UiColors` anywhere in pdp11-ui - the same
+shape as pdp11-core's `LayeringTest`, and it needed archunit as a test dependency of that module.
+`Pdp11Gui`'s javadoc had been asserting this was already true.
+
 Background (0x121214), caret (0xE0E0E0) and the three semantic stream colours (PDP
 0xD8D8D8, USER 0x7FC7FF, SYSTEM 0xB09050) are named inline — the stream colours are
 exactly the "means something" kind CLAUDE.md says must live in UiColors, and `Pdp11Gui`'s
@@ -812,6 +824,16 @@ in pdp11-ui/pdp11-app. Fix: move all five to UiColors.
 
 ### 33. Window visibility is saved on every hide/quit and never restored — the tool-window layout does not survive a restart
 `pdp11-ui/.../window/WindowManager.java:202-213`, `settings/WindowGeometry.java:19`, `window/ToolWindow.java:103-108`
+
+**FIXED** by restoring it, which is what the Delphi original does and what the record was always
+for. `WindowManager.restoreVisibleWindows()` runs after the main window is on screen; a saved
+entry that cannot be understood or cannot be built is one window skipped and logged, never a
+failed startup - a register-group window whose device the loaded description no longer declares
+is the case that actually happens. All four sub-points went with it: `hideWindow` now saves
+*after* `setVisible(false)` so a user-closed window records `visible=false`, the main window has
+geometry persistence under its own key, `WindowKey.fromStorageKey` is the way back from the
+settings file, and `WindowType.TERMINAL` is gone - it was registered nowhere and could only ever
+have thrown "No window is registered for TERMINAL".
 
 `rememberGeometry` persists `isVisible()` into `WindowGeometry.visible`, but nothing ever
 reads `.visible()` — every launch opens only the main window, while the settings file
@@ -824,6 +846,18 @@ Either restore visibility on startup or stop recording it.
 ### 34. Vocabulary drift for the two core actions: four names for "read from the machine", and the assembler renames/reorders deposit
 "Examine all"/"Examine cell" (`mem/MemoryPanel.java:106-110`, scan, register groups), "Read from machine" (`dump/MemoryDumperPanel.java:71`), "Read the MMU registers" (`mmu/MmuPanel.java:56`), "Examine" (`bits/BitfieldsPanel.java:176`)
 
+**FIXED**. **Examine** wins for reading the machine, being what most windows already said and
+what the PDP-11 console itself calls it: "Read from machine" (Dumper) and "Read the MMU
+registers" (MMU) are both "Examine all" now, and Bitfields names its scope - "Examine cell",
+"Deposit cell" - instead of leaving it to be guessed. "Examine register" is "Examine cell", the
+majority of three. The Assembler's code tab stops renaming and reordering deposit: "Load into
+machine" is "Deposit all" and sits after "Deposit changed", like every other window.
+
+`VocabularyTest` is what keeps it: it lays out nine panels headlessly, collects every button, and
+asserts that reading the machine is called examining everywhere, that the scope has exactly two
+names, and that deposit-changed comes before deposit-all. This is the kind of thing that can only
+otherwise be caught by opening nine windows and reading them side by side.
+
 Deposit is likewise split: "Deposit all"/"Deposit changed" everywhere except the Assembler
 code tab, where deposit-all is renamed "Load into machine" (`AssemblerPanel.java:114`) and
 sits *before* "Deposit changed", while every other window orders
@@ -833,12 +867,21 @@ instance. One vocabulary and one ordering should win.
 ### 35. Enter in an address field acts in five windows and does nothing in two
 Works: `mem/MemoryPanel.java:126-127`, `disas/DisassemblerPanel.java:128-129`, `dump/MemoryDumperPanel.java:124-125`, `memtest/MemoryTestPanel.java:151-152`, `bits/BitfieldsPanel.java:163-166`. Dead: `exec/ExecutionPanel.java` (Start PC / Current PC fields), `load/MemoryLoaderPanel.java` ("Load at:")
 
+**FIXED** as suggested. The Loader's "Load at:" reads the file, which is the button beside it and
+touches no machine. Execution's two are less obvious and are not the same as each other: Current
+PC writes R7, which is exactly what Set PC does; Start PC publishes to `MachineState` rather than
+resetting, because the button beside *that* one resets a machine and a keystroke in a text field
+should not.
+
 Same widget shape, different Enter contract: in the Dumper, Enter even immediately reads
 the machine; in Execution the user must find the "Set/show" button. Add ActionListeners to
 the two holdouts.
 
 ### 36. Execution window: "Reset" and "Set/show" labels do not describe what the buttons do
 `pdp11-ui/.../exec/ExecutionPanel.java:61,71,235-245,339-347`
+
+**FIXED**: "Reset and set PC" and "Set PC". A button named after half of what it does was
+silently writing a register, and the "show" half of the other one happens in a different window.
 
 "Reset" also deposits the Start PC field into R7 (`doResetAndSetPc` — the docstring admits
 the deposit happens "whether or not" the console needs it), i.e. it silently writes a
@@ -849,6 +892,13 @@ jumping via MachineState, invisible from this window. Beside "Reset and start",
 ### 37. The Memory window shows its word count as octal in the field and decimal in the status line
 `pdp11-ui/.../mem/MemoryPanel.java:81,103-104,209` vs `:263-269`
 
+**FIXED** by making the field decimal, which is the direction the finding argues: it is a count,
+like every other count the application prints, and the status line two rows below has always
+printed this same quantity in decimal. The address beside it stays octal, because an address is.
+The existing test asserting the octal behaviour said "the word count is octal, like everything
+else" - true of a PDP-11's addresses and values, not of this program's counts - and is updated
+with the reason.
+
 The "Words:" field is parsed and re-written as octal (default 64 displays as "100")
 with nothing labelling it octal, while `updateInfo()` two rows below prints the same
 quantity as decimal ("64 words from ..."). Every other count in the app (test results,
@@ -856,6 +906,10 @@ loader status, scanner status) is decimal.
 
 ### 38. Verify is a hidden right-click item in the Memory window and a first-class button in its siblings
 `pdp11-ui/.../mem/MemoryPanel.java:138-140,235-242` vs `load/MemoryLoaderPanel.java:75,131`
+
+**FIXED**: it is a button on the Memory window's toolbar, beside Deposit all, like the Loader's
+and the Assembler's. The context menu keeps the three items that have no button anywhere - Clear
+data, Fill data with address, Export as SimH DO script.
 
 "Verify against the machine" exists only in an undiscoverable grid context menu (with
 "Clear data", "Fill data with address", "Export as SimH DO script ..."); Loader and
@@ -866,6 +920,16 @@ buttons.
 ### 39. Three policies for whether opening a data window reads the machine
 `mem/RegisterGroupWindow.java:37-41` (auto-examine on *first* show only), `mmu/MmuPanel.java` (never auto-reads), Memory windows (examine on Show/Enter only)
 
+**FIXED** by picking the first: **a data window that is shown against a live machine reads it,
+and reads it again when a machine arrives.** Register Group moves off `onFirstShow` (so a
+reconnect to a different machine can no longer leave the previous one's values on screen), the
+MMU window stops opening on a map built from registers nobody examined, and the Memory window
+reads its unknown cells - unknown only, which is what keeps showing an already-read range free.
+
+Note this changed several MMU tests, and the change is the point: they poked values into the
+register cells straight after `attach()`, and the window's own read now lands on top of them.
+They wait for it now.
+
 A Register Group window examines the whole device as a side effect of first open — and
 never again on later shows or reconnects, so stale values display silently after
 reconnecting to a different machine. The MMU window opens showing a map built from
@@ -874,6 +938,18 @@ groups on reconnect).
 
 ### 40. Typed-input errors have three different surfaces, and the default is a modal dialog per typo
 Modal: every octal `parse` failure in Memory/Disassembler/Execution/Dumper/Loader/MemTest/Bitfields routes through `reportFailure` → `JOptionPane` titled "PDP11GUI" (`MainWindow.java:318-324`). Inline status: `macro11/AssemblerPanel.java:66-69` (which explicitly argues against dialogs — "one keystroke of penance per typo"). Silent keystroke rejection: `numbers/NumberDocumentFilter.java`, `mem/OctalCellEditor.java:23-32`
+
+**FIXED** the way the assembler's own comment argues, across all seven windows: a value that
+cannot be parsed is reported in the window's status line, in `UiColors.ERROR_TEXT`, and clears
+itself when the window next says anything about itself. The modal dialog stays for what it is
+for - something that went wrong out in the world, which the user did not cause and cannot
+otherwise see: a command the machine refused, a file that would not open.
+
+`FieldStatus` is the shared piece, so the convention is one class rather than the same four lines
+in seven panels. The keystroke-rejecting filters (`NumberDocumentFilter`, `OctalCellEditor`) are
+left alone: they are on grid cells and value fields where every character is checkable as it is
+typed, which is a different situation from an address field that is only wrong once it is
+complete.
 
 Field-level validation deserves one convention; the modal dialog is the most hostile of
 the three and is the default. The assembler's own comment is the design argument for

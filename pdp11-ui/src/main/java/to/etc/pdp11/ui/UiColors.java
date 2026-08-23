@@ -61,4 +61,31 @@ public final class UiColors {
 
 	/** Failed, refused, or a switch nobody has said the position of. */
 	public static final Color ERROR_TEXT = new Color(0xFF, 0x6B, 0x68);
+
+	// -------------------------------------------------------------------------------------
+	// The terminal
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * The glass TTY the terminal paints itself, darker than the theme's own background.
+	 *
+	 * <p>It is not the theme's panel colour on purpose: the terminal is the machine's own screen
+	 * rather than a widget on a form, and it read as one long before the rest of the application
+	 * went dark.</p>
+	 */
+	public static final Color TERMINAL_BACKGROUND = new Color(0x12, 0x12, 0x14);
+
+	public static final Color TERMINAL_CARET = new Color(0xE0, 0xE0, 0xE0);
+
+	/**
+	 * What the machine said. The three stream colours are the terminal's whole vocabulary - who
+	 * is talking - which is exactly the "means something" kind that belongs here.
+	 */
+	public static final Color TERMINAL_PDP_TEXT = new Color(0xD8, 0xD8, 0xD8);
+
+	/** What the user typed, echoed back. */
+	public static final Color TERMINAL_USER_TEXT = new Color(0x7F, 0xC7, 0xFF);
+
+	/** What the application itself said - a connect, a disconnect, a failure. */
+	public static final Color TERMINAL_SYSTEM_TEXT = new Color(0xB0, 0x90, 0x50);
 }

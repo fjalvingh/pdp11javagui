@@ -4,6 +4,59 @@
 
 ### Fixes
 
+- **The tool-window layout survives a restart.** The settings file has recorded which windows
+  were open since the beginning and nothing ever read it back: every launch opened the main window
+  alone, next to a file describing in detail a layout it was not restoring. It restores now, as the
+  Delphi original does. A saved entry that names a window type this version no longer has, or a
+  register group the loaded machine description does not declare, is one window skipped and logged
+  - nothing in settings may stop the application starting. Three smaller things went with it: a
+  window closed by the user is recorded as closed rather than open (the geometry was saved just
+  before `setVisible(false)`, so it always read `visible=true` and was only corrected by the quit
+  path), the main window now remembers where it was like every other window already did, and the
+  dead `WindowType.TERMINAL` constant is gone.
+- **A window disposed of while visible stayed subscribed to everything it was watching.** The
+  framework's rule is that `onShowing` and `onHiding` pair up, and `onHiding` ran only from
+  `hideWindow()` - so shutting down, or replacing the machine description, disposed of live windows
+  that were still on `ConnectionManager`'s and `MachineState`'s listener lists as dead frames.
+- **One vocabulary for the two actions this program is about.** Reading the machine had four names
+  - "Examine all", "Read from machine" (Dumper), "Read the MMU registers" (MMU), "Examine"
+  (Bitfields) - and "Examine register" was a third name for a scope that has two. Everything says
+  **Examine** now, at one of two scopes. Deposit had two orderings and a rename: the Assembler's
+  code tab called deposit-all "Load into machine" and put it *before* "Deposit changed", where
+  every other window puts it after. It does not any more.
+- **Verify is a button in the Memory window.** It was the only interesting item in the grid's
+  right-click menu, which is the only right-click menu in the application - so the one action its
+  two siblings put on a toolbar was hidden behind a gesture nothing else in the program uses.
+- **Enter acts in the two address fields where it used to do nothing.** The Loader's "Load at:"
+  reads the file; Execution's Current PC writes R7, the same as Set PC. Execution's Start PC
+  publishes where the program starts, deliberately without resetting anything - the button beside
+  it resets a machine, and a keystroke in a text field should not.
+- **"Reset" and "Set/show" say what they do: "Reset and set PC" and "Set PC".** The first also
+  deposited the Start PC field into R7 whatever the console's own reset did, so a button named
+  after half of what it did was silently writing a register. The "show" half of the second is the
+  disassembler following along in a different window, which is not something this button can be
+  said to do.
+- **The Memory window's word count is decimal in the field, as it always was in the status line.**
+  The field was parsed and rewritten as octal with nothing saying so, so the default of 64 words
+  showed as "100" two rows above a line reading "64 words from ...". Addresses stay octal.
+- **A mistyped address is a status line, not a modal dialog.** Every octal parse failure in the
+  Memory, Disassembler, Execution, Dumper, Loader, Memory Test and Bitfields windows put up a
+  modal `JOptionPane` that had to be dismissed before anything could be retyped. The Assembler has
+  always argued the other way in its own source - a dialog is "one keystroke of penance per typo" -
+  and it was right. Dialogs stay for what they are for: a command the machine refused, a file that
+  would not open.
+- **One policy for whether opening a data window reads the machine, where there were three.** A
+  Register Group window examined its whole device on *first* show and never again, so reconnecting
+  to a different machine left the previous one's register values on screen with nothing saying so;
+  the MMU window read nothing at all and opened showing a map built from unexamined registers; the
+  Memory windows read on Show and on Enter. All three now read when they are shown against a live
+  machine, and again when a machine arrives.
+- **The terminal's five colours are in `UiColors`.** The background, the caret and the three
+  stream colours - which are how the window says who is talking, and so exactly the kind that
+  belongs there - were `new Color(...)` literals in `GlassTerminalView`'s constructor, beside a
+  javadoc in `Pdp11Gui` asserting that nothing else in the UI names a colour. An ArchUnit rule now
+  makes that true rather than claimed.
+
 - **A pasted line with an address the machine cannot express aborted a whole "forgiving" load.**
   The text memory format is documented as skipping junk and collecting warnings, and it does -
   right up to an address wider than the group, which reached `Address.of` and came back out as an

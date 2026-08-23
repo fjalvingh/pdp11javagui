@@ -11,7 +11,6 @@ package to.etc.pdp11.ui.window;
  */
 public enum WindowType {
 	LOG("Log"),
-	TERMINAL("Terminal"),
 	MEMORY("Memory", true),
 	ASSEMBLER("Assembler"),
 	EXECUTION("Execution control"),
@@ -34,6 +33,11 @@ public enum WindowType {
 	 * that is left to have a window of its own.</p>
 	 */
 	SIMH_CONSOLE("SimH console");
+
+	//-- There is no TERMINAL. The emulated machine's console is the main window's own terminal,
+	//-- which is not a tool window and has no factory; the constant existed, was registered
+	//-- nowhere, and could only ever have produced "No window is registered for TERMINAL".
+
 
 	private final String m_title;
 

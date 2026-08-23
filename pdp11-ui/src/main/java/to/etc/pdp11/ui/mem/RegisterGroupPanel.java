@@ -35,7 +35,7 @@ public final class RegisterGroupPanel extends JPanel {
 
 	private final JButton m_examineAll = new JButton("Examine all");
 
-	private final JButton m_examineOne = new JButton("Examine register");
+	private final JButton m_examineOne = new JButton("Examine cell");
 
 	private final JButton m_depositChanged = new JButton("Deposit changed");
 
@@ -112,7 +112,16 @@ public final class RegisterGroupPanel extends JPanel {
 		return List.of(m_examineAll, m_examineOne, m_depositChanged, m_depositAll);
 	}
 
-	/** Read everything as soon as the window is looked at, if there is a machine to ask. */
+	/**
+	 * Read the machine when this window is shown, and again when a machine arrives.
+	 *
+	 * <p><b>One policy, chosen once.</b> There used to be three: a Register Group window examined
+	 * its whole device on <i>first</i> show and never again - so reconnecting to a different
+	 * machine left the previous one's values on the screen with nothing saying so - the MMU
+	 * window never read anything and opened showing a map built from registers nobody had
+	 * examined, and the Memory windows read on Show and on Enter. A data window that is looking
+	 * at a live machine shows what that machine holds; that is what it is for.</p>
+	 */
 	public void examineIfConnected() {
 		if(m_context.getConnectionManager().isConnected())
 			m_list.examineAll(owner());
@@ -127,12 +136,19 @@ public final class RegisterGroupPanel extends JPanel {
 	// -------------------------------------------------------------------------------------
 
 	private final ConnectionManager.Listener m_connectionListener =
-		(manager, state) -> AppContext.onUi(this::updateButtons);
+		(manager, state) -> AppContext.onUi(() -> {
+			updateButtons();
+			//-- A different machine holds different values. Reading them is the same thing
+			//-- opening the window does, for the same reason.
+			if(state == ConnectionManager.State.CONNECTED)
+				examineIfConnected();
+		});
 
 	public void attach() {
 		detach();
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		updateButtons();
+		examineIfConnected();
 	}
 
 	public void detach() {

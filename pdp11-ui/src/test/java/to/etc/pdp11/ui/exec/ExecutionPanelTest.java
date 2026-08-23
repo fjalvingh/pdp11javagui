@@ -71,6 +71,73 @@ class ExecutionPanelTest {
 		return ctx;
 	}
 
+	// ---------------------------------------------------------------------------------------
+	// Typing into the two address fields
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * Enter acts, as it does in the Memory, Disassembler, Dumper, Memory Test and Bitfields
+	 * windows. These two fields were the holdouts: same widget, same shape, and the key did
+	 * nothing at all - the only way to act on what had been typed was to find the button.
+	 */
+	@Test
+	void enterInTheCurrentPcFieldWritesItIntoTheMachine(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.SIMH);
+		try {
+			ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+			UiRenderer.layOut(panel, 640, 260);
+			Edt.run(() -> {
+				panel.getCurrentPcField().setText("001000");
+				panel.getCurrentPcField().postActionEvent();
+			});
+			until("the PC to reach the machine",
+				() -> Edt.call(() -> ctx.getMachineState().getPc() != null
+					&& ctx.getMachineState().getPc().val() == 01000));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * The Start PC field means "where a program starts", which is {@code MachineState}'s and is
+	 * written back into this field whenever the user is not typing. Enter completes that round
+	 * trip - deliberately without resetting anything, which is what the button beside it does:
+	 * a keystroke in a text field should not reset a machine.
+	 */
+	@Test
+	void enterInTheStartPcFieldPublishesItWithoutTouchingTheMachine(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+		UiRenderer.layOut(panel, 640, 260);
+		Edt.run(() -> {
+			panel.getStartPcField().setText("002000");
+			panel.getStartPcField().postActionEvent();
+		});
+		assertEquals(02000, ctx.getMachineState().getStartPc().val());
+	}
+
+	/**
+	 * A mistyped address is a status line, not a modal dialog. The assembler has always argued
+	 * this in its own source - a dialog is "one keystroke of penance per typo" - and every other
+	 * window disagreed.
+	 */
+	@Test
+	void aMistypedPcIsReportedInTheStatusLineAndNotInADialog(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		List<String> dialogs = new CopyOnWriteArrayList<>();
+		ctx.setFailureHandler((message, cause) -> dialogs.add(message));
+		ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+		UiRenderer.layOut(panel, 640, 260);
+
+		Edt.run(() -> {
+			panel.getStartPcField().setText("banana");
+			panel.getStartPcField().postActionEvent();
+		});
+
+		assertTrue(panel.getStateText().contains("banana"), panel.getStateText());
+		assertTrue(dialogs.isEmpty(), "put up a dialog: " + dialogs);
+	}
+
 	@Test
 	void withNoMachineNothingIsOffered(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);

@@ -372,6 +372,154 @@ class WindowsBuildTest {
 		}
 	}
 
+	/**
+	 * The framework's own rule is that {@code onShowing} and {@code onHiding} pair up, and a
+	 * window can leave the screen two ways. Only {@code hideWindow()} ran {@code onHiding};
+	 * {@code closeAll()} and {@code closeAll(WindowType)} called {@code dispose()} straight, so a
+	 * window disposed of while visible stayed subscribed to whatever it had subscribed to as a
+	 * dead frame.
+	 */
+	@Test
+	void aWindowDisposedWhileVisibleStillUnsubscribes(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		List<String> events = new ArrayList<>();
+		ctx.getWindowManager().register(WindowType.LOG,
+			key -> new RecordingWindow(key, ctx, events));
+
+		ToolWindow w = onEdt(() -> ctx.getWindowManager().open(WindowType.LOG));
+		assertEquals(List.of("showing"), events);
+		assertTrue(w.isSubscribed());
+
+		onEdt(() -> {
+			ctx.getWindowManager().closeAll();
+			return null;
+		});
+		assertEquals(List.of("showing", "hiding"), events, "disposed while visible, so it unsubscribed");
+		assertFalse(w.isSubscribed());
+	}
+
+	/** And it happens once, not twice, for a window that was hidden first. */
+	@Test
+	void hidingThenDisposingUnsubscribesOnlyOnce(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		List<String> events = new ArrayList<>();
+		ctx.getWindowManager().register(WindowType.LOG,
+			key -> new RecordingWindow(key, ctx, events));
+
+		ToolWindow w = onEdt(() -> ctx.getWindowManager().open(WindowType.LOG));
+		onEdt(() -> {
+			w.hideWindow();
+			ctx.getWindowManager().closeAll();
+			return null;
+		});
+		assertEquals(List.of("showing", "hiding"), events);
+	}
+
+	/** A tool window that records the two hooks, so a test can say whether they paired up. */
+	private static final class RecordingWindow extends ToolWindow {
+		private final List<String> m_events;
+
+		RecordingWindow(to.etc.pdp11.ui.window.WindowKey key, AppContext context, List<String> events) {
+			super(key, context);
+			m_events = events;
+			setSize(300, 200);
+		}
+
+		@Override
+		protected void onShowing() {
+			m_events.add("showing");
+		}
+
+		@Override
+		protected void onHiding() {
+			m_events.add("hiding");
+		}
+	}
+
+	// ---------------------------------------------------------------------------------------
+	// Restoring the layout
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * The geometry record has carried a {@code visible} flag since the beginning and nothing read
+	 * it: every launch opened the main window alone while the settings file described, in detail,
+	 * a layout it was not restoring.
+	 */
+	@Test
+	void theWindowsThatWereOpenLastTimeComeBack(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext first = context(dir);
+		LogWindow.register(first);
+		MemoryWindow.register(first);
+		NumberConverterWindow.register(first);
+		onEdt(() -> {
+			first.getWindowManager().open(WindowType.LOG);
+			first.getWindowManager().openNew(WindowType.MEMORY);
+			ToolWindow converter = first.getWindowManager().open(WindowType.NUMBER_CONVERTER);
+			//-- Closed by the user before quitting, so it should not come back.
+			converter.hideWindow();
+			return null;
+		});
+		onEdt(() -> {
+			first.getWindowManager().rememberAllGeometry();
+			first.getWindowManager().closeAll();
+			return null;
+		});
+		first.saveSettings();
+
+		//-- A second run, reading the same settings file.
+		AppContext second = context(dir);
+		LogWindow.register(second);
+		MemoryWindow.register(second);
+		NumberConverterWindow.register(second);
+		try {
+			int reopened = onEdt(() -> second.getWindowManager().restoreVisibleWindows());
+			assertEquals(2, reopened);
+			assertNotNull(second.getWindowManager().find(to.etc.pdp11.ui.window.WindowKey.of(WindowType.LOG)));
+			assertNotNull(second.getWindowManager()
+				.find(to.etc.pdp11.ui.window.WindowKey.of(WindowType.MEMORY, "1")),
+				"a memory window comes back as the same instance id, so its geometry follows it");
+			assertNull(second.getWindowManager().find(
+				to.etc.pdp11.ui.window.WindowKey.of(WindowType.NUMBER_CONVERTER)),
+				"it was closed before quitting");
+		} finally {
+			onEdt(() -> {
+				second.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * A saved entry can name a register group the loaded machine description does not declare -
+	 * the factory throws for that on purpose - and nothing in settings may stop the application
+	 * starting.
+	 */
+	@Test
+	void aWindowThatCannotBeReopenedIsOneWindowSkipped(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		LogWindow.register(ctx);
+		RegisterGroupWindow.register(ctx);
+		//-- A group that is not there, and a window that is.
+		ctx.getSettings().setWindowGeometry("REGISTER_GROUP:no such device",
+			new to.etc.pdp11.ui.settings.WindowGeometry(10, 10, 400, 300, true, false));
+		ctx.getSettings().setWindowGeometry("LOG",
+			new to.etc.pdp11.ui.settings.WindowGeometry(20, 20, 400, 300, true, false));
+		try {
+			assertEquals(1, onEdt(() -> ctx.getWindowManager().restoreVisibleWindows()),
+				"the one that could be built");
+			assertNotNull(ctx.getWindowManager().find(to.etc.pdp11.ui.window.WindowKey.of(WindowType.LOG)));
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
 	@Test
 	void everyToolWindowBuilds(@TempDir Path dir) throws Exception {
 		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");

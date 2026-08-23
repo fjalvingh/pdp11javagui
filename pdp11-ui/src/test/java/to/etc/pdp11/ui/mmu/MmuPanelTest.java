@@ -20,6 +20,8 @@ import java.awt.Rectangle;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,6 +55,23 @@ class MmuPanelTest {
 		return ctx.getConnectionManager().getConsole().getMmu();
 	}
 
+	/**
+	 * Wait for whatever the window queued on the command thread, then flush the event thread.
+	 *
+	 * <p>Opening a data window against a live machine reads it. So a test that pokes values into
+	 * the register cells has to let that read finish first, or the examine lands afterwards and
+	 * replaces them with what the simulated machine actually holds - which is exactly the
+	 * behaviour being relied on, arriving at the wrong moment. The command executor is single
+	 * threaded and FIFO, so a job queued behind the examine runs after it.</p>
+	 */
+	private static void settle(AppContext ctx) throws Exception {
+		CountDownLatch done = new CountDownLatch(1);
+		if(ctx.onConsole("settle", console -> done.countDown()))
+			assertTrue(done.await(30, TimeUnit.SECONDS), "the command thread did not drain");
+		Edt.run(() -> {
+		});
+	}
+
 	/** Set an MMU register the way a machine would have, and let the MMU recompute. */
 	private static void set(AppContext ctx, String name, int value) {
 		for(MemoryCell mc : mmu(ctx).getRegisterGroup().getCells()) {
@@ -68,6 +87,29 @@ class MmuPanelTest {
 
 	private static String cell(javax.swing.JTable table, int row, int column) {
 		return Edt.call(() -> String.valueOf(table.getValueAt(row, column)));
+	}
+
+	/**
+	 * One auto-read policy, where there used to be three. This window read nothing at all: it
+	 * opened showing a map built from eight page-register pairs nobody had examined - drawn as a
+	 * map, with a button beside it - which is a different answer to the same question the
+	 * Register Group and Memory windows were answering two other ways.
+	 */
+	@Test
+	void showingTheWindowReadsTheRegisters(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir);
+		try {
+			MemoryCell first = mmu(ctx).getRegisterGroup().getCells().get(0);
+			assertFalse(first.getPdpValue().isKnown(), "nothing has been read yet");
+
+			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
+			Edt.run(panel::attach);
+			settle(ctx);
+
+			assertTrue(first.getPdpValue().isKnown(), "the window read the machine on the way in");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
 	}
 
 	@Test
@@ -97,6 +139,7 @@ class MmuPanelTest {
 		try {
 			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
 			Edt.run(panel::attach);
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "KIPAR0", 04000);
 			set(ctx, "KIPDR0", 077406);
@@ -125,6 +168,7 @@ class MmuPanelTest {
 		try {
 			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
 			Edt.run(panel::attach);
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "MMR3", 07);
 			set(ctx, "KIPAR0", 04000);
@@ -146,16 +190,19 @@ class MmuPanelTest {
 	void itStartsOnTheModeTheMachineIsInAndAnyModeCanBeLookedAt(@TempDir Path dir) throws Exception {
 		AppContext ctx = connected(dir);
 		try {
-			//-- PSW bits 15..14 are the mode: 11 is user.
+			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
+			Edt.run(panel::attach);
+			settle(ctx);
+			//-- PSW bits 15..14 are the mode: 11 is user. Set after the window's own read of the
+			//-- machine, so these are the values it ends up showing.
 			set(ctx, "PSW", 0140000);
 			set(ctx, "MMR0", 1);
 			set(ctx, "UIPAR0", 020000);
 			set(ctx, "UIPDR0", 077406);
 			set(ctx, "KIPAR0", 04000);
 			set(ctx, "KIPDR0", 077406);
+			Edt.run(() -> panel.getModeSelector().setSelectedItem(mmu(ctx).getCpuMode()));
 
-			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
-			Edt.run(panel::attach);
 			assertEquals(CpuMode.USER, Edt.call(() -> panel.getModeSelector().getSelectedItem()),
 				"the mode the machine is in");
 			assertTrue(Edt.call(panel::getCurrentModeText).contains("the mode the machine is in"),
@@ -179,6 +226,7 @@ class MmuPanelTest {
 		try {
 			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
 			Edt.run(panel::attach);
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "KIPAR0", 04000);
 			set(ctx, "KIPDR0", 06);                         // one 64-byte block long
@@ -217,6 +265,7 @@ class MmuPanelTest {
 		try {
 			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
 			Edt.run(panel::attach);
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "KIPDR0", 077406);                     // a full 8 KB page
 			set(ctx, "KIPAR0", 0177777);                    // and a PAF of all ones over it
@@ -290,6 +339,7 @@ class MmuPanelTest {
 			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
 			Edt.run(() -> {
 			});
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "KIPAR0", 04000);
 			set(ctx, "KIPDR0", 077406);
@@ -413,6 +463,7 @@ class MmuPanelTest {
 		try {
 			MmuPanel panel = Edt.call(() -> new MmuPanel(ctx));
 			Edt.run(panel::attach);
+			settle(ctx);
 			set(ctx, "MMR0", 1);
 			set(ctx, "KIPAR0", 04000);
 			set(ctx, "KIPDR0", 077406);

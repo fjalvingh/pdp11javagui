@@ -9,6 +9,7 @@ import to.etc.pdp11.core.memfile.MemoryDumper;
 import to.etc.pdp11.core.memfile.MemoryFileFormat;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.mem.MemoryCellGroupTable;
@@ -68,11 +69,14 @@ public final class MemoryDumperPanel extends JPanel {
 
 	private final List<JButton> m_fileBrowse = new ArrayList<>();
 
-	private final JButton m_examine = new JButton("Read from machine");
+	private final JButton m_examine = new JButton("Examine all");
 
 	private final JButton m_dump = new JButton("Write file");
 
-	private final JLabel m_status = new JLabel();
+	private final JLabel m_statusLabel = new JLabel();
+
+	/** The status line, and where a value that cannot be used is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_statusLabel, UiColors.SECONDARY_TEXT);
 
 	public MemoryDumperPanel(AppContext context) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][][grow][]"));
@@ -95,8 +99,7 @@ public final class MemoryDumperPanel extends JPanel {
 		add(buildRangeBar(), "growx, wrap");
 		add(buildFileBar(), "growx, wrap");
 		add(m_grid, "grow, wrap");
-		m_status.setForeground(UiColors.SECONDARY_TEXT);
-		add(m_status, "growx");
+		add(m_statusLabel, "growx");
 
 		m_startAddr.setText(Address.of(m_group.getType(), 01000).toOctal());
 		m_endAddr.setText(Address.of(m_group.getType(), 01776).toOctal());
@@ -256,12 +259,11 @@ public final class MemoryDumperPanel extends JPanel {
 				+ (f == MemoryFileFormat.ABSOLUTE_PAPERTAPE ? " in " + r.blocks() + " blocks" : "")
 				+ (r.isComplete() ? ""
 					: "  -  " + r.unknownWords() + " word" + (r.unknownWords() == 1 ? "" : "s")
-						+ " had never been read from the machine"));
-			m_status.setForeground(r.isComplete() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+						+ " had never been read from the machine"),
+				r.isComplete() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
 		} catch(IOException | RuntimeException x) {
 			m_context.reportFailure("Could not write " + files.get(0), x);
-			m_status.setText("Nothing written");
-			m_status.setForeground(UiColors.ERROR_TEXT);
+			m_status.setText("Nothing written", UiColors.ERROR_TEXT);
 		}
 	}
 
@@ -269,7 +271,7 @@ public final class MemoryDumperPanel extends JPanel {
 		try {
 			return Address.parseOctal(field.getText().trim(), type);
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + field.getText().trim() + "\" is not an octal address", null);
+			m_status.error("\"" + field.getText().trim() + "\" is not an octal address");
 			return null;
 		}
 	}
@@ -287,16 +289,15 @@ public final class MemoryDumperPanel extends JPanel {
 
 	private void updateStatus() {
 		if(m_group.isEmpty()) {
-			m_status.setText("Nothing to write yet");
-			m_status.setForeground(UiColors.SECONDARY_TEXT);
+			m_status.setText("Nothing to write yet", UiColors.SECONDARY_TEXT);
 			return;
 		}
 		long unread = m_group.getCells().stream().filter(c -> !c.getEditValue().isKnown()).count();
 		m_status.setText(m_group.size() + " words from "
 			+ Address.of(m_group.getType(), m_group.getRange().lo()).toOctal() + " to "
 			+ Address.of(m_group.getType(), m_group.getRange().hi()).toOctal()
-			+ (unread == 0 ? "" : "  -  " + unread + " not read from the machine"));
-		m_status.setForeground(UiColors.SECONDARY_TEXT);
+			+ (unread == 0 ? "" : "  -  " + unread + " not read from the machine"),
+			UiColors.SECONDARY_TEXT);
 	}
 
 	private final ConnectionManager.Listener m_connectionListener = (manager, state) -> AppContext.onUi(() -> {

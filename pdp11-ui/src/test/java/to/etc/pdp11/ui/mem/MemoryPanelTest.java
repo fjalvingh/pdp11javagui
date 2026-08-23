@@ -175,14 +175,18 @@ class MemoryPanelTest {
 			mc.setPdpValue(CellValue.of(042));
 		}
 		//-- One row later: 8 words move out at the front, unread ones arrive at the back.
-		panel.getBlockSizeField().setText("100");
+		//-- The word count is decimal - a count, like every other count the application shows,
+		//-- and like the status line under this very field has always printed it. The address
+		//-- beside it stays octal, because an address is.
+		panel.getBlockSizeField().setText("64");
 		panel.getStartAddressField().setText("20");
 		panel.getStartAddressField().postActionEvent();
 
 		assertEquals(020, panel.getGroup().getRange().lo());
-		assertEquals(0100, panel.getGroup().size(), "the word count is octal, like everything else");
+		assertEquals(64, panel.getGroup().size());
+		assertEquals("64", panel.getBlockSizeField().getText(), "and it is written back decimal too");
 		assertEquals(042, panel.getGroup().cell(0).getPdpValue().word(), "address 20 was already read");
-		assertFalse(panel.getGroup().cell(070).getPdpValue().isKnown(), "the new tail has not been");
+		assertFalse(panel.getGroup().cell(56).getPdpValue().isKnown(), "the new tail has not been");
 	}
 
 	@Test
@@ -300,6 +304,62 @@ class MemoryPanelTest {
 			assertFalse(mine.getPdpValue().isKnown(), "there is nothing at that address to read");
 			assertEquals(0777, mine.getEditValue().word(), "so nothing should have replaced what was typed");
 		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * A mistyped address is a status line, not a modal dialog, and Enter does not silently move
+	 * the range to somewhere it was not asked to go.
+	 */
+	@Test
+	void nonsenseInTheAddressFieldSaysSoInPlaceRatherThanInADialog(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		java.util.List<String> dialogs = new java.util.concurrent.CopyOnWriteArrayList<>();
+		ctx.setFailureHandler((message, cause) -> dialogs.add(message));
+		MemoryPanel panel = new MemoryPanel(ctx, "1");
+		UiRenderer.layOut(panel, WIDTH, HEIGHT);
+		long before = panel.getGroup().getRange().lo();
+
+		panel.getStartAddressField().setText("banana");
+		panel.getStartAddressField().postActionEvent();
+
+		assertEquals(before, panel.getGroup().getRange().lo(), "and the range did not move");
+		assertTrue(panel.getInfoText().contains("banana"), panel.getInfoText());
+		assertTrue(dialogs.isEmpty(), "put up a modal dialog: " + dialogs);
+	}
+
+	/** And the status line goes back to describing the window once something works. */
+	@Test
+	void theErrorGoesAwayWhenSomethingWorks(@TempDir Path dir) {
+		MemoryPanel panel = panel(dir);
+		panel.getStartAddressField().setText("banana");
+		panel.getStartAddressField().postActionEvent();
+		assertTrue(panel.getInfoText().contains("banana"));
+
+		panel.getStartAddressField().setText("1000");
+		panel.getStartAddressField().postActionEvent();
+		assertTrue(panel.getInfoText().startsWith(panel.getGroup().size() + " words"), panel.getInfoText());
+	}
+
+	/**
+	 * Opening a data window against a live machine reads it - one policy, where there used to be
+	 * three. Unknown cells only, so showing a range that has already been read costs nothing.
+	 */
+	@Test
+	void showingTheWindowReadsTheMachine(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryPanel panel = new MemoryPanel(ctx, "1");
+		UiRenderer.layOut(panel, WIDTH, HEIGHT);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			MemoryCell cell = panel.cellAt(0, 1);
+			assertFalse(cell.getPdpValue().isKnown(), "nothing has been read yet");
+
+			Edt.run(panel::attach);
+			until("the window's own read to arrive", () -> cell.getPdpValue().isKnown());
+		} finally {
+			Edt.run(panel::detach);
 			ctx.getConnectionManager().close();
 		}
 	}

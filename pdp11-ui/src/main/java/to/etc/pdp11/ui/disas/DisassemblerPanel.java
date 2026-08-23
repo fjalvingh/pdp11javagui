@@ -6,6 +6,7 @@ import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.disas.DisassemblyListing;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.ProgressDialog;
@@ -74,6 +75,9 @@ public final class DisassemblerPanel extends JPanel {
 	private final JList<DisassemblyListing.Line> m_list = new JList<>(m_model);
 
 	private final JLabel m_info = new JLabel();
+
+	/** The status line, and where a mistyped address is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_info);
 
 	private Address m_start = Address.of(MemoryAddressType.VIRTUAL, 0);
 
@@ -203,17 +207,17 @@ public final class DisassemblerPanel extends JPanel {
 		}
 		if(listing.pcLine() >= 0) {
 			m_list.ensureIndexIsVisible(listing.pcLine());
-			m_info.setText("PC at " + m_pc.toOctal()
+			m_status.setText("PC at " + m_pc.toOctal()
 				+ (listing.startAddress().val() == m_start.val()
 					? ""
 					: "  -  listing realigned to " + listing.startAddress().toOctal()
 						+ ", because the PC is inside an instruction that starts earlier"));
 		} else if(m_model.isEmpty()) {
-			m_info.setText(m_context.getConnectionManager().isConnected()
+			m_status.setText(m_context.getConnectionManager().isConnected()
 				? "Nothing has been read from this range yet"
 				: "Not connected, so there is nothing to disassemble");
 		} else {
-			m_info.setText(m_model.size() + " instructions from " + m_start.toOctal() + " to " + m_end.toOctal());
+			m_status.setText(m_model.size() + " instructions from " + m_start.toOctal() + " to " + m_end.toOctal());
 		}
 	}
 
@@ -301,7 +305,7 @@ public final class DisassemblerPanel extends JPanel {
 		try {
 			return Address.parseOctal(field.getText().trim(), MemoryAddressType.VIRTUAL);
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + field.getText().trim() + "\" is not an octal address", null);
+			m_status.error("\"" + field.getText().trim() + "\" is not an octal address");
 			return null;
 		}
 	}

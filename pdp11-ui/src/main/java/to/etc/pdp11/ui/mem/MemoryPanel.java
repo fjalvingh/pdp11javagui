@@ -8,6 +8,7 @@ import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 
 import javax.swing.AbstractButton;
@@ -61,6 +62,9 @@ public final class MemoryPanel extends JPanel {
 
 	private final JLabel m_info = new JLabel();
 
+	/** The status line, and where a mistyped address is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_info);
+
 	//-- The controls that reach the machine. Fields, because they are switched off while there
 	//-- is no machine to reach: the alternative is a modal "Not connected" dialog per click,
 	//-- which is what every other data window already avoids.
@@ -72,7 +76,15 @@ public final class MemoryPanel extends JPanel {
 
 	private final JButton m_depositAll = new JButton("Deposit all");
 
-	private final JMenuItem m_verify = new JMenuItem("Verify against the machine");
+	/**
+	 * A button, like everywhere else.
+	 *
+	 * <p>It was the one interesting thing in the grid's right-click menu - and the only
+	 * right-click menu in the application, so the one surface nobody would think to look at. The
+	 * Loader and the Assembler both put Verify on their toolbars; there is no reason this window
+	 * should hide the same action behind a gesture its siblings do not use.</p>
+	 */
+	private final JButton m_verify = new JButton("Verify");
 
 	public MemoryPanel(AppContext context, String instanceId) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
@@ -95,7 +107,7 @@ public final class MemoryPanel extends JPanel {
 		add(m_info, "growx");
 
 		m_startAddr.setText(Address.of(m_group.getType(), 0).toOctal());
-		m_blockSize.setText(Octal.format(DEFAULT_BLOCK_SIZE, 1));
+		m_blockSize.setText(String.valueOf(DEFAULT_BLOCK_SIZE));
 		installPopupMenu();
 		updateButtons();
 		updateInfo();
@@ -108,7 +120,7 @@ public final class MemoryPanel extends JPanel {
 	}
 
 	private JPanel buildControls() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]4[]4[]12[][]16[][]8[][]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]4[]4[]12[][]16[][]8[][]4[]", "[]"));
 		bar.add(new JLabel("Start:"));
 		bar.add(m_startAddr);
 		JButton back = new JButton("<");
@@ -127,6 +139,7 @@ public final class MemoryPanel extends JPanel {
 		bar.add(m_examineOne);
 		bar.add(m_depositChanged);
 		bar.add(m_depositAll);
+		bar.add(m_verify);
 
 		set.addActionListener(e -> applyRange(true));
 		back.addActionListener(e -> step(-1));
@@ -137,6 +150,9 @@ public final class MemoryPanel extends JPanel {
 		m_examineOne.addActionListener(e -> m_grid.examineCell(m_grid.getSelectedCell()));
 		m_depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
 		m_depositAll.addActionListener(e -> m_grid.depositAll(false, owner()));
+		m_verify.addActionListener(e -> verify());
+		m_verify.setToolTipText("Read it all back without touching the edits; "
+			+ "anything the machine disagrees with shows as changed");
 		//-- Enter in either field is the same as pressing Show, which is what makes typing an
 		//-- address feel like typing an address.
 		m_startAddr.addActionListener(e -> applyRange(true));
@@ -151,14 +167,10 @@ public final class MemoryPanel extends JPanel {
 		clear.addActionListener(e -> m_grid.clearData());
 		JMenuItem fill = new JMenuItem("Fill data with address");
 		fill.addActionListener(e -> m_grid.fillWithAddress());
-		m_verify.setToolTipText("Read it all back; anything the machine disagrees with shows as changed");
-		m_verify.addActionListener(e -> verify());
 		JMenuItem export = new JMenuItem("Export as SimH DO script ...");
 		export.addActionListener(e -> exportSimhScript());
 		menu.add(clear);
 		menu.add(fill);
-		menu.addSeparator();
-		menu.add(m_verify);
 		menu.addSeparator();
 		menu.add(export);
 
@@ -208,20 +220,25 @@ public final class MemoryPanel extends JPanel {
 		try {
 			start = Address.parseOctal(m_startAddr.getText().trim(), m_group.getType());
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + m_startAddr.getText().trim() + "\" is not an octal address", null);
+			showFieldError("\"" + m_startAddr.getText().trim() + "\" is not an octal address");
 			return;
 		}
 		int words;
 		try {
-			words = (int) Octal.parse(m_blockSize.getText().trim());
+			//-- Decimal, and the status line two rows below has always said so. A word count is
+			//-- neither an address nor a value in memory - it is a count, like the ones the
+			//-- memory test, the loader and the scanner report - and octal here meant the
+			//-- default of 64 words showed as "100" in an unlabelled field while the line under
+			//-- it read "64 words from ...".
+			words = Integer.parseInt(m_blockSize.getText().trim());
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + m_blockSize.getText().trim() + "\" is not a word count", null);
+			showFieldError("\"" + m_blockSize.getText().trim() + "\" is not a word count");
 			return;
 		}
 		words = Math.max(1, Math.min(MAX_BLOCK_SIZE, words));
 
 		m_group.shiftRange(start, words, true);
-		m_blockSize.setText(Octal.format(words, 1));
+		m_blockSize.setText(String.valueOf(words));
 		m_startAddr.setText(start.toOctal());
 		m_grid.rebuild();
 		if(examine && m_context.getConnectionManager().isConnected())
@@ -287,9 +304,14 @@ public final class MemoryPanel extends JPanel {
 		m_verify.setEnabled(connected);
 	}
 
+	/** Something typed into one of the two fields cannot be used. Inline, not in a dialog. */
+	private void showFieldError(String message) {
+		m_status.error(message);
+	}
+
 	private void updateInfo() {
 		int edited = m_grid.getEditedCells().size();
-		m_info.setText(m_group.isEmpty()
+		m_status.setText(m_group.isEmpty()
 			? "Nothing to show"
 			: m_group.size() + " words from " + Address.of(m_group.getType(), m_group.getRange().lo()).toOctal()
 				+ " to " + Address.of(m_group.getType(), m_group.getRange().hi()).toOctal()
@@ -354,12 +376,29 @@ public final class MemoryPanel extends JPanel {
 	}
 
 	private final ConnectionManager.Listener m_connectionListener =
-		(manager, state) -> AppContext.onUi(this::onConnectionChanged);
+		(manager, state) -> AppContext.onUi(() -> {
+			onConnectionChanged();
+			//-- A machine arriving is a reason to read it, the same way opening the window is.
+			if(state == ConnectionManager.State.CONNECTED)
+				examineIfConnected();
+		});
 
 	public void attach() {
 		detach();
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		onConnectionChanged();
+		examineIfConnected();
+	}
+
+	/**
+	 * Read what is not known yet when this window is shown, and again when a machine arrives.
+	 *
+	 * <p>Unknown cells only, which is what makes showing a window cheap: a range that has already
+	 * been read costs nothing to show again. Use Examine all to re-read what is already there.</p>
+	 */
+	public void examineIfConnected() {
+		if(m_context.getConnectionManager().isConnected() && !m_group.isEmpty())
+			m_grid.examineAll(true, owner());
 	}
 
 	public void detach() {

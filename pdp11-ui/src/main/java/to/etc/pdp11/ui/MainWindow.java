@@ -88,7 +88,9 @@ public final class MainWindow extends JFrame {
 		setContentPane(m_panel);
 		setMinimumSize(new Dimension(720, 420));
 		setSize(new Dimension(1000, 700));
-		setLocationByPlatform(true);
+		//-- And then wherever it was last time, if that is still a place. Every tool window came
+		//-- back where it was left; the frame they all sit in did not.
+		m_context.getWindowManager().applyGeometry(this, WindowManager.MAIN_WINDOW_KEY);
 
 		m_panel.getTerminal().setInputListener(this::sendToMachine);
 		//-- Subscribed once and for the life of the application, rather than re-wired on every
@@ -494,6 +496,7 @@ public final class MainWindow extends JFrame {
 		if(!m_context.getAssembler().confirmDiscard("quit"))
 			return;
 		m_context.getLogger().log(LogChannel.OTHER, "Shutting down");
+		m_context.getWindowManager().rememberGeometry(this, WindowManager.MAIN_WINDOW_KEY);
 		m_context.getWindowManager().rememberAllGeometry();
 		m_context.getWindowManager().closeAll();
 		m_context.saveSettings();

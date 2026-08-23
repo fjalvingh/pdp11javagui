@@ -37,6 +37,14 @@ public abstract class ToolWindow extends JFrame {
 
 	private boolean m_shownBefore;
 
+	/**
+	 * Whether {@link #onShowing()} has run without its {@link #onHiding()} yet.
+	 *
+	 * <p>What makes the pair a pair. It is read by {@link #dispose()} as well as by
+	 * {@link #hideWindow()}, because a window can leave the screen either way.</p>
+	 */
+	private boolean m_subscribed;
+
 	protected ToolWindow(WindowKey key, AppContext context) {
 		super(key.title());
 		m_key = key;
@@ -94,18 +102,52 @@ public abstract class ToolWindow extends JFrame {
 			m_shownBefore = true;
 			onFirstShow();
 		}
-		onShowing();
+		if(!m_subscribed) {
+			m_subscribed = true;
+			onShowing();
+		}
 		setVisible(true);
 		toFront();
 		requestFocus();
 	}
 
 	public final void hideWindow() {
-		onHiding();
 		//-- Geometry is saved on the way out rather than on every move: a window being dragged
-		//-- generates a component event per pixel, and none of them are worth a file write.
-		m_context.getWindowManager().rememberGeometry(this);
+		//-- generates a component event per pixel, and none of them are worth a file write. And
+		//-- it is saved before setVisible(false) rather than after, so this window's own
+		//-- visibility is recorded as what it is about to become.
+		unsubscribe();
 		setVisible(false);
+		m_context.getWindowManager().rememberGeometry(this);
+	}
+
+	/**
+	 * Destroy the window, unsubscribing it first.
+	 *
+	 * <p>The framework's own rule is that {@link #onShowing()} and {@link #onHiding()} pair up,
+	 * and a window can leave the screen two ways: {@link #hideWindow()}, and being disposed of by
+	 * the window manager - {@code closeAll()} on the way out, {@code closeAll(WindowType)} when a
+	 * machine description is replaced. Only the first ran {@code onHiding}, so a window disposed
+	 * of while visible stayed subscribed to {@code ConnectionManager} and {@code MachineState} as
+	 * a dead frame. It happened to be harmless for the two window types that take that path
+	 * today; it would not have stayed harmless.</p>
+	 */
+	@Override
+	public void dispose() {
+		unsubscribe();
+		super.dispose();
+	}
+
+	private void unsubscribe() {
+		if(!m_subscribed)
+			return;
+		m_subscribed = false;
+		onHiding();
+	}
+
+	/** Whether this window is currently subscribed - between {@code onShowing} and {@code onHiding}. */
+	public final boolean isSubscribed() {
+		return m_subscribed;
 	}
 
 	@Override

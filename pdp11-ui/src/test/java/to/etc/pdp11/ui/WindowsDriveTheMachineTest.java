@@ -211,7 +211,7 @@ class WindowsDriveTheMachineTest {
 	/** The Set/show button, found by its text so the test presses what the user presses. */
 	private static void clickSetPc(java.awt.Container panel) {
 		for(java.awt.Component c : panel.getComponents()) {
-			if(c instanceof javax.swing.AbstractButton b && "Set/show".equals(b.getText())) {
+			if(c instanceof javax.swing.AbstractButton b && "Set PC".equals(b.getText())) {
 				click(b);
 				return;
 			}

@@ -54,7 +54,7 @@ public final class MmuPanel extends JPanel {
 
 	private final JLabel m_status = new JLabel();
 
-	private final JButton m_refresh = new JButton("Read the MMU registers");
+	private final JButton m_refresh = new JButton("Examine all");
 
 	private final JTabbedPane m_tabs = new JTabbedPane();
 
@@ -86,6 +86,8 @@ public final class MmuPanel extends JPanel {
 		(manager, state) -> AppContext.onUi(() -> {
 			rebind();
 			updateDisplay();
+			if(state == ConnectionManager.State.CONNECTED)
+				examineIfConnected();
 		});
 
 	public MmuPanel(AppContext context) {
@@ -158,6 +160,20 @@ public final class MmuPanel extends JPanel {
 		if(mmu != null)
 			m_mode.setSelectedItem(mmu.getCpuMode());
 		updateDisplay();
+		examineIfConnected();
+	}
+
+	/**
+	 * Read the registers when this window is shown, and again when a machine arrives.
+	 *
+	 * <p>The window used to open on a map built from registers nobody had examined - eight page
+	 * pairs' worth of UNKNOWN, drawn as a map, waiting for its button. Which is a different
+	 * answer to the same question the Register Group and Memory windows were answering two other
+	 * ways; there is one answer now, and this is it.</p>
+	 */
+	public void examineIfConnected() {
+		if(m_context.getConnectionManager().isConnected() && mmu() != null)
+			refresh();
 	}
 
 	public void detach() {

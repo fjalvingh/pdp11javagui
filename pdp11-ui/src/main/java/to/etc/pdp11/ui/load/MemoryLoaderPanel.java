@@ -9,6 +9,7 @@ import to.etc.pdp11.core.memfile.MemoryFileFormat;
 import to.etc.pdp11.core.memfile.MemoryFileLoader;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.mem.MemoryCellGroupTable;
@@ -73,7 +74,10 @@ public final class MemoryLoaderPanel extends JPanel {
 
 	private final JButton m_verify = new JButton("Verify");
 
-	private final JLabel m_status = new JLabel();
+	private final JLabel m_statusLabel = new JLabel();
+
+	/** The status line, and where a value that cannot be used is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_statusLabel, UiColors.SECONDARY_TEXT);
 
 	public MemoryLoaderPanel(AppContext context) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][][grow][]"));
@@ -100,8 +104,7 @@ public final class MemoryLoaderPanel extends JPanel {
 		add(buildTopBar(), "growx, wrap");
 		add(buildFileBar(), "growx, wrap");
 		add(m_grid, "grow, wrap");
-		m_status.setForeground(UiColors.SECONDARY_TEXT);
-		add(m_status, "growx");
+		add(m_statusLabel, "growx");
 
 		m_startAddr.setText(Address.of(m_group.getType(), 01000).toOctal());
 		showFormat();
@@ -125,7 +128,11 @@ public final class MemoryLoaderPanel extends JPanel {
 		bar.add(m_depositAll);
 		bar.add(m_verify);
 
-		m_startAddr.setToolTipText("Where to put the file's contents, for a format that does not say");
+		m_startAddr.setToolTipText("Where to put the file's contents, for a format that does not say."
+			+ " Enter reads the file, same as Load file.");
+		//-- Enter acts, as it does in the Memory, Disassembler, Dumper, Memory Test and Bitfields
+		//-- windows. Same widget, same shape; this one used to swallow the key.
+		m_startAddr.addActionListener(e -> loadFile());
 		m_load.setToolTipText("Read the file into the grid below. Nothing is written to the machine yet.");
 		m_verify.setToolTipText("Read the same addresses back off the machine; anything that disagrees shows as changed");
 		m_load.addActionListener(e -> loadFile());
@@ -246,12 +253,11 @@ public final class MemoryLoaderPanel extends JPanel {
 			m_status.setText(r.wordsLoaded() + " words read from " + files.get(0).getFileName()
 				+ (r.entryAddress() == null ? "" : ", starting at " + m_entryAddr.getText())
 				+ (r.warnings().isEmpty() ? "" : "  -  " + r.warnings().get(0))
-				+ ".  Nothing has been written to the machine yet.");
-			m_status.setForeground(r.warnings().isEmpty() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+				+ ".  Nothing has been written to the machine yet.",
+				r.warnings().isEmpty() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
 		} catch(IOException | RuntimeException x) {
 			m_context.reportFailure("Could not read " + files.get(0), x);
-			m_status.setText("Nothing loaded");
-			m_status.setForeground(UiColors.ERROR_TEXT);
+			m_status.setText("Nothing loaded", UiColors.ERROR_TEXT);
 		}
 		updateButtons();
 	}
@@ -268,8 +274,8 @@ public final class MemoryLoaderPanel extends JPanel {
 		m_grid.verifyAll(owner(), wrong -> {
 			m_status.setText(wrong == 0
 				? "The machine holds exactly what was loaded"
-				: wrong + " word" + (wrong == 1 ? "" : "s") + " differ from the file");
-			m_status.setForeground(wrong == 0 ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+				: wrong + " word" + (wrong == 1 ? "" : "s") + " differ from the file",
+				wrong == 0 ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
 		});
 	}
 
@@ -277,7 +283,7 @@ public final class MemoryLoaderPanel extends JPanel {
 		try {
 			return Address.parseOctal(field.getText().trim(), m_group.getType());
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + field.getText().trim() + "\" is not an octal address", null);
+			m_status.error("\"" + field.getText().trim() + "\" is not an octal address");
 			return null;
 		}
 	}
@@ -296,8 +302,7 @@ public final class MemoryLoaderPanel extends JPanel {
 
 	private void updateStatus() {
 		if(m_group.isEmpty()) {
-			m_status.setText("Nothing loaded yet");
-			m_status.setForeground(UiColors.SECONDARY_TEXT);
+			m_status.setText("Nothing loaded yet", UiColors.SECONDARY_TEXT);
 		}
 		updateButtons();
 	}

@@ -34,26 +34,16 @@ public final class RegisterGroupWindow extends ToolWindow {
 	}
 
 	@Override
-	protected void onFirstShow() {
-		//-- Reading a device's registers is what opening its window means. Once, on first show:
-		//-- after that the window keeps what it has until somebody asks for more.
-		m_panel.examineIfConnected();
-	}
-
-	@Override
 	protected void onShowing() {
+		//-- Every show, not only the first: attach() reads the machine if there is one. Reading
+		//-- once and never again meant a reconnect to a different machine left the previous
+		//-- one's register values on the screen with nothing saying they were stale.
 		m_panel.attach();
 	}
 
 	@Override
 	protected void onHiding() {
 		m_panel.detach();
-	}
-
-	@Override
-	public void dispose() {
-		m_panel.detach();
-		super.dispose();
 	}
 
 	/**

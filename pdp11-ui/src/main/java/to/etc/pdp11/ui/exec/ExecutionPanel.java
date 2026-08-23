@@ -9,6 +9,7 @@ import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
 import to.etc.pdp11.core.macro11.Macro11;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.macro11.AssemblerModel;
 import to.etc.pdp11.ui.window.WindowType;
@@ -58,7 +59,11 @@ public final class ExecutionPanel extends JPanel {
 
 	private final JTextField m_currentPc = new JTextField(8);
 
-	private final JButton m_reset = new JButton("Reset");
+	/**
+	 * Not "Reset": it also deposits the Start PC field into R7, whatever the console's own reset
+	 * does, so a button labelled with half of what it does was silently writing a register.
+	 */
+	private final JButton m_reset = new JButton("Reset and set PC");
 
 	private final JButton m_resetAndStart = new JButton("Reset and start");
 
@@ -68,7 +73,12 @@ public final class ExecutionPanel extends JPanel {
 
 	private final JButton m_singleStep = new JButton("Single step");
 
-	private final JButton m_setPc = new JButton("Set/show");
+	/**
+	 * Not "Set/show": it only ever sets. The "show" half meant the disassembler jumping to the
+	 * new PC through {@code MachineState}, which happens in a different window and is not
+	 * something this button can be said to do.
+	 */
+	private final JButton m_setPc = new JButton("Set PC");
 
 	private final JButton m_newProgram = new JButton("New program");
 
@@ -82,6 +92,9 @@ public final class ExecutionPanel extends JPanel {
 		+ " physical machine.<br>It is what enables Reset, Start, Continue and Single step.</html>");
 
 	private final JLabel m_state = new JLabel();
+
+	/** The status line, and where a mistyped PC is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_state, UiColors.SECONDARY_TEXT);
 
 	public ExecutionPanel(AppContext context) {
 		super(new MigLayout("fill, insets 8", "[][]12[][]12[grow]", "[][][][][][grow]"));
@@ -119,7 +132,6 @@ public final class ExecutionPanel extends JPanel {
 		m_switchPanel.add(m_switchInfo, "growx");
 		add(m_switchPanel, "cell 0 4, spanx, growx, wrap");
 
-		m_state.setForeground(UiColors.SECONDARY_TEXT);
 		add(m_state, "cell 0 5, spanx, growx");
 
 		m_reset.addActionListener(e -> doResetAndSetPc());
@@ -131,6 +143,15 @@ public final class ExecutionPanel extends JPanel {
 		m_newProgram.addActionListener(e -> doNewProgram());
 		m_run.addActionListener(e -> setRunMode(ConsoleRunMode.RUN));
 		m_haltSwitch.addActionListener(e -> setRunMode(ConsoleRunMode.HALT));
+
+		//-- Enter in an address field acts, as it does in the Memory, Disassembler, Dumper,
+		//-- Memory Test and Bitfields windows. These two were the holdouts: same widget, same
+		//-- shape, and the only way to act on what had been typed was to find the button.
+		m_startPc.addActionListener(e -> publishStartPc());
+		m_startPc.setToolTipText("Where a program starts. Enter publishes it to the other windows;"
+			+ " Reset and start and New program use it.");
+		m_currentPc.addActionListener(e -> doSetPc());
+		m_currentPc.setToolTipText("The machine's PC. Enter writes it into R7, same as Set PC.");
 
 		updateDisplay();
 	}
@@ -186,7 +207,7 @@ public final class ExecutionPanel extends JPanel {
 				? UiColors.ERROR_TEXT : UiColors.SECONDARY_TEXT);
 		}
 
-		m_state.setText(connected
+		m_status.setText(connected
 			? "Machine: " + switch(state) {
 				case UNKNOWN -> "state unknown";
 				case STOPPED -> "stopped" + (pc == null ? "" : " at " + pc.toOctal());
@@ -365,6 +386,21 @@ public final class ExecutionPanel extends JPanel {
 		});
 	}
 
+	/**
+	 * Publish what has been typed as the program's start address, without touching the machine.
+	 *
+	 * <p>What the field already <i>means</i> - {@link #updateDisplay} writes {@code MachineState}'s
+	 * start PC into it whenever the user is not typing - so Enter simply completes the round
+	 * trip. Deliberately not "Reset and set PC", which is the button beside it: resetting a
+	 * machine is not something a keystroke in a text field should do.</p>
+	 */
+	private void publishStartPc() {
+		Address start = parse(m_startPc, "start PC");
+		if(start == null)
+			return;
+		m_context.getMachineState().setStartPc(start);
+	}
+
 	/** Write the Current PC field into the machine. {@code SetPcButtonClick} ({@code :237-247}). */
 	private void doSetPc() {
 		Address pc = parse(m_currentPc, "current PC");
@@ -419,7 +455,7 @@ public final class ExecutionPanel extends JPanel {
 		try {
 			return Address.parseOctal(field.getText().trim(), MemoryAddressType.VIRTUAL);
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + field.getText().trim() + "\" is not an octal " + what, null);
+			m_status.error("\"" + field.getText().trim() + "\" is not an octal " + what);
 			return null;
 		}
 	}

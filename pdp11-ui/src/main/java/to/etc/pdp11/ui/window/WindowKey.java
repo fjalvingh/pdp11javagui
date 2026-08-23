@@ -49,6 +49,27 @@ public record WindowKey(WindowType type, String instanceId) {
 		return isSingleton() ? type.name() : type.name() + ":" + instanceId;
 	}
 
+	/**
+	 * The key a {@link #toStorageKey()} came from, or {@code null} if it is not one.
+	 *
+	 * <p>Null rather than an exception, and deliberately: the caller is reading the settings
+	 * file, which may have been written by a newer version, hand-edited, or simply name a window
+	 * type that no longer exists. CLAUDE.md's rule is that nothing in settings may stop the
+	 * application starting, so an entry that cannot be understood is one entry skipped.</p>
+	 */
+	public static WindowKey fromStorageKey(String storageKey) {
+		if(storageKey == null || storageKey.isBlank())
+			return null;
+		int colon = storageKey.indexOf(':');
+		String typeName = colon < 0 ? storageKey : storageKey.substring(0, colon);
+		String instanceId = colon < 0 ? "" : storageKey.substring(colon + 1);
+		for(WindowType t : WindowType.values()) {
+			if(t.name().equals(typeName))
+				return new WindowKey(t, instanceId);
+		}
+		return null;
+	}
+
 	@Override
 	public String toString() {
 		return toStorageKey();

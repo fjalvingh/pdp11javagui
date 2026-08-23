@@ -111,7 +111,7 @@ public final class AssemblerPanel extends JPanel {
 
 	private final JTextField m_startAddr = new JTextField(9);
 
-	private final JButton m_depositAll = new JButton("Load into machine");
+	private final JButton m_depositAll = new JButton("Deposit all");
 
 	private final JButton m_depositChanged = new JButton("Deposit changed");
 
@@ -241,9 +241,12 @@ public final class AssemblerPanel extends JPanel {
 		m_startAddr.setFont(new Font(Font.MONOSPACED, Font.PLAIN, m_startAddr.getFont().getSize()));
 		m_startAddr.setForeground(UiColors.SECONDARY_TEXT);
 		bar.add(m_startAddr);
-		bar.add(m_depositAll);
-		bar.add(m_depositChanged);
+		//-- The same order as every other window that writes to the machine: read it, write
+		//-- what changed, write the lot. This tab used to put deposit-all first and call it
+		//-- "Load into machine", which is the same action under a name nothing else uses.
 		bar.add(m_examine);
+		bar.add(m_depositChanged);
+		bar.add(m_depositAll);
 		p.add(bar, "growx, wrap");
 		p.add(m_grid, "grow, wrap");
 

@@ -79,6 +79,46 @@ class RegisterGroupPanelTest {
 		return mc;
 	}
 
+	/**
+	 * One auto-read policy, where there used to be three.
+	 *
+	 * <p>This window read its device on <b>first</b> show and never again. So reconnecting to a
+	 * different machine - a different 11/44, or a simulated one after a real one - left the
+	 * previous machine's register values on the screen with nothing saying they were stale, and
+	 * closing and reopening the window did not help because the read was tied to first show
+	 * rather than to being shown.</p>
+	 */
+	@Test
+	void everyShowReadsTheMachineAndSoDoesEveryReconnect(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryCellGroup g = deviceGroup(ctx.getMemoryCellGroups());
+		RegisterGroupPanel panel = Edt.call(() -> new RegisterGroupPanel(ctx, g));
+		UiRenderer.layOut(panel, 760, 320);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+		try {
+			Edt.run(panel::attach);
+			until("the first read", () -> g.cell(0).getPdpValue().isKnown());
+
+			//-- Closed and reopened: it reads again rather than showing what it had.
+			Edt.run(panel::detach);
+			for(MemoryCell mc : g.getCells()) {
+				mc.setPdpValue(CellValue.UNKNOWN);
+			}
+			Edt.run(panel::attach);
+			until("the read on the second show", () -> g.cell(0).getPdpValue().isKnown());
+
+			//-- And a different machine arriving is a reason to read it.
+			for(MemoryCell mc : g.getCells()) {
+				mc.setPdpValue(CellValue.UNKNOWN);
+			}
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+			until("the read after reconnecting", () -> g.cell(0).getPdpValue().isKnown());
+		} finally {
+			Edt.run(panel::detach);
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void oneRowPerRegisterWithItsNameAddressValueAndDescription(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);

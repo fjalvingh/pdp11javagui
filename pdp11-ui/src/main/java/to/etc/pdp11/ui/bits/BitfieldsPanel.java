@@ -11,6 +11,7 @@ import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mem.MemoryCellListener;
 import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.CellSelection;
 import to.etc.pdp11.ui.UiColors;
@@ -94,11 +95,14 @@ public final class BitfieldsPanel extends JPanel {
 
 	private final JTextField m_value = new JTextField(8);
 
-	private final JButton m_examine = new JButton("Examine");
+	private final JButton m_examine = new JButton("Examine cell");
 
-	private final JButton m_deposit = new JButton("Deposit");
+	private final JButton m_deposit = new JButton("Deposit cell");
 
 	private final JLabel m_info = new JLabel(" ");
+
+	/** The status line, and where a value that cannot be used is reported. See {@link FieldStatus}. */
+	private final FieldStatus m_status = new FieldStatus(m_info, UiColors.SECONDARY_TEXT);
 
 	private final JLabel m_noDefinitions = new JLabel();
 
@@ -139,7 +143,6 @@ public final class BitfieldsPanel extends JPanel {
 		sizeColumns();
 
 		m_noDefinitions.setForeground(UiColors.SECONDARY_TEXT);
-		m_info.setForeground(UiColors.SECONDARY_TEXT);
 
 		updateButtons();
 		add(buildTop(), "growx, wrap");
@@ -227,7 +230,7 @@ public final class BitfieldsPanel extends JPanel {
 				m_def = null;
 				m_address.setText("");
 				m_value.setText("");
-				m_info.setText(" ");
+				m_status.setText(" ");
 			} else {
 				//-- Copy, not adopt: see the class comment. Moving to another address goes
 				//-- through the group rather than by assigning the cell's address, because
@@ -246,7 +249,7 @@ public final class BitfieldsPanel extends JPanel {
 				m_def = m_context.getBitfieldDefs().findByAddress(m_cell.getAddr());
 				m_address.setText(m_cell.getAddr().toOctal());
 				m_value.setText(m_cell.getEditValue().toOctal());
-				m_info.setText(describe(source));
+				m_status.setText(describe(source));
 			}
 			showDefinitionOrReason(source != null);
 			m_model.fireTableDataChanged();
@@ -278,7 +281,7 @@ public final class BitfieldsPanel extends JPanel {
 			//-- No group and no name to put in front of it: this address came from the keyboard,
 			//-- so the only thing known about it is what the machine description calls its bits.
 			String what = m_def == null ? "" : m_def.getName();
-			m_info.setText(m_cell.getAddr().toOctal() + (what.isEmpty() ? "" : "  -  " + what));
+			m_status.setText(m_cell.getAddr().toOctal() + (what.isEmpty() ? "" : "  -  " + what));
 			showDefinitionOrReason(true);
 			m_model.fireTableDataChanged();
 			updateValueColour();
@@ -302,14 +305,14 @@ public final class BitfieldsPanel extends JPanel {
 	private boolean applyTypedAddress() {
 		String text = m_address.getText().trim();
 		if(text.isEmpty()) {
-			m_context.reportFailure("Type the octal address of a register to look at", null);
+			m_status.error("Type the octal address of a register to look at");
 			return false;
 		}
 		Address addr;
 		try {
 			addr = Address.parseOctal(text, m_group.getType());
 		} catch(RuntimeException x) {
-			m_context.reportFailure("\"" + text + "\" is not an octal address", null);
+			m_status.error("\"" + text + "\" is not an octal address");
 			return false;
 		}
 		if(!addr.equals(m_cell.getAddr()))
@@ -502,7 +505,7 @@ public final class BitfieldsPanel extends JPanel {
 		if(!applyTypedAddress())
 			return;
 		if(!m_cell.getEditValue().isKnown()) {
-			m_context.reportFailure("There is no value to deposit", null);
+			m_status.error("There is no value to deposit");
 			return;
 		}
 		Address addr = m_cell.getAddr();
