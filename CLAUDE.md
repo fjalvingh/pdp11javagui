@@ -125,8 +125,18 @@ silently diverging.
 
 ## Testing conventions
 
-- **Everything must run headless**, including the layout tests. A test that needs a display is a
-  test CI cannot run.
+- **Everything that can run headless must**, including every layout test: render the panel with
+  `UiRenderer` rather than putting it in a frame. What is left is the handful that are about
+  windows rather than about what is in them - `WindowsBuildTest`, which opens real tool windows,
+  and the one `JFrame` each in `DisassemblerPanelTest` and `WindowsDriveTheMachineTest`, because
+  a window that is not open deliberately reads nothing. Those get a display from the `xvfb`
+  profile below; do not add to them without needing to.
+- **Tests never run on the developer's desktop.** The `xvfb` profile in the root pom activates
+  wherever `/usr/bin/xvfb-run` exists and forks Surefire through `tools/xvfb/bin/java`, which
+  starts an X server for the fork and throws it away afterwards. So `./mvnw verify` opens
+  nothing on anybody's screen, takes nobody's focus, and cannot be blocked by a modal progress
+  dialog that fired while a test was slow. Do not undo this by setting `DISPLAY`; to run on the
+  real display on purpose, `-P '!xvfb'`.
 - **Test against the fakes, not against mocks.** `core.fake` has a simulated machine for every
   console protocol; they exercise the real protocol code end to end, and a `ConnectionProfile`
   with `TransportKind.SIMULATED` drives the whole application against one.

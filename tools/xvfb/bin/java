@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# The JVM Surefire forks the tests into, wrapped in its own X server.
+#
+# Some of the UI tests need a display: WindowsBuildTest opens real tool windows and asks what
+# opened, and two others put a panel in a JFrame, because production code deliberately does
+# nothing when its window is not open. Left to itself the build takes the display of whoever
+# started it: windows on somebody's desktop, tests that lose focus races against whatever else
+# is running there, and a modal progress dialog that stops the build until it is clicked away.
+# So the fork gets an X server of its own, and the developer's screen is never touched.
+#
+# Surefire will only take a <jvm> that is a "java" inside a "bin" - hence the name and the
+# directory, neither of which says anything about what this is; .gitignore has an exception for
+# it, since bin/ is otherwise Eclipse's. The real JVM arrives in SUREFIRE_REAL_JAVA, set from
+# ${java.home} by the xvfb profile in the root pom; the fallbacks are for anyone pointing a run
+# configuration straight at this script.
+#
+# xvfb-run -a picks a free display number and shuts its server down again afterwards; the exit
+# status is the JVM's own, which is what Surefire reads to tell a crashed fork from a failed
+# test.
+set -e
+
+if [ -n "$SUREFIRE_REAL_JAVA" ]; then
+	java="$SUREFIRE_REAL_JAVA"
+elif [ -n "$JAVA_HOME" ]; then
+	java="$JAVA_HOME/bin/java"
+else
+	java="$(command -v java)"
+fi
+
+if [ ! -x "$java" ]; then
+	echo "$0: no JVM found (SUREFIRE_REAL_JAVA=$SUREFIRE_REAL_JAVA, JAVA_HOME=$JAVA_HOME)" >&2
+	exit 1
+fi
+
+exec xvfb-run -a --server-args="-screen 0 1920x1080x24" "$java" "$@"

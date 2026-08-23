@@ -36,15 +36,16 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # The UI module compiles against AWT, and later phases will have tests that construct
-      # Swing components. Linux runners are headless, so give them a display.
-      - name: Start virtual display (Linux)
+      # A couple of UI tests build a JFrame, which needs a display, and Linux runners have
+      # none. Installing xvfb is all that is required: the root pom's xvfb profile activates on
+      # the presence of xvfb-run and gives the Surefire fork a server of its own - the same path
+      # a developer's machine takes, so what CI runs is what they ran. Windows and macOS runners
+      # have a display and the profile does not activate there.
+      - name: Install xvfb (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-          Xvfb :99 -screen 0 1920x1080x24 &
-          echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
       - name: Build
         run: ./mvnw -B --no-transfer-progress verify

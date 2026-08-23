@@ -10,6 +10,9 @@ target/
 .project
 .settings/
 bin/
+#-- ... except the X-server wrapper Surefire is forked through, which must be in a bin/
+#-- directory because Surefire will not accept a <jvm> path that is not one.
+!tools/xvfb/bin/
 .vscode/
 
 # OS

@@ -123,6 +123,21 @@ Everything runs headless, including the layout tests: the windows are thin frame
 also writes `pdp11-ui/target/ui-render/*.png`, which is what those layouts actually look like —
 assertions catch a layout that is broken, and a picture catches one that is merely wrong.
 
+The exceptions are the tests about windows rather than about layout: `WindowsBuildTest` opens
+real tool windows and asks what opened, and two others put a panel in a `JFrame` because a
+window that is not open deliberately reads nothing, so a panel with no frame around it cannot
+be tested at all. Those 18 need a display, and rather than let them take the developer's - or
+skip, as the sixteen used to whenever there was none - the build gives Surefire's JVM an X
+server of its own: where `/usr/bin/xvfb-run` exists the `xvfb` profile in the root pom activates
+by itself and forks the tests through `tools/xvfb/bin/java`. Nothing appears on your desktop,
+nothing takes your focus, and `DISPLAY` need not be set at all. Install it with
+`apt install xvfb`; without it those tests skip or fail as `HeadlessException`. `-P '!xvfb'`
+turns it off and puts the tests back on whatever `DISPLAY` says.
+
+An IDE that runs JUnit itself does not go through Maven and so does not get any of this. Either
+delegate test runs to Maven (IntelliJ: *Build Tools → Maven → Runner → Delegate IDE build/run
+actions to Maven*), or point the run configuration at an X server of your own with `DISPLAY`.
+
 Two test classes need something the build machine may not have and skip when it is missing:
 `SimhProcessTransportIT` and `SimhConsoleIT` want SimH's `pdp11` on `PATH`. The disassembler is
 checked against a committed 65536-word corpus rather than against SimH, so it needs nothing.

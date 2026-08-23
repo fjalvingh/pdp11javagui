@@ -121,6 +121,18 @@
 
 ### Internal
 
+- **The tests no longer run on the developer's desktop.** `WindowsBuildTest` opens sixteen real
+  tool windows, two more tests build a `JFrame`, and a progress dialog that outlives its
+  threshold is modal - so a build put windows on whoever's screen was attached, lost focus races
+  to whatever else was running there, and in the worst case sat waiting for somebody to click
+  Cancel. The new `xvfb` profile in the root pom activates wherever `/usr/bin/xvfb-run` exists
+  and forks Surefire through `tools/xvfb/bin/java`, which gives the fork an X server of its own
+  and takes it away again afterwards. `./mvnw verify` now needs no `DISPLAY` at all and touches
+  nothing that is on screen; `-P '!xvfb'` puts it back on the real display. CI takes the same
+  path - it installs xvfb and no longer starts a display of its own - so what it runs is what a
+  developer ran, and the sixteen window tests that skipped themselves whenever there was no
+  display now run everywhere.
+
 - The ~180 lines of bulk-examine machinery duplicated near-verbatim between `SimhConsole` and
   `Pdp1144Console` - `ExamineItem`, `runExamineList`, `collectBlock`, `anyUnanswered` and the
   two-list `examine(MemoryCellGroup…)` bodies - are one implementation in `AbstractConsole`,

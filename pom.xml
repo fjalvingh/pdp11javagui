@@ -304,4 +304,47 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Tests get an X server of their own rather than the developer's.
+
+            Nothing here opens a window on purpose, but a couple of UI tests must build a
+            JFrame - production code does nothing when its window is not open, so a panel with
+            no frame around it cannot be tested at all - and a progress dialog that outlives its
+            threshold is modal. On a developer's machine that means windows appearing, focus
+            being taken and, at worst, a build waiting for somebody to click Cancel. Surefire is
+            therefore forked into a JVM launched under xvfb-run.
+
+            Activation is by the presence of xvfb-run, so this is automatic on Linux where it is
+            installed, silently absent everywhere else, and can be turned off with -P '!xvfb'
+            (with DISPLAY set the tests then run on the real desktop again, and without it the
+            two frame tests fail as Headless). CI installs xvfb and so gets this as well.
+        -->
+        <profile>
+            <id>xvfb</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                </os>
+                <file>
+                    <exists>/usr/bin/xvfb-run</exists>
+                </file>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <jvm>${maven.multiModuleProjectDirectory}/tools/xvfb/bin/java</jvm>
+                            <environmentVariables>
+                                <SUREFIRE_REAL_JAVA>${java.home}/bin/java</SUREFIRE_REAL_JAVA>
+                            </environmentVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
