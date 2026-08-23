@@ -621,6 +621,14 @@ listing. The test covers PC-outside-range but not this case.
 ### 21. MemoryFileLoader: an out-of-width address aborts the whole "forgiving" load with an uncaught IllegalArgumentException
 `pdp11-core/.../memfile/MemoryFileLoader.java:170-180,331-337`
 
+**FIXED**, as suggested: bounds-checked and turned into warnings. `loadText` skips a value whose
+address does not fit the group and counts it into a warning rather than letting `Address.of`
+throw out of a load documented as forgiving; the two byte formats check how many words fit
+*before* `clear()` and `shiftRange()` rather than throwing from inside the rebuild with the group
+half filled. The over-wide *value* is still masked - the Pascal masks it and a file full of
+seven-digit words is a real thing - but it says so now, which was the inconsistency. The paper
+tape path needed nothing: its addresses come out of a 16-bit buffer and fit every width.
+
 `loadText` catches only `NumberFormatException` around the address parse; `addCell` then
 calls `Address.of(type, value)`, which throws `IllegalArgumentException` for a value wider
 than the group (e.g. a pasted `7777777:` line against a 16-bit start address). A format
@@ -634,6 +642,15 @@ warning. Fix: bounds-check and convert to warnings/IOException.
 ### 22. Default-locale case conversion breaks machine descriptions and mnemonics under a Turkish locale
 `pdp11-core/.../machine/MachineDescription.java:119-121`; also `disas/DecodedInstruction.java:27`, `bits/BitfieldsDefs.java:46,55`, `machine/IniFile.java:81-85`
 
+**FIXED**: `Locale.ROOT` on every case conversion in the module, and on every `String.format`
+with a digit conversion - several locales do not write `0` as `'0'`, which is the same bug with a
+different letter. Two more sites turned up doing it that the review had not listed
+(`MemoryTester.log`, `Logger.log`), because the fix is an ArchUnit rule rather than a sweep:
+`DefaultLocaleTest` refuses `String.toUpperCase()`/`toLowerCase()` and
+`String.format(String, Object...)` anywhere in `pdp11-core`, with the machine-description,
+mnemonic and hex cases exercised under `tr-TR` beneath it so the rule is visibly guarding
+something.
+
 `isBitsSection` does `name().toUpperCase().startsWith("BITS.")`; under `tr-TR`,
 `"Bits.…".toUpperCase()` yields `BİTS.…` (dotted İ) and every `[Bits.*]` section loads as
 a bogus device group while no register gets named bits. `DecodedInstruction.text()`'s
@@ -643,6 +660,10 @@ already does this correctly in `Macro11.isWindows()`).
 
 ### 23. Pdp1144Console.makePrompt: non-atomic `size()`/`get(size-2)` can throw on the reader thread and tear down the connection
 `pdp11-core/.../console/Pdp1144Console.java:268-275`
+
+**FIXED** as suggested, as `AnswerCollector.getFromEnd(int)` - "the phrase n places from the
+end", which is the operation `makePrompt` actually wanted, done under one lock. A race test
+hammers `publish`/`getFromEnd` against `clear` on two threads.
 
 Both calls are individually synchronized, but a command thread calling `clearAnswers()`
 (every command does, without `m_decodeLock`) between them shrinks the list and `get`
@@ -654,6 +675,12 @@ add a synchronized `getFromEnd(int)` to AnswerCollector.
 ### 24. Scanner buffer read without the decode lock while the reader thread appends
 `pdp11-core/.../console/OdtConsole.java:506`, `SimhConsole.java:644`
 
+**FIXED**: `AbstractConsole.getUnconsumedInput()` takes the decode lock, `checkPromptAfter` uses
+it too, and the two offending sites go through it. An ArchUnit rule in `LayeringTest` makes it
+the only caller of `ConsoleScanner.getInput` - by target *owner* rather than by name, because
+every scanner is a subclass and a call through `OdtScanner` is a call to `OdtScanner.getInput` as
+far as the bytecode is concerned.
+
 `OdtConsole.deposit` and `SimhConsole.enterMultipleCommandMode` build a
 `NoConsolePromptException` from `m_scanner.getInput()` directly; the buffer is a plain
 StringBuilder appended under `m_decodeLock` by the reader thread, and
@@ -664,6 +691,11 @@ ArrayIndexOutOfBoundsException on the command thread. Fix: a locked accessor.
 ### 25. `haltCpu` on an already-halted V3.40C 11/44 throws "no answer" after a ~1 s stall
 `pdp11-core/.../console/Pdp1144Console.java:699-717`
 
+**FIXED** as suggested: `haltCpu` now waits for the stop report *or* the prompt, and a prompt
+arriving first means there was nothing to stop, so it returns null per the interface. Note the two
+firmwares genuinely differ and the test says so - the classic console answers `H` with an ordinary
+stop report even when already halted, so only V3.40C returns null.
+
 The `Console.haltCpu` contract says return null for "a machine that had already stopped",
 and SimhConsole does. On V3.40C firmware `H` when halted draws `?Already halted` and no
 stop report, so `waitFor(Halt, …)` times out and the code throws "Stopping the CPU failed:
@@ -672,6 +704,10 @@ surfaces a spurious error. Fix: recognise the no-Halt-but-prompt outcome and ret
 
 ### 26. SimhConsole.continueCpu clears neither the execution-stop state nor a pending silent halt
 `pdp11-core/.../console/SimhConsole.java:1083-1089`
+
+**FIXED** by mirroring `resetAndStart`, as suggested. The test drives a silent halt, continues,
+and asserts the scheduled resolution fires without sending anything - it used to send `E PC` at a
+running machine.
 
 `resetAndStart` does `m_silentHaltPending = false; clearExecutionStop();` and both other
 consoles' `continueCpu` call `clearExecutionStop()`; SimhConsole's does neither. Stale
@@ -682,6 +718,10 @@ thread up to the 8 s timeout and logging a bogus failure. Fix: mirror `resetAndS
 ### 27. Pdp1144Console commits `m_lastDepositAddr` before the deposit is confirmed — a failed deposit poisons the next `D +`
 `pdp11-core/.../console/Pdp1144Console.java:415-432`
 
+**FIXED** by the first of the two suggestions: the field is cleared before the command goes out
+and set only after `checkPrompt` has confirmed it. The test needs a line that goes quiet
+mid-conversation, so the 11/44 rig's transport can now be made deaf.
+
 Line 427 sets `m_lastDepositAddr = physical` before `checkPrompt` confirms the command was
 processed. If the prompt never comes and the caller carries on after catching the
 exception, the next sequential deposit goes out as `D + value` — but the machine's own
@@ -690,6 +730,12 @@ set the field only after `checkPrompt` succeeds (or clear it on the failure path
 
 ### 28. SimH launch-failure path leaks the remote-channel socket and discards the one diagnostic that explains the failure
 `pdp11-core/.../io/SimhProcessTransport.java:389-405`
+
+**FIXED**, all three parts: the drain starts immediately after `pb.start()`, the already-open
+telnet is closed on the failure path, and `getProcessOutput()` is appended to the thrown message
+after a short join on the drain thread - the process has just been killed, so waiting briefly is
+what turns block-buffered output that has not arrived yet into output that has. The test stands a
+shell script in for SimH: it prints a complaint and never listens.
 
 If the remote channel connects but the console channel's `connectWithRetry` fails, the
 catch destroys the process but never closes the already-open telnet transport (socket
@@ -702,6 +748,15 @@ TransportException. Fix: close the telnet in the catch, start the drain right af
 ### 29. ~180 lines of bulk-examine machinery duplicated near-verbatim between SimhConsole and Pdp1144Console
 `pdp11-core/.../console/SimhConsole.java:805-1010` vs `Pdp1144Console.java:438-652`
 
+**FIXED** as suggested. `AbstractConsole` holds `ExamineItem`, `runExamineList`,
+`examineAddrList`, `collectBlock`, `anyUnanswered` and the `MAX_EXAMINE_BLOCK_LEN` both consoles
+had picked independently; a `BulkExamineProtocol` supplies the two things that genuinely differ -
+how a dialect phrases one block, and how it sends it (the 11/44 clears and writes, SimH sends and
+answers from after its own echo). Each console is left with the classification loop, which is the
+part that is really different. The block timeout now comes from `getCommandTimeoutMillis()` rather
+than each console's own constant, which is the same value both set. `toPhysical` moved up too, and
+the R0/R7/PSW offsets are `addr/CpuRegisters.java`, used by both consoles and both fakes.
+
 `ExamineItem`, `runExamineList` (character-for-character identical), `anyUnanswered`,
 `collectBlock` and the two-list `examine(MemoryCellGroup…)` bodies are copies; the
 "no progress this pass" hardening has already been applied twice. Extract a shared helper
@@ -711,6 +766,19 @@ repeated across OdtConsole, SimhConsole, FakePdp11 and FakeSimh.
 
 ### 30. Command-thread iteration of the live cell list races EDT `shiftRange` *(needs confirmation of a practical window)*
 `pdp11-ui/.../mem/MemoryCellGroupTable.java:279-291` (same pattern `MemoryCellGroupList.java:242-254`)
+
+**FIXED**, both halves, in `MemoryCellGroupTable` and `MemoryCellGroupList`. The job takes
+`List.copyOf` of the cells, and `MemoryCellGroup.holdsExactly(List)` says whether the group is
+still the one that was read - a group re-ranged mid-job is stale and its answers are not written
+back. The related point too: the post-loop copies the machine value over the edit value only for
+cells the machine actually answered about, and not at all after a cancel, so a word at a
+nonexistent address no longer replaces something typed with `UNKNOWN`.
+
+The practical window the finding asked about was not reproduced deterministically - it needs the
+EDT to shift the range inside a live examine - so what the tests hold down is the mechanism:
+`ShiftRangeTest` shows the live view throwing `ConcurrentModificationException` across a
+`shiftRange` and the copy surviving it, and `MemoryPanelTest` covers the edit-wiping half end to
+end against a simulated machine.
 
 `examineAll`'s job iterates `group.getCells()` — an unmodifiable *view* over a plain
 ArrayList — on the command thread, while the EDT can call `shiftRange`/`clear` (Show,
@@ -1080,6 +1148,12 @@ them. Same family as #16 (Pdp11Mmu's listener list), #30 (command-thread iterati
 `shiftRange`) and the one just fixed in #5, and it is the third of the four to be found by an
 exception rather than by reading — which is the argument for settling the ownership rule once,
 in `PLAN.md` §1, rather than fixing the traces one at a time.
+
+Still open, and still flaky, after #21-#30. Re-measured with everything stashed: running the
+single test five times on the clean tree failed twice - once as the `ConcurrentModificationException`
+above, once as `nor remove its MMU group ==> expected: <1> but was: <2>`, which is the other side
+of the same race and does not throw. So "not at all when the class is run on its own" no longer
+holds; it fails on its own too, roughly two runs in five on this machine.
 
 ---
 

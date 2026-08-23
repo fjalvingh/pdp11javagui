@@ -269,6 +269,41 @@ class MemoryPanelTest {
 		}
 	}
 
+	/**
+	 * <i>Examine all</i> ends by copying every machine value over the edit value, so the grid
+	 * shows the machine rather than yesterday's edits. That is right for the words the machine
+	 * answered about and wrong for the ones it did not: a word at an address that does not
+	 * exist comes back UNKNOWN, and copying UNKNOWN over something typed throws away a value the
+	 * read never even looked at.
+	 */
+	@Test
+	void examiningWordsTheMachineCannotAnswerAboutLeavesTypedEditsAlone(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryPanel panel = new MemoryPanel(ctx, "1");
+		UiRenderer.layOut(panel, WIDTH, HEIGHT);
+		//-- A range in the middle of nowhere: the simulated machine has no memory there.
+		panel.getBlockSizeField().setText("4");
+		panel.getStartAddressField().setText("17000000");
+		panel.getStartAddressField().postActionEvent();
+		panel.getGrid().getTable().setValueAt("000777", 0, 1);
+		MemoryCell mine = panel.cellAt(0, 1);
+		assertEquals(0777, mine.getEditValue().word(), "typed, not deposited");
+
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean();
+			panel.getGrid().examineAll(false, null);
+			//-- The command executor is single threaded and FIFO, so this lands after it.
+			ctx.onConsole("marker", console -> finished.set(true));
+			until("the examine to finish", finished::get);
+
+			assertFalse(mine.getPdpValue().isKnown(), "there is nothing at that address to read");
+			assertEquals(0777, mine.getEditValue().word(), "so nothing should have replaced what was typed");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void renderToAFileForLookingAt(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);

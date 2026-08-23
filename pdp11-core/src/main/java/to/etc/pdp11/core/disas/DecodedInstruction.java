@@ -2,6 +2,8 @@ package to.etc.pdp11.core.disas;
 
 import to.etc.pdp11.core.util.Octal;
 
+import java.util.Locale;
+
 /**
  * One disassembled instruction.
  *
@@ -24,7 +26,7 @@ public record DecodedInstruction(int address, int words, String mnemonic, String
 	 * two implementations can be diffed directly. Use {@link #textTrimmed()} for display.
 	 */
 	public String text() {
-		return String.format("%-8s%s", mnemonic, operands).toLowerCase();
+		return String.format(Locale.ROOT, "%-8s%s", mnemonic, operands).toLowerCase(Locale.ROOT);
 	}
 
 	/** {@link #text()} without the padding a bare mnemonic leaves behind. */

@@ -4,6 +4,78 @@
 
 ### Fixes
 
+- **A pasted line with an address the machine cannot express aborted a whole "forgiving" load.**
+  The text memory format is documented as skipping junk and collecting warnings, and it does -
+  right up to an address wider than the group, which reached `Address.of` and came back out as an
+  uncaught `IllegalArgumentException`, losing every warning and every word already read. The same
+  went for a byte stream that would not fit above its start address: it threw from inside
+  `shiftRange`, after `clear()`, leaving the grid holding half a load nobody asked for. Both are
+  warnings now, the byte stream loads what fits, and an over-wide *value* - which was always
+  silently masked to a word - says so too.
+- **Every case conversion in `pdp11-core` now folds with `Locale.ROOT`.** Under a Turkish locale
+  `"Bits.PSW".toUpperCase()` is `BİTS.PSW` with a dotted capital I, so every `[Bits.*]` section of
+  a machine description loaded as a bogus device group and no register got named bits; `"INC"`
+  lowercased to `ınc`, breaking the disassembler's display and its byte-identical diff against the
+  Pascal. Number formatting went the same way: `String.format` with a digit conversion writes
+  whatever digits the default locale uses. An ArchUnit rule now refuses both in this module.
+- **A command clearing the answer list could kill a live 11/44 connection.** The decoder pairs a
+  halt with the prompt that follows it by looking two phrases back, and computed that from a
+  separate `size()` and `get()`. Both are synchronized; the gap between them is not, and a command
+  thread calling `clearAnswers()` in it - which every command does - made the `get` throw
+  `IndexOutOfBoundsException` on the *reader* thread, where any throwable is read as the transport
+  dying and reported as "Console connection lost". `AnswerCollector.getFromEnd` does it under one
+  lock.
+- **The code that explains a failed command could fail itself.** Two sites built a
+  `NoConsolePromptException` from the scanner's buffer directly - a plain `StringBuilder` the
+  reader thread appends to under the decode lock - so a concurrent append could hand back corrupt
+  diagnostics or throw `ArrayIndexOutOfBoundsException` on the command thread. There is one locked
+  accessor now, and an ArchUnit rule that keeps it the only way in.
+- **Clicking Halt on an already-halted 11/44 stalled for a second and then reported a failure.**
+  The interface says a halt returns null for "a machine that had already stopped" and the
+  execution window calls halt unconditionally, so every redundant click went down this path. V3.40C
+  firmware answers `H` with `?Already halted` and a prompt and no stop report; waiting for the
+  report that was never coming sat out the whole command timeout and threw "Stopping the CPU
+  failed: no answer". It now waits for the report *or* the prompt.
+- **Continue on SimH left stale stop state behind, and could fire a lookup at a running machine.**
+  `resetAndStart` drops both the execution-stop flag and any pending silent-halt resolution;
+  `continueCpu` dropped neither. So the stop flag survived into RUNNING, and a silent-halt
+  resolution scheduled just before Continue still fired afterwards - sending `E PC` at a machine
+  that is now running, which SimH does not answer, stalling the command thread for the full eight
+  seconds and logging a failure that had not happened.
+- **A failed 11/44 deposit sent the next sequential one to the wrong address.** Consecutive
+  deposits go out as `D + value`, meaning "the word after the one you last deposited into" - and
+  the machine's own idea of that only advances when the deposit actually happens. The remembered
+  address was committed before the prompt confirmed the command, so after a deposit that never
+  arrived the console was one word ahead of the machine and the next value landed silently in the
+  wrong place. It is recorded on the way out now.
+- **A failed SimH launch threw away the one thing that explains it.** SimH reports a refused port
+  bind or a bad configuration line on its own stdout and nowhere else, and the drain that reads it
+  was started only after both console channels had connected - so on exactly the path where it is
+  needed it was never read. It now starts the moment the process does, and what SimH said goes into
+  the thrown exception. The already-connected remote channel is also closed on the failure path
+  rather than leaked until GC.
+- **Examine all could throw "Examining memory failed" if the range moved while it ran.** The job
+  iterated the group's live cell list on the command thread while the event thread could
+  `shiftRange` or clear the same group - Show, `<`, `>`, a connection event - which an unmodifiable
+  view over an `ArrayList` answers with `ConcurrentModificationException`. It takes a snapshot now,
+  and a group that was re-ranged mid-job is treated as stale rather than having a previous range's
+  values written into it.
+- **Examine all wiped typed edits it had never read.** It ends by copying every machine value over
+  the edit value so the grid shows the machine - which is right for the words the machine answered
+  about and wrong for the rest. A cancelled examine, or a word at an address that does not exist,
+  left `UNKNOWN` where something typed used to be. It now copies back only what was actually read,
+  and a cancelled examine changes nothing.
+
+### Internal
+
+- The ~180 lines of bulk-examine machinery duplicated near-verbatim between `SimhConsole` and
+  `Pdp1144Console` - `ExamineItem`, `runExamineList`, `collectBlock`, `anyUnanswered` and the
+  two-list `examine(MemoryCellGroup…)` bodies - are one implementation in `AbstractConsole`,
+  parameterised by a `BulkExamineProtocol` that says how a dialect phrases a block and how it
+  sends it. The "no progress this pass" hardening had already had to be applied to both copies.
+  `toPhysical` moved there too, and the R0/R7/PSW I/O page offsets - written out separately in
+  two consoles and both fakes - are `CpuRegisters`.
+
 - **A console job queued as the connection went away simply vanished.** `onConsole` checks that
   there is a connection and then hands the job to the command thread; a disconnect landing between
   those two steps made the executor refuse it, and the refusal was swallowed. The window was told

@@ -2,6 +2,8 @@ package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.util.Logger;
 
+import java.util.Locale;
+
 /**
  * The console never sent its prompt back, so whatever was sent cannot be confirmed.
  *
@@ -48,10 +50,10 @@ public class NoConsolePromptException extends ConsoleException {
 			? m_unconsumedInput
 			: m_unconsumedInput.substring(m_unconsumedInput.length() - 500);
 		logger.log(to.etc.pdp11.core.util.LogChannel.OTHER,
-			String.format("  unconsumed raw input (%d bytes, last %d shown): \"%s\"",
+			String.format(Locale.ROOT, "  unconsumed raw input (%d bytes, last %d shown): \"%s\"",
 				m_unconsumedInput.length(), tail.length(), printable(tail)));
 		logger.log(to.etc.pdp11.core.util.LogChannel.OTHER,
-			String.format("  %d answer(s) since the command was sent:", m_answers.size()));
+			String.format(Locale.ROOT, "  %d answer(s) since the command was sent:", m_answers.size()));
 		for(int i = 0; i < m_answers.size(); i++) {
 			logger.log(to.etc.pdp11.core.util.LogChannel.OTHER, "    #" + i + ": " + m_answers.get(i).asText());
 		}
@@ -63,7 +65,7 @@ public class NoConsolePromptException extends ConsoleException {
 		for(int i = 0; i < s.length(); i++) {
 			char c = s.charAt(i);
 			if(c < 0x20 || c == 0x7F)
-				sb.append('<').append(String.format("%02x", (int) c)).append('>');
+				sb.append('<').append(String.format(Locale.ROOT, "%02x", (int) c)).append('>');
 			else
 				sb.append(c);
 		}

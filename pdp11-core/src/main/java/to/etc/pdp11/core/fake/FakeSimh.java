@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.fake;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.core.util.Scheduler;
@@ -46,10 +47,10 @@ public final class FakeSimh extends FakePdp11 {
 
 	private static final char CTRL_E = 5;
 
-	/** R0..R7's offsets within the I/O page, byte-spaced - PDP11GUI's convention. */
-	private static final int REG_BASE = 017700;
+	/** R0..R7's offsets within the I/O page, byte-spaced - see {@link CpuRegisters}. */
+	private static final int REG_BASE = CpuRegisters.R0_OFFSET;
 
-	private static final int REG_PSW = 017776;
+	private static final int REG_PSW = CpuRegisters.PSW_OFFSET;
 
 	private static final String[] REG_NAMES = {"R0", "R1", "R2", "R3", "R4", "R5", "SP", "PC"};
 

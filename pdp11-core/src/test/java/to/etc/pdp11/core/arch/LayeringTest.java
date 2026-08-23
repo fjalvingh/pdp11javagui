@@ -1,11 +1,15 @@
 package to.etc.pdp11.core.arch;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 import org.junit.jupiter.api.Test;
+import to.etc.pdp11.core.console.ConsoleScanner;
 
+import static com.tngtech.archunit.base.DescribedPredicate.describe;
+import static com.tngtech.archunit.lang.conditions.ArchConditions.callMethodWhere;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
@@ -42,6 +46,28 @@ class LayeringTest {
 				"java.applet..")
 			.because("pdp11-core must stay headless so the protocol layer can be tested "
 				+ "against the fakes with no display (PLAN.md section 2)");
+		rule.check(CORE);
+	}
+
+	/**
+	 * The scanner's buffer is a plain StringBuilder that the reader thread appends to under the
+	 * console's decode lock. Reading it from the command thread without that lock - which every
+	 * {@code NoConsolePromptException} used to do while building its own diagnostic - can hand
+	 * back corrupt text or throw {@link ArrayIndexOutOfBoundsException} out of the code that
+	 * exists to explain a failure. {@code AbstractConsole.getUnconsumedInput()} is the one way
+	 * in, so it is the only caller allowed.
+	 */
+	@Test
+	void onlyAbstractConsoleReadsTheScannerBufferAcrossThreads() {
+		//-- By target owner rather than by name: every scanner is a subclass, so a call through
+		//-- OdtScanner is a call to OdtScanner.getInput as far as the bytecode is concerned.
+		ArchRule rule = noClasses()
+			.that().doNotHaveFullyQualifiedName("to.etc.pdp11.core.console.AbstractConsole")
+			.should(callMethodWhere(describe("a call to ConsoleScanner.getInput()",
+				(JavaMethodCall call) -> "getInput".equals(call.getTarget().getName())
+					&& call.getTarget().getOwner().isAssignableTo(ConsoleScanner.class))))
+			.because("the buffer is appended on the reader thread; go through "
+				+ "AbstractConsole.getUnconsumedInput(), which takes the decode lock");
 		rule.check(CORE);
 	}
 

@@ -82,7 +82,14 @@ public abstract class ConsoleScanner<S extends Enum<S>> {
 		}
 	}
 
-	/** Everything still in the buffer, consumed part included. */
+	/**
+	 * Everything still in the buffer, consumed part included.
+	 *
+	 * <p><b>Not thread safe, and read from two threads.</b> The buffer is appended by the reader
+	 * thread under the console's decode lock, so a command thread wanting this for a diagnostic
+	 * goes through {@link AbstractConsole#getUnconsumedInput()}, which takes that lock.
+	 * {@code ConsoleThreadingTest} holds that down.</p>
+	 */
 	public String getInput() {
 		return m_input.toString();
 	}

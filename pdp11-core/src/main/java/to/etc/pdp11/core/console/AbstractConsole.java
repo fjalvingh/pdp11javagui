@@ -1,14 +1,19 @@
 package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
+import to.etc.pdp11.core.mmu.TranslationResult;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.core.util.ProgressMonitor;
 
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -229,14 +234,27 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 	protected void checkPromptAfter(int fromIndex, String errinfo) throws NoConsolePromptException {
 		if(m_answers.waitFor(AnswerPhrase.Prompt.class, fromIndex, m_commandTimeoutMillis) != null)
 			return;
-		String unconsumed;
-		synchronized(m_decodeLock) {
-			unconsumed = getScanner().getInput();
-		}
 		NoConsolePromptException x = new NoConsolePromptException("No console prompt: " + errinfo + "!",
-			unconsumed, m_answers.snapshot());
+			getUnconsumedInput(), m_answers.snapshot());
 		x.logDiagnostics(m_logger);
 		throw x;
+	}
+
+	/**
+	 * Whatever the scanner has not turned into a phrase yet - the diagnostic that goes into a
+	 * {@link NoConsolePromptException}.
+	 *
+	 * <p>Under the decode lock, and that is the whole point of it existing. The scanner's buffer
+	 * is a plain StringBuilder appended by the reader thread inside {@link #onSerialReceive}; a
+	 * command thread calling {@code toString()} on it while an append is in flight reads a
+	 * half-grown array and can come back with corrupt text or an
+	 * {@link ArrayIndexOutOfBoundsException} - out of the code whose job is to <i>explain</i> a
+	 * failure.</p>
+	 */
+	protected final String getUnconsumedInput() {
+		synchronized(m_decodeLock) {
+			return getScanner().getInput();
+		}
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -324,4 +342,279 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 			pm.done();
 		}
 	}
+
+	// -------------------------------------------------------------------------------------
+	// Addresses
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * The address as this console has to name it: physical, at its own width.
+	 *
+	 * <p>A virtual address goes through the MMU, and which of its two maps depends on what the
+	 * caller is about to do with the result - the Pascal deposits through the <b>instruction</b>
+	 * map on the reasoning that what gets written is nearly always code, and examines through
+	 * the data map. A physical address at another width is rebased, which matters in the I/O
+	 * page and nowhere else (see {@link Address#withWidth}).</p>
+	 *
+	 * <p>A console whose dialect needs something different - SimH passes special registers
+	 * straight through, because it names them rather than addressing them - does its own.</p>
+	 */
+	protected final Address toPhysical(Address addr, boolean instructionSpace) throws ConsoleException {
+		MemoryAddressType type = physicalAddressType();
+		if(addr.type() == MemoryAddressType.VIRTUAL) {
+			TranslationResult tr = instructionSpace
+				? getMmu().translateInstruction(addr)
+				: getMmu().translateData(addr);
+			if(!tr.isValid())
+				throw new ConsoleException("Cannot translate " + addr.toOctal() + ": " + tr.failure());
+			return tr.address().withWidth(type);
+		}
+		if(addr.type() == type)
+			return addr;
+		if(addr.type().isConcretePhysical())
+			return addr.withWidth(type);
+		throw new ConsoleException("A " + name() + " cannot address " + addr);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Bulk examine
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * How long a block command may be, so one command cannot become unmanageable.
+	 *
+	 * <p>Both batching consoles picked 100 independently; it is the same limit for the same
+	 * reason, so it lives here.</p>
+	 */
+	protected static final int MAX_EXAMINE_BLOCK_LEN = 100;
+
+	/**
+	 * One cell, its physical address, and whether the console has answered about it yet.
+	 *
+	 * <p>Where the Pascal stores the physical address in the cell's {@code addr.tmpval} scratch
+	 * field and its answered-yet flag in {@code addr.tag} ({@code :984}), this keeps both beside
+	 * the cell for the duration of the call. A shared mutable scratch field on a model object is
+	 * exactly the kind of thing that stops being safe the moment two things run at once.</p>
+	 */
+	protected static final class ExamineItem {
+		private final MemoryCell m_cell;
+
+		private final Address m_physical;
+
+		private boolean m_done;
+
+		public ExamineItem(MemoryCell cell, Address physical) {
+			m_cell = cell;
+			m_physical = physical;
+		}
+
+		public MemoryCell getCell() {
+			return m_cell;
+		}
+
+		public Address getPhysical() {
+			return m_physical;
+		}
+
+		public boolean isDone() {
+			return m_done;
+		}
+	}
+
+	/**
+	 * Where one block ends, and the command that reads it.
+	 *
+	 * @param endExclusive one past the last item this command covers
+	 * @param command      what to send, without its line terminator
+	 */
+	protected record ExamineBlock(int endExclusive, String command) {
+	}
+
+	/**
+	 * The console-specific half of a bulk examine: how a block is phrased, and how it is sent.
+	 *
+	 * <p>Everything else - the list passes, the block collection, the "no progress this pass"
+	 * termination rule, attributing an answer to a cell - is identical between the batching
+	 * consoles and lives in {@link AbstractConsole}. It was written twice, and the hardening
+	 * that makes the outer loop terminate had to be applied twice.</p>
+	 */
+	protected interface BulkExamineProtocol {
+		/**
+		 * Extend a block starting at {@code blockstart} over as many consecutive not-yet-answered
+		 * items as this dialect can ask about in one command.
+		 *
+		 * @param addrInc 2 between memory words, 1 between the byte-spaced registers
+		 */
+		ExamineBlock nextBlock(List<ExamineItem> list, int blockstart, int addrInc);
+
+		/**
+		 * Send one block command.
+		 *
+		 * @return the answer index to start scanning replies from - which is not 0 for a console
+		 *         that echoes, because its own echo can precede answers to the previous command
+		 */
+		int sendBlockCommand(String command) throws ConsoleException;
+	}
+
+	/**
+	 * Read two already-classified lists of cells, then propagate once.
+	 *
+	 * <p>Memory and registers are separate lists because they step differently, 2 against 1, and
+	 * because the registers are usually named rather than addressed. Which cell is which is the
+	 * one part of this each dialect decides for itself.</p>
+	 */
+	protected final void bulkExamine(MemoryCellGroup g, List<ExamineItem> memory,
+		List<ExamineItem> registers, ProgressMonitor pm, BulkExamineProtocol proto) throws ConsoleException {
+		memory.sort(Comparator.comparingLong(a -> a.m_physical.val()));
+		registers.sort(Comparator.comparingLong(a -> a.m_physical.val()));
+
+		pm.begin("Examining ...", memory.size() + registers.size());
+		try {
+			runExamineList(memory, 2, pm, proto);
+			runExamineList(registers, 1, pm, proto);
+		} finally {
+			pm.done();
+		}
+		//-- One propagation pass at the end rather than one per word; see MemoryCell.setPdpValue.
+		MemoryCellGroups owner = g.getOwner();
+		if(owner != null) {
+			for(MemoryCell mc : List.copyOf(g.getCells())) {
+				owner.syncMemoryCells(mc);
+			}
+		}
+	}
+
+	/**
+	 * Keep passing over the list until nothing is left - or until a pass answers nothing new.
+	 *
+	 * <p>The Pascal's {@code while not examineAddrList(...) do ;} relies on a stated invariant:
+	 * every call marks at least one more cell answered. That holds as long as a failure can be
+	 * attributed to a cell, and {@link #collectBlock} works hard to keep it true - but "the loop
+	 * terminates because a comment says it must" is not a property, it is a hope, and this one
+	 * spins forever against a console that answers about an address nobody asked for. Counting
+	 * what is left makes termination something the code enforces.</p>
+	 */
+	private void runExamineList(List<ExamineItem> list, int addrInc, ProgressMonitor pm,
+		BulkExamineProtocol proto) throws ConsoleException {
+		int outstanding = list.size();
+		while(!examineAddrList(list, addrInc, pm, proto)) {
+			int now = 0;
+			for(ExamineItem it : list) {
+				if(!it.m_done)
+					now++;
+			}
+			if(now >= outstanding) {
+				m_logger.log(LogChannel.OTHER,
+					"EXAMINE list: giving up with " + now + " cell(s) unanswered - no progress this pass");
+				return;
+			}
+			outstanding = now;
+		}
+	}
+
+	/**
+	 * One pass over the not-yet-answered cells.
+	 *
+	 * @return true when there is nothing left to do - every cell answered, cancelled, or given
+	 *         up on. False means "call me again".
+	 */
+	private boolean examineAddrList(List<ExamineItem> list, int addrInc, ProgressMonitor pm,
+		BulkExamineProtocol proto) throws ConsoleException {
+		int blockstart = -1;
+		for(int i = 0; i < list.size(); i++) {
+			if(!list.get(i).m_done) {
+				blockstart = i;
+				break;
+			}
+		}
+		if(blockstart < 0)
+			return true;                                    // all answered, or the list is empty
+
+		boolean blockFailure = false;
+		while(!pm.isCancelled() && !blockFailure && blockstart < list.size()) {
+			ExamineBlock block = proto.nextBlock(list, blockstart, addrInc);
+			if(!collectBlock(list, blockstart, block.endExclusive(), addrInc, block.command(), pm, proto))
+				return true;                                // timed out; do not retry, ever
+			blockFailure = anyUnanswered(list, blockstart, block.endExclusive());
+			blockstart = block.endExclusive();
+		}
+		return pm.isCancelled() || !blockFailure;
+	}
+
+	/**
+	 * Send one command and take in its replies.
+	 *
+	 * <p>Both dialects answer strictly in ascending address order, one line per address, and
+	 * simply stop when they hit an address that does not exist - so a UNIBUS timeout ends the
+	 * block early and the address it happened at has to be inferred from the last good
+	 * answer.</p>
+	 *
+	 * @return false if the console stopped answering altogether, which is not worth retrying
+	 */
+	private boolean collectBlock(List<ExamineItem> list, int blockstart, int blockend, int addrInc,
+		String cmd, ProgressMonitor pm, BulkExamineProtocol proto) throws ConsoleException {
+		int scanFrom = proto.sendBlockCommand(cmd);
+		long nextExpected = list.get(blockstart).m_physical.val();
+
+		while(!pm.isCancelled()) {
+			if(!anyUnanswered(list, blockstart, blockend))
+				return true;
+			int at = m_answers.waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult,
+				scanFrom, m_commandTimeoutMillis);
+			if(at < 0) {
+				m_logger.log(LogChannel.OTHER, "EXAMINE list failure: timeout waiting for "
+					+ Octal.format(nextExpected, 8));
+				return false;
+			}
+			AnswerPhrase.ExamineResult r = (AnswerPhrase.ExamineResult) m_answers.get(at);
+			scanFrom = at + 1;
+
+			//-- A timeout answer names no address, so it belongs to whatever was next in line.
+			long answerAddr = r.value().isKnown() && r.examineAddr() != null
+				? r.examineAddr().val()
+				: nextExpected;
+			boolean found = false;
+			for(int j = blockstart; j < blockend; j++) {
+				ExamineItem it = list.get(j);
+				if(it.m_physical.val() == answerAddr) {
+					nextExpected = answerAddr + addrInc;
+					if(!it.m_done)
+						pm.step(1);
+					it.m_done = true;
+					it.m_cell.setPdpValue(r.value());
+					found = true;
+				}
+			}
+			if(!found) {
+				m_logger.log(LogChannel.OTHER,
+					"No memory cell matches the answer \"" + r.rawText() + "\" from " + name());
+				if(!r.value().isKnown()) {
+					//-- A failure that cannot be attributed would otherwise leave the block
+					//-- unanswered forever, and the caller retries until something changes.
+					//-- Give up on the first outstanding cell so the retry can make progress.
+					for(int j = blockstart; j < blockend; j++) {
+						ExamineItem it = list.get(j);
+						if(!it.m_done) {
+							it.m_done = true;
+							it.m_cell.setPdpValue(CellValue.UNKNOWN);
+							pm.step(1);
+							break;
+						}
+					}
+				}
+			}
+			if(!r.value().isKnown())
+				return true;                                // the block ended here
+		}
+		return true;
+	}
+
+	private static boolean anyUnanswered(List<ExamineItem> list, int from, int to) {
+		for(int i = from; i < to; i++) {
+			if(!list.get(i).m_done)
+				return true;
+		}
+		return false;
+	}
+
 }

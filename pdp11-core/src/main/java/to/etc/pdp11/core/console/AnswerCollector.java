@@ -79,6 +79,25 @@ public final class AnswerCollector {
 	}
 
 	/**
+	 * The phrase {@code back} places from the end - 0 is the last one - or {@code null} if the
+	 * list is not that long.
+	 *
+	 * <p>One lock, one answer. {@link #size()} and {@link #get} are each synchronized, but a
+	 * decoder computing {@code get(size() - 2)} out of the two holds the lock over neither the
+	 * arithmetic nor the gap between them: a command thread calling {@link #clear()} in between
+	 * empties the list and the {@code get} throws {@link IndexOutOfBoundsException} on the
+	 * <i>reader</i> thread, where any throwable is read as the transport dying and reported as
+	 * "Console connection lost". Looking back from the end is a single operation because that is
+	 * the only way it can be a safe one.</p>
+	 */
+	public synchronized AnswerPhrase getFromEnd(int back) {
+		if(back < 0)
+			throw new IllegalArgumentException("Cannot look forwards from the end: " + back);
+		int at = m_answers.size() - 1 - back;
+		return at < 0 ? null : m_answers.get(at);
+	}
+
+	/**
 	 * The most recent phrase of a type, or {@code null}.
 	 *
 	 * <p>Searching backwards is the Pascal's own choice ({@code :435}).</p>

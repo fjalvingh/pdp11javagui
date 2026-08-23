@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.memfile;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
@@ -87,6 +88,7 @@ public final class MemoryFileLoader {
 		int words = bytes.length / 2;
 		if(words == 0)
 			throw new IOException(file.getFileName() + " holds no whole words");
+		words = limitToAddressSpace(words, startAddr, warnings);
 
 		group.clear();
 		group.shiftRange(startAddr, words, false);
@@ -120,6 +122,7 @@ public final class MemoryFileLoader {
 		int words = Math.min(low.length, high.length);
 		if(words == 0)
 			throw new IOException("One of the two files is empty");
+		words = limitToAddressSpace(words, startAddr, warnings);
 
 		group.clear();
 		group.shiftRange(startAddr, words, false);
@@ -150,6 +153,8 @@ public final class MemoryFileLoader {
 
 		int loaded = 0;
 		int skipped = 0;
+		int outOfRange = 0;
+		int masked = 0;
 		for(String raw : lines) {
 			String line = raw.strip();
 			if(line.isEmpty() || !isOctalDigit(line.charAt(0))) {
@@ -174,9 +179,18 @@ public final class MemoryFileLoader {
 			}
 			for(int i = 1; i < parts.length; i++) {
 				try {
-					int value = (int) (Octal.parse(parts[i]) & 0xFFFF);
-					addCell(group, startAddr, addr, value);
-					loaded++;
+					long raw16 = Octal.parse(parts[i]);
+					if(raw16 > 0xFFFF)
+						masked++;
+					int value = (int) (raw16 & 0xFFFF);
+					//-- A forgiving format stays forgiving: an address the machine cannot express is
+					//-- a bad line, not a reason to lose everything read so far.
+					if(!fitsAddressSpace(addr, startAddr)) {
+						outOfRange++;
+					} else {
+						addCell(group, startAddr, addr, value);
+						loaded++;
+					}
 				} catch(NumberFormatException x) {
 					warnings.add("Ignored \"" + parts[i] + "\", which is not an octal value");
 				}
@@ -185,6 +199,13 @@ public final class MemoryFileLoader {
 		}
 		if(skipped > 0)
 			warnings.add(skipped + " line" + (skipped == 1 ? "" : "s") + " did not start with an octal address");
+		if(masked > 0)
+			warnings.add(masked + " value" + (masked == 1 ? " was" : "s were") + " wider than 16 bits and "
+				+ (masked == 1 ? "was" : "were") + " truncated to a word");
+		if(outOfRange > 0)
+			warnings.add(outOfRange + " value" + (outOfRange == 1 ? "" : "s") + " named an address outside the "
+				+ startAddr.type().getBits() + " bit address space and " + (outOfRange == 1 ? "was" : "were")
+				+ " ignored");
 		if(loaded == 0)
 			throw new IOException("No octal address and value lines were found in " + file.getFileName());
 		return new Result(loaded, null, warnings);
@@ -326,6 +347,45 @@ public final class MemoryFileLoader {
 	// -------------------------------------------------------------------------------------
 	// Shared
 	// -------------------------------------------------------------------------------------
+
+	/**
+	 * The highest address a group of {@code like}'s width can hold, or -1 when the type has no
+	 * width to speak of - in which case {@link Address} will not police the value either.
+	 */
+	private static long topOfAddressSpace(Address like) {
+		MemoryAddressType type = like.type();
+		if(!type.isConcretePhysical() && type != MemoryAddressType.VIRTUAL)
+			return -1;
+		return (1L << type.getBits()) - 1;
+	}
+
+	/** Whether {@code addrValue} can be expressed at {@code like}'s width. */
+	private static boolean fitsAddressSpace(long addrValue, Address like) {
+		if(addrValue < 0)
+			return false;
+		long top = topOfAddressSpace(like);
+		return top < 0 || addrValue <= top;
+	}
+
+	/**
+	 * How many of {@code words} words starting at {@code startAddr} fit in the address space,
+	 * with a warning for the ones that do not.
+	 *
+	 * <p>Checked <b>before</b> the group is cleared and rebuilt: a file that runs off the top of
+	 * a 16-bit machine used to throw {@link IllegalArgumentException} halfway through
+	 * {@code shiftRange}, leaving the group holding part of a load nobody asked for.</p>
+	 */
+	private static int limitToAddressSpace(int words, Address startAddr, List<String> warnings) {
+		long top = topOfAddressSpace(startAddr);
+		if(top < 0)
+			return words;                                   // Address does not police this width either
+		int fits = (int) Math.min(words, (top - startAddr.val()) / 2 + 1);
+		if(fits < words)
+			warnings.add("The file holds " + words + " words but only " + fits + " fit at "
+				+ startAddr.toOctal() + " in a " + startAddr.type().getBits()
+				+ " bit address space; the rest were not loaded");
+		return fits;
+	}
 
 	/** Add a cell, or overwrite one already at that address - a later line wins. */
 	private static void addCell(MemoryCellGroup group, Address like, long addrValue, int value) {

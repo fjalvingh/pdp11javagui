@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.fake;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
@@ -26,12 +27,12 @@ public abstract class FakePdp11 {
 	/** The I/O page is 8 KB on every PDP-11. */
 	public static final int IOPAGE_SIZE = 8192;
 
-	/** Offsets within the I/O page of R0..R7 and the PSW, as 16-bit addresses would give them. */
-	private static final int REG_R0 = 017700;
+	/** Offsets within the I/O page of R0..R7 and the PSW - see {@link CpuRegisters}. */
+	private static final int REG_R0 = CpuRegisters.R0_OFFSET;
 
-	private static final int REG_R7 = 017707;
+	private static final int REG_R7 = CpuRegisters.R7_OFFSET;
 
-	private static final int REG_PSW = 017776;
+	private static final int REG_PSW = CpuRegisters.PSW_OFFSET;
 
 	private final MemoryAddressType m_type;
 

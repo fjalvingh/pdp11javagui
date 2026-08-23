@@ -15,6 +15,7 @@ import to.etc.pdp11.core.util.Octal;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Loads a machine description: which devices a particular PDP-11 has, and where they are
@@ -117,7 +118,7 @@ public final class MachineDescription {
 	}
 
 	private static boolean isBitsSection(IniFile.Section s) {
-		return s.name().toUpperCase().startsWith(BITS_PREFIX);
+		return s.name().toUpperCase(Locale.ROOT).startsWith(BITS_PREFIX);
 	}
 
 	/**
@@ -153,7 +154,7 @@ public final class MachineDescription {
 		//-- bitfield links behind in bitfieldsdefs.
 		String enabled = section.findLast("Enabled");
 		if(enabled != null) {
-			String v = IniFile.stripQuotes(enabled).toUpperCase();
+			String v = IniFile.stripQuotes(enabled).toUpperCase(Locale.ROOT);
 			if("0".equals(v) || "FALSE".equals(v))
 				return;
 		}

@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -40,7 +41,7 @@ public final class BitfieldsDefs {
 	 * @throws IllegalArgumentException if a definition of that name already exists.
 	 */
 	public void add(BitfieldsDef def) {
-		String key = def.getName().toUpperCase();
+		String key = def.getName().toUpperCase(Locale.ROOT);
 		BitfieldsDef old = m_byName.putIfAbsent(key, def);
 		if(old != null)
 			throw new IllegalArgumentException("Duplicate bitfields definition '" + def.getName() + "'");
@@ -48,7 +49,7 @@ public final class BitfieldsDefs {
 
 	/** Ported from {@code BitFieldsDefByName}; case-insensitive, {@code null} if absent. */
 	public BitfieldsDef findByName(String name) {
-		return name == null ? null : m_byName.get(name.toUpperCase());
+		return name == null ? null : m_byName.get(name.toUpperCase(Locale.ROOT));
 	}
 
 	public List<BitfieldsDef> getDefinitions() {

@@ -423,6 +423,39 @@ class SimhConsoleTest {
 		}
 	}
 
+	/**
+	 * Continue is a start like any other start, so it drops the same two pieces of state
+	 * {@code resetAndStart} drops. It used to drop neither: a stop flag describing where the
+	 * machine no longer is survived into RUNNING, and a silent-halt resolution scheduled just
+	 * before Continue still fired afterwards - sending {@code E PC} at a machine that is now
+	 * running, which SimH does not answer, so the command thread sat out the whole timeout and
+	 * logged a failure that had not happened.
+	 */
+	@Test
+	void continuingDropsTheStopStateAndAPendingSilentHaltResolution() throws Exception {
+		try(Rig rig = new Rig()) {
+			rig.connection.run(() -> rig.console.resetAndStart(Address.of(MemoryAddressType.VIRTUAL, 01000)));
+			rig.console.onSerialReceive("sim> ");           // stopped without saying so
+			assertTrue(rig.consoleClock.hasPending(), "the silent halt should have been scheduled");
+			assertEquals(SimhConsole.CpuState.HALTED, rig.console.getCpuState());
+
+			rig.connection.run(() -> rig.console.continueCpu());
+			assertEquals(SimhConsole.CpuState.RUNNING, rig.console.getCpuState());
+			assertNull(rig.console.getExecutionStopPc(),
+				"it is running, so where it last stopped is not where it is");
+
+			//-- The scheduled resolution still fires; it must find nothing left to do rather
+			//-- than examine the PC of a running machine.
+			int commandsBefore = rig.fake.getCommands().size();
+			rig.consoleClock.fireAll();
+			rig.connection.run(() -> {
+			});                                             // let the queued job drain
+			assertEquals(commandsBefore, rig.fake.getCommands().size(),
+				"the stale silent-halt resolution should not have sent anything: "
+					+ rig.fake.getCommands());
+		}
+	}
+
 	@Test
 	void aSingleStepAdvancesThePcAndReportsIt() throws Exception {
 		try(Rig rig = new Rig()) {

@@ -3,6 +3,7 @@ package to.etc.pdp11.core.machine;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -78,10 +79,10 @@ public final class IniFile {
 				String name = line.substring(1, end).strip();
 				//-- A repeated section header continues the existing section, which is how
 				//-- TMemIniFile behaves and how an override block after a macro call works.
-				current = byName.get(name.toLowerCase());
+				current = byName.get(name.toLowerCase(Locale.ROOT));
 				if(current == null) {
 					current = new Section(name, new ArrayList<>(), lineNr);
-					byName.put(name.toLowerCase(), current);
+					byName.put(name.toLowerCase(Locale.ROOT), current);
 					ini.m_sections.add(current);
 				}
 				continue;

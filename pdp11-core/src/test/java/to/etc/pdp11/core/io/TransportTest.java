@@ -376,4 +376,38 @@ class TransportTest {
 		assertTrue(lines.contains("set remote master"));
 		assertTrue(lines.contains("set remote connections=1"));
 	}
+
+	// ---------------------------------------------------------------------------------------
+	// Launch failure
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * A launch that never reaches the remote console is the one case where SimH's own stdout
+	 * matters - it is where a refused port bind or a bad configuration line is reported, and
+	 * nowhere else. The drain used to be started only after both connects had succeeded, so on
+	 * exactly this path nothing ever read it and the message that explains the failure was
+	 * thrown away.
+	 */
+	@Test
+	void aFailedLaunchCarriesWhatTheChildProcessSaid(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+		throws Exception {
+		//-- CI has no SimH, so this stands in for one: something that prints a complaint and
+		//-- then sits there without ever listening on the ports.
+		java.nio.file.Path sh = java.nio.file.Path.of("/bin/sh");
+		org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(sh),
+			"needs a POSIX shell to stand in for SimH");
+		java.nio.file.Path script = dir.resolve("notreallysimh");
+		java.nio.file.Files.writeString(script,
+			"#!/bin/sh\necho '%SIM-ERROR: could not bind the remote console'\nexec sleep 30\n",
+			StandardCharsets.ISO_8859_1);
+		org.junit.jupiter.api.Assumptions.assumeTrue(script.toFile().setExecutable(true),
+			"needs an executable bit");
+
+		TransportException x = org.junit.jupiter.api.Assertions.assertThrows(TransportException.class,
+			() -> SimhProcessTransport.launch(script.toString(), null, dir.resolve("tmp"),
+				to.etc.pdp11.core.util.Logger.NULL));
+
+		assertTrue(x.getMessage().contains("could not bind the remote console"),
+			"the one diagnostic there was is missing from: " + x.getMessage());
+	}
 }

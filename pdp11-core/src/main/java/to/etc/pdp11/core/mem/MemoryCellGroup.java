@@ -114,9 +114,35 @@ public final class MemoryCellGroup {
 		return m_cells.isEmpty();
 	}
 
-	/** The cells, in insertion order unless {@link #sort()} has been called. */
+	/**
+	 * The cells, in insertion order unless {@link #sort()} has been called.
+	 *
+	 * <p>An unmodifiable <b>view</b>, not a copy. Anything iterating this off the event thread -
+	 * a job on the command thread, say - takes {@code List.copyOf} of it first, because the EDT
+	 * can {@link #shiftRange} or {@link #clear} the group underneath and a view over a plain
+	 * ArrayList answers that with {@link java.util.ConcurrentModificationException}.</p>
+	 */
 	public List<MemoryCell> getCells() {
 		return Collections.unmodifiableList(m_cells);
+	}
+
+	/**
+	 * Whether this group still holds exactly the cells {@code snapshot} was taken of.
+	 *
+	 * <p>The other half of copying the list before a long job: the copy stops the iteration
+	 * throwing, but it does not make the job's results relevant. A group re-ranged or cleared
+	 * while the machine was being read is showing something else now, and writing the answers
+	 * back into it would put a previous range's values under the current range's addresses.
+	 * Identity, not equality: a cell is the thing the grid holds a reference to.</p>
+	 */
+	public boolean holdsExactly(List<MemoryCell> snapshot) {
+		if(m_cells.size() != snapshot.size())
+			return false;
+		for(int i = 0; i < snapshot.size(); i++) {
+			if(m_cells.get(i) != snapshot.get(i))
+				return false;
+		}
+		return true;
 	}
 
 	public MemoryCell cell(int index) {

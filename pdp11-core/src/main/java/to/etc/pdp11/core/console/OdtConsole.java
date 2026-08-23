@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
@@ -49,12 +50,12 @@ public final class OdtConsole extends AbstractConsole {
 	/** 1 s, from {@code ODT_CMD_TIMEOUT} ({@code :51}). A real machine on a serial line is prompt. */
 	public static final long CMD_TIMEOUT_MS = 1000;
 
-	/** R0..R7 and the PSW, at their offsets within the I/O page. Byte-spaced, as PDP11GUI has them. */
-	private static final int REG_R0 = 017700;
+	/** R0..R7 and the PSW, at their offsets within the I/O page - see {@link CpuRegisters}. */
+	private static final int REG_R0 = CpuRegisters.R0_OFFSET;
 
-	private static final int REG_R7 = 017707;
+	private static final int REG_R7 = CpuRegisters.R7_OFFSET;
 
-	private static final int REG_PSW = 017776;
+	private static final int REG_PSW = CpuRegisters.PSW_OFFSET;
 
 	private static final String[] REG_NAMES = {"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7"};
 
@@ -440,21 +441,6 @@ public final class OdtConsole extends AbstractConsole {
 	}
 
 	/** ODT only speaks physical addresses, so anything virtual has to go through the MMU. */
-	private Address toPhysical(Address addr, boolean instructionSpace) throws ConsoleException {
-		if(addr.type() == MemoryAddressType.VIRTUAL) {
-			TranslationResult tr = instructionSpace
-				? getMmu().translateInstruction(addr)
-				: getMmu().translateData(addr);
-			if(!tr.isValid())
-				throw new ConsoleException("Cannot translate " + addr.toOctal() + ": " + tr.failure());
-			return tr.address().withWidth(m_addressType);
-		}
-		if(addr.type() == m_addressType)
-			return addr;
-		if(addr.type().isConcretePhysical())
-			return addr.withWidth(m_addressType);
-		throw new ConsoleException("An ODT console cannot address " + addr);
-	}
 
 	@Override
 	public CellValue examine(Address addr) throws ConsoleException {
@@ -503,7 +489,7 @@ public final class OdtConsole extends AbstractConsole {
 		int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult, 0, CMD_TIMEOUT_MS);
 		if(at < 0)
 			throw new NoConsolePromptException("DEPOSIT failed, the address did not open",
-				m_scanner.getInput(), getAnswers().snapshot());
+				getUnconsumedInput(), getAnswers().snapshot());
 		writeToPdp(Octal.format(value & 0xFFFF, 1) + CR);
 		checkPromptAfter(at + 1, "DEPOSIT failed, no prompt");
 	}

@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -37,6 +39,50 @@ class Pdp1144ConsoleTest {
 
 	private static final long REG_BASE = 017777700L;
 
+	/**
+	 * A transport that can be told to swallow everything written to it - a line that goes quiet
+	 * mid-conversation, which is the only way to see a command time out without a real one.
+	 */
+	private static final class DeafableTransport implements to.etc.pdp11.core.io.PhysicalTransport {
+		private final FakeTransport m_real;
+
+		private volatile boolean m_deaf;
+
+		DeafableTransport(FakePdp11 fake) {
+			m_real = new FakeTransport(fake);
+		}
+
+		void setDeaf(boolean deaf) {
+			m_deaf = deaf;
+		}
+
+		@Override
+		public int read(byte[] buf, int off, int len) throws java.io.IOException {
+			return m_real.read(buf, off, len);
+		}
+
+		@Override
+		public void write(byte[] buf, int off, int len) throws java.io.IOException {
+			if(!m_deaf)
+				m_real.write(buf, off, len);
+		}
+
+		@Override
+		public boolean isOpen() {
+			return m_real.isOpen();
+		}
+
+		@Override
+		public void close() {
+			m_real.close();
+		}
+
+		@Override
+		public String describe() {
+			return "deafable " + m_real.describe();
+		}
+	}
+
 	/** A connected 11/44 console and the fake machine behind it. */
 	private static final class Rig implements AutoCloseable {
 		final Scheduler.Manual machineClock = new Scheduler.Manual();
@@ -49,12 +95,15 @@ class Pdp1144ConsoleTest {
 
 		final Pdp1144Console console;
 
+		final DeafableTransport transport;
+
 		Rig(Pdp1144Firmware firmware) throws ConsoleException {
 			fake = firmware == Pdp1144Firmware.V340C
 				? new FakePdp1144V340c(machineClock, new Random(3))
 				: new FakePdp1144(machineClock, new Random(3));
 			fake.powerOn();
-			connection = new ConsoleConnection(new FakeTransport(fake), Logger.NULL);
+			transport = new DeafableTransport(fake);
+			connection = new ConsoleConnection(transport, Logger.NULL);
 			console = new Pdp1144Console(groups, firmware, Logger.NULL);
 			connection.attach(console);
 			connection.run(() -> console.init(connection));
@@ -361,6 +410,78 @@ class Pdp1144ConsoleTest {
 				assertFalse(rig.fake.isRunning(), f.toString());
 				assertTrue(stopped.await(5, TimeUnit.SECONDS), f + ": no stop event arrived");
 				assertEquals(01000, reported.get().val(), f.toString());
+			}
+		}
+	}
+
+	/**
+	 * The interface says null for "a machine that had already stopped", and the execution window
+	 * calls halt unconditionally, so every redundant click lands here.
+	 *
+	 * <p>The two firmwares differ, which is the whole point. The classic console answers
+	 * {@code H} with an ordinary stop report saying where it is; V3.40C answers
+	 * {@code ?Already halted} and draws its prompt with no report at all. Waiting for the report
+	 * that is not coming used to sit out the whole command timeout and then throw "Stopping the
+	 * CPU failed: no answer" at somebody who clicked Halt twice.</p>
+	 */
+	@Test
+	void haltingAnAlreadyHaltedMachineDoesNotStallAndThrow() throws Exception {
+		for(Pdp1144Firmware f : firmwares()) {
+			try(Rig rig = new Rig(f)) {
+				assertFalse(rig.fake.isRunning(), f + ": nothing has been started");
+				long startedAt = System.nanoTime();
+				Address pc = rig.connection.call(() -> rig.console.haltCpu());
+				long tookMs = (System.nanoTime() - startedAt) / 1_000_000;
+
+				assertTrue(tookMs < 2_000, f + ": it waited " + tookMs + "ms for an answer that never comes");
+				if(f == Pdp1144Firmware.V340C)
+					assertNull(pc, f + ": ?Already halted says nothing about where it is");
+				else
+					assertNotNull(pc, f + ": the classic console reports where it is anyway");
+			}
+		}
+	}
+
+	/** And the console is still usable afterwards - the redundant halt consumed its own prompt. */
+	@Test
+	void aRedundantHaltLeavesTheConsoleAbleToTakeTheNextCommand() throws Exception {
+		for(Pdp1144Firmware f : firmwares()) {
+			try(Rig rig = new Rig(f)) {
+				rig.connection.call(() -> rig.console.haltCpu());
+				rig.fake.setMem(phys(01000), 0123456);
+				assertEquals(0123456, rig.connection.call(() -> rig.console.examine(phys(01000))).word(),
+					f.toString());
+			}
+		}
+	}
+
+	/**
+	 * {@code D +} means "the word after the one you last deposited into", and the machine's own
+	 * idea of that only moves when the deposit actually happened. Recording it before the prompt
+	 * confirmed the command meant a failed deposit left the console one word ahead of the
+	 * machine, and the next sequential deposit landed at the wrong address without saying so.
+	 */
+	@Test
+	void aDepositThatWasNeverConfirmedDoesNotAdvanceTheSequentialAddress() throws Exception {
+		for(Pdp1144Firmware f : firmwares()) {
+			try(Rig rig = new Rig(f)) {
+				rig.console.setCommandTimeoutMillis(250);   // no need to sit out a real timeout
+				rig.connection.run(() -> rig.console.deposit(phys(01000), 0111));
+				assertEquals(0111, rig.fake.getMem(phys(01000)), f.toString());
+
+				//-- The line goes quiet: the command never reaches the machine and no prompt
+				//-- comes back, which is exactly what the caller sees as "no console prompt".
+				rig.transport.setDeaf(true);
+				assertThrows(ConsoleException.class,
+					() -> rig.connection.run(() -> rig.console.deposit(phys(01002), 0222)), f.toString());
+				rig.transport.setDeaf(false);
+
+				//-- The machine still last deposited into 01000, so "D +" here would write 01002.
+				rig.connection.run(() -> rig.console.deposit(phys(01004), 0333));
+				assertEquals(0333, rig.fake.getMem(phys(01004)),
+					f + ": the value went somewhere else");
+				assertEquals(0, rig.fake.getMem(phys(01002)),
+					f + ": and it did not land in the word the failed deposit named");
 			}
 		}
 	}

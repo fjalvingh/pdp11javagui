@@ -87,10 +87,13 @@ public final class SimhProcessTransport implements PhysicalTransport {
 	 * else. It also means a long-running SimH can never block on a full pipe, though in
 	 * practice it prints far too little for that.</p>
 	 *
+	 * <p>Created in {@link #launch} rather than here, because "when a launch goes wrong" is the
+	 * case it exists for and there is no transport object yet at that point.</p>
+	 *
 	 * <p>Do not synchronise on this. SimH's stdout is a pipe rather than a terminal, so its
 	 * writes are block-buffered and what it has printed usually has not reached us yet.</p>
 	 */
-	private final StringBuilder m_processOutput = new StringBuilder();
+	private final StringBuilder m_processOutput;
 
 	private final Ports m_ports;
 
@@ -99,12 +102,13 @@ public final class SimhProcessTransport implements PhysicalTransport {
 	private volatile boolean m_closed;
 
 	private SimhProcessTransport(Process process, TelnetTransport telnet, TelnetTransport console,
-		Ports ports, Path iniFile) {
+		Ports ports, Path iniFile, StringBuilder processOutput) {
 		m_process = process;
 		m_telnet = telnet;
 		m_console = console;
 		m_ports = ports;
 		m_iniFile = iniFile;
+		m_processOutput = processOutput;
 	}
 
 	/**
@@ -137,23 +141,59 @@ public final class SimhProcessTransport implements PhysicalTransport {
 		logger.log(LogChannel.OTHER, "Started %s %s (remote %d, console %d)",
 			simhExecutable, ini, ports.remote(), ports.console());
 
-		SimhProcessTransport result = null;
+		//-- Drain from here rather than after both connects succeed. What SimH prints on its
+		//-- own stdout is the only diagnosis there is when a launch fails - a refused port bind,
+		//-- a bad configuration line - and starting the drain after the connects meant that on
+		//-- exactly the path where it is needed, it was never read at all.
+		StringBuilder processOutput = new StringBuilder();
+		Thread drain = startOutputDrain(process, processOutput);
+
+		TelnetTransport telnet = null;
+		TelnetTransport console = null;
 		try {
 			//-- SimH needs a moment between being launched and having its remote console
 			//-- listening, and there is no event to wait for.
-			TelnetTransport telnet = TelnetTransport.connectWithRetry(
+			telnet = TelnetTransport.connectWithRetry(
 				"localhost", ports.remote(), CONNECT_TIMEOUT_MS, 100);
 			//-- And the console channel, without which the remote one stays mute. See above.
-			TelnetTransport console = TelnetTransport.connectWithRetry(
+			console = TelnetTransport.connectWithRetry(
 				"localhost", ports.console(), CONNECT_TIMEOUT_MS, 100);
-			result = new SimhProcessTransport(process, telnet, console, ports, ini);
-			result.startOutputDrain();
-			return result;
+			return new SimhProcessTransport(process, telnet, console, ports, ini, processOutput);
 		} catch(IOException x) {
+			//-- Whichever of the two got as far as a socket still holds one; the remote channel
+			//-- surviving a failure to reach the console channel used to leak it until GC.
+			closeQuietly(telnet);
+			closeQuietly(console);
 			process.destroyForcibly();
 			throw new TransportException("SimH started but its consoles on ports "
-				+ ports.remote() + "/" + ports.console() + " never accepted a connection.", x);
+				+ ports.remote() + "/" + ports.console() + " never accepted a connection."
+				+ describeProcessOutput(drain, processOutput), x);
 		}
+	}
+
+	private static void closeQuietly(TelnetTransport t) {
+		if(t != null)
+			t.close();
+	}
+
+	/**
+	 * Whatever SimH managed to say before it was killed, for the failure message.
+	 *
+	 * <p>The process has just been asked to go, so its stdout is about to reach end of file;
+	 * waiting briefly for the drain thread to finish is what turns block-buffered output that
+	 * has not arrived yet into output that has.</p>
+	 */
+	private static String describeProcessOutput(Thread drain, StringBuilder processOutput) {
+		try {
+			drain.join(500);
+		} catch(InterruptedException ix) {
+			Thread.currentThread().interrupt();
+		}
+		String out;
+		synchronized(processOutput) {
+			out = processOutput.toString().strip();
+		}
+		return out.isEmpty() ? "\nSimH printed nothing on its own output." : "\nSimH said:\n" + out;
 	}
 
 	/**
@@ -230,18 +270,22 @@ public final class SimhProcessTransport implements PhysicalTransport {
 		return f;
 	}
 
-	/** Keep reading SimH's own output so it can never block on a full pipe. */
-	private void startOutputDrain() {
+	/**
+	 * Keep reading SimH's own output so it can never block on a full pipe.
+	 *
+	 * <p>Static, and started immediately after {@code pb.start()}: see {@link #launch}.</p>
+	 */
+	private static Thread startOutputDrain(Process process, StringBuilder into) {
 		Thread t = new Thread(() -> {
 			byte[] buf = new byte[4096];
 			try {
 				int n;
-				while((n = m_process.getInputStream().read(buf)) > 0) {
-					synchronized(m_processOutput) {
-						m_processOutput.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
+				while((n = process.getInputStream().read(buf)) > 0) {
+					synchronized(into) {
+						into.append(new String(buf, 0, n, StandardCharsets.ISO_8859_1));
 						//-- Bounded: this is for diagnosis, not a log file.
-						if(m_processOutput.length() > MAX_PROCESS_OUTPUT)
-							m_processOutput.delete(0, m_processOutput.length() - MAX_PROCESS_OUTPUT);
+						if(into.length() > MAX_PROCESS_OUTPUT)
+							into.delete(0, into.length() - MAX_PROCESS_OUTPUT);
 					}
 				}
 			} catch(IOException x) {
@@ -250,6 +294,7 @@ public final class SimhProcessTransport implements PhysicalTransport {
 		}, "simh-output");
 		t.setDaemon(true);
 		t.start();
+		return t;
 	}
 
 	private static final int MAX_PROCESS_OUTPUT = 64 * 1024;

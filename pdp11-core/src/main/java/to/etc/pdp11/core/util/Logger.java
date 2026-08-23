@@ -1,5 +1,7 @@
 package to.etc.pdp11.core.util;
 
+import java.util.Locale;
+
 /**
  * Where {@code pdp11-core} writes diagnostics.
  *
@@ -32,7 +34,7 @@ public interface Logger {
 	 */
 	default void log(LogChannel channel, String format, Object... args) {
 		if(isEnabled(channel))
-			log(channel, String.format(format, args));
+			log(channel, String.format(Locale.ROOT, format, args));
 	}
 
 	default void log(String format, Object... args) {

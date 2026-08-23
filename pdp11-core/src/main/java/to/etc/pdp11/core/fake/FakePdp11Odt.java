@@ -1,10 +1,12 @@
 package to.etc.pdp11.core.fake;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.core.util.Scheduler;
 
+import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -204,7 +206,7 @@ public class FakePdp11Odt extends FakePdp11 {
 	 */
 	private void doOpenLocation(String addrExpr) {
 		m_nextLocationExpr = "???";
-		String expr = addrExpr.toUpperCase();
+		String expr = addrExpr.toUpperCase(Locale.ROOT);
 		m_lastLocationAddr = null;
 
 		if(expr.isEmpty() || !isAddressStart(expr.charAt(0)))
@@ -239,7 +241,8 @@ public class FakePdp11Odt extends FakePdp11 {
 
 		//-- R0..R7 can only be reached by name. The PSW, uniquely, also answers to its octal
 		//-- address 17777776 (chapter 3.5.1).
-		if(value >= getIopageBase() + 017700 && value <= getIopageBase() + 017707)
+		if(value >= getIopageBase() + CpuRegisters.R0_OFFSET
+			&& value <= getIopageBase() + CpuRegisters.R7_OFFSET)
 			throw new FakePdp11Exception("registers must be named R0..R7, not addressed octally");
 		//-- Odd addresses are rejected: "@1001/?".
 		if((value & 1) != 0)
@@ -248,7 +251,7 @@ public class FakePdp11Odt extends FakePdp11 {
 		m_lastLocationAddr = addr;
 		m_lastLocationExpr = addr.toOctal();
 
-		long next = value < getIopageBase() + 017776 ? value + 2 : 0;
+		long next = value < getIopageBase() + CpuRegisters.PSW_OFFSET ? value + 2 : 0;
 		m_nextLocationExpr = Address.of(getAddressType(), next).toOctal();
 	}
 
@@ -260,7 +263,7 @@ public class FakePdp11Odt extends FakePdp11 {
 			rest = rest.substring(rest.length() - 3);
 
 		if("077".equals(rest) || "477".equals(rest)) {
-			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + 017776);
+			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + CpuRegisters.PSW_OFFSET);
 			m_lastLocationExpr = "RS";
 			m_nextLocationExpr = "RS";                      // the PSW has no next location
 			return;
@@ -270,12 +273,12 @@ public class FakePdp11Odt extends FakePdp11 {
 
 		char c = rest.charAt(rest.length() - 1);
 		if(c == 'S') {
-			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + 017776);
+			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + CpuRegisters.PSW_OFFSET);
 			m_lastLocationExpr = "RS";
 			m_nextLocationExpr = "RS";
 		} else if(c >= '0' && c <= '7') {
 			int n = c - '0';
-			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + 017700 + n);
+			m_lastLocationAddr = Address.of(getAddressType(), getIopageBase() + CpuRegisters.R0_OFFSET + n);
 			m_lastLocationExpr = "R" + n;
 			m_nextLocationExpr = "R" + ((n + 1) % 8);       // rolls around R7 -> R0
 		} else {

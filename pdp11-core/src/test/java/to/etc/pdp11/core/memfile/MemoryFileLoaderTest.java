@@ -276,6 +276,59 @@ class MemoryFileLoaderTest {
 		assertEquals(1, r.warnings().size());
 	}
 
+	/**
+	 * A forgiving format stays forgiving. An address wider than the group used to reach
+	 * {@code Address.of} and throw {@link IllegalArgumentException} out of a load documented as
+	 * collecting warnings, losing every value already read.
+	 */
+	@Test
+	void aTextAddressOutsideTheAddressSpaceIsAWarningAndNotAnException(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("t.txt");
+		Files.writeString(file, "001000: 000001 000002\n"
+			+ "7777777: 000003\n"
+			+ "001100: 000004\n", StandardCharsets.US_ASCII);
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE,
+			g, List.of(file), at(0));
+
+		assertEquals(3, r.wordsLoaded(), "the three in range, and not the one that is not");
+		assertEquals(1, g.findByAddress(at(01000)).getEditValue().word());
+		assertEquals(4, g.findByAddress(at(01100)).getEditValue().word(), "read after the bad line");
+		assertTrue(r.warnings().stream().anyMatch(w -> w.contains("outside the 16 bit address space")),
+			r.warnings().toString());
+	}
+
+	/** An over-wide value is masked, as the Pascal does - but it says so now. */
+	@Test
+	void aTextValueWiderThanAWordIsTruncatedAndSaidSo(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("t.txt");
+		Files.writeString(file, "001000: 1234567\n", StandardCharsets.US_ASCII);
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE,
+			g, List.of(file), at(0));
+		assertEquals(01234567 & 0xFFFF, g.findByAddress(at(01000)).getEditValue().word());
+		assertTrue(r.warnings().stream().anyMatch(w -> w.contains("wider than 16 bits")),
+			r.warnings().toString());
+	}
+
+	/**
+	 * A byte stream that will not fit above its start address used to throw from inside
+	 * {@code shiftRange}, after {@code clear()}, leaving the group holding half a load.
+	 */
+	@Test
+	void aByteStreamRunningOffTheTopOfMemoryLoadsWhatFitsAndSaysSo(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("big.bin");
+		Files.write(file, new byte[8]);                     // four words
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.BYTE_STREAM,
+			g, List.of(file), at(0177772));                 // room for three
+
+		assertEquals(3, r.wordsLoaded());
+		assertEquals(3, g.getCells().size());
+		assertNotNull(g.findByAddress(at(0177776)));
+		assertTrue(r.warnings().stream().anyMatch(w -> w.contains("only 3 fit")), r.warnings().toString());
+	}
+
 	@Test
 	void aMissingFileIsReportedRatherThanThrowingSomethingObscure(@TempDir Path dir) {
 		MemoryCellGroup g = emptyGroup();

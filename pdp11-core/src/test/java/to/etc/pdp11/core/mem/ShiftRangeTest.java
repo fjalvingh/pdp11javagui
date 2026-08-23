@@ -6,6 +6,7 @@ import to.etc.pdp11.core.addr.MemoryAddressType;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -117,4 +118,47 @@ class ShiftRangeTest {
 		m.shiftRange(Address.of(MemoryAddressType.PHYSICAL22, 01000), 1, true);
 		assertEquals(0456, m.cell(0).getPdpValue().word());
 	}
+	// ---------------------------------------------------------------------------------------
+	// Shifting under a job that is reading the group
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * A long console job iterates the cells on the command thread while the event thread can
+	 * shift the very same group - Show, {@code <}, {@code >}, a connection event. The list
+	 * {@link MemoryCellGroup#getCells()} hands out is an unmodifiable <b>view</b> over a plain
+	 * ArrayList, so iterating it across that is a ConcurrentModificationException, which reaches
+	 * the user as "Examining memory failed".
+	 */
+	@Test
+	void iteratingTheLiveViewWhileTheRangeMovesIsWhyJobsCopyItFirst() {
+		MemoryCellGroup g = filled(groups(), 01000, 4);
+		java.util.Iterator<MemoryCell> live = g.getCells().iterator();
+		live.next();
+		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 02000), 4, false);
+		assertThrows(java.util.ConcurrentModificationException.class, live::next);
+
+		//-- Which is what List.copyOf is for: it survives the shift...
+		java.util.List<MemoryCell> snapshot = java.util.List.copyOf(g.getCells());
+		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 03000), 4, false);
+		for(MemoryCell mc : snapshot) {
+			assertEquals(02000, mc.getAddr().val() & ~07L, "the cells it holds are the old range's");
+		}
+		//-- ...but surviving is not the same as still being relevant.
+		assertFalse(g.holdsExactly(snapshot), "the group is showing a different range now");
+	}
+
+	@Test
+	void aGroupHoldsExactlyTheCellsNothingHasTouched() {
+		MemoryCellGroup g = filled(groups(), 01000, 4);
+		java.util.List<MemoryCell> snapshot = java.util.List.copyOf(g.getCells());
+		assertTrue(g.holdsExactly(snapshot));
+
+		g.add(01010);
+		assertFalse(g.holdsExactly(snapshot), "a cell was added");
+
+		MemoryCellGroup other = filled(groups(), 01000, 4);
+		assertFalse(other.holdsExactly(snapshot),
+			"same addresses, same values, different cells - identity is what a grid holds");
+	}
+
 }

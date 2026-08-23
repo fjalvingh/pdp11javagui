@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.addr.SpecialRegister;
 import to.etc.pdp11.core.mem.CellValue;
@@ -90,10 +91,15 @@ public final class SimhConsole extends AbstractConsole {
 	/** The longest run of addresses to put in one {@code E} command. {@code :779}. */
 	private static final int MAX_BLOCK_LEN = 100;
 
-	/** R0..R7 as SimH-invisible pseudo-addresses; PDP11GUI's own convention, byte-spaced. */
-	private static final long REG_R0 = 017777700L;
+	/**
+	 * R0..R7 as SimH-invisible pseudo-addresses - {@link CpuRegisters}' offsets at this
+	 * console's own width, which is always 22 bits whatever machine SimH is pretending to be.
+	 */
+	private static final long REG_R0 =
+		CpuRegisters.addressIn(MemoryAddressType.PHYSICAL22, CpuRegisters.R0_OFFSET);
 
-	private static final long REG_PC = 017777707L;
+	private static final long REG_PC =
+		CpuRegisters.addressIn(MemoryAddressType.PHYSICAL22, CpuRegisters.PC_OFFSET);
 
 	private static final long REG_UNKNOWN_LOW = 017777710L;
 
@@ -103,7 +109,8 @@ public final class SimhConsole extends AbstractConsole {
 
 	private static final long REG_PIRQ = 017777772L;
 
-	private static final long REG_PSW = 017777776L;
+	private static final long REG_PSW =
+		CpuRegisters.addressIn(MemoryAddressType.PHYSICAL22, CpuRegisters.PSW_OFFSET);
 
 	private static final String[] REG_NAMES = {"R0", "R1", "R2", "R3", "R4", "R5", "SP", "PC"};
 
@@ -641,7 +648,7 @@ public final class SimhConsole extends AbstractConsole {
 				"No prompt after ^E (attempt " + attempt + " of " + WAKEUP_ATTEMPTS + "); asking again");
 		}
 		throw new NoConsolePromptException("SimH did not answer ^E with a prompt",
-			m_scanner.getInput(), getAnswers().snapshot());
+			getUnconsumedInput(), getAnswers().snapshot());
 	}
 
 	private void runSetupCommand(String command, String errinfo) throws ConsoleException {
@@ -803,21 +810,6 @@ public final class SimhConsole extends AbstractConsole {
 	// Bulk examine
 	// -------------------------------------------------------------------------------------
 
-	/** One cell, its physical address, and whether SimH has answered about it yet. */
-	private static final class ExamineItem {
-		private final MemoryCell m_cell;
-
-		private final Address m_physical;
-
-		/** The Pascal's {@code TMemoryCell.tag}, which it borrows for exactly this ({@code :984}). */
-		private boolean m_done;
-
-		private ExamineItem(MemoryCell cell, Address physical) {
-			m_cell = cell;
-			m_physical = physical;
-		}
-	}
-
 	/**
 	 * Read a whole group, batching consecutive addresses into as few commands as possible.
 	 *
@@ -827,10 +819,8 @@ public final class SimhConsole extends AbstractConsole {
 	 * because their addresses step differently: 2 for memory, 1 for PDP11GUI's byte-spaced
 	 * pseudo-registers.</p>
 	 *
-	 * <p>Where the Pascal stores the physical address in the cell's {@code addr.tmpval} scratch
-	 * field and its answered-yet flag in {@code addr.tag}, this keeps both beside the cell for
-	 * the duration of the call. A shared mutable scratch field on a model object is exactly the
-	 * kind of thing that stops being safe the moment two things run at once.</p>
+	 * <p>Which cell is which is all this decides; the passes over the lists are
+	 * {@link AbstractConsole#bulkExamine}, shared with the 11/44 console.</p>
 	 */
 	@Override
 	public void examine(MemoryCellGroup g, boolean unknownOnly, ProgressMonitor pm) throws ConsoleException {
@@ -848,182 +838,49 @@ public final class SimhConsole extends AbstractConsole {
 			else
 				memory.add(new ExamineItem(mc, physical));
 		}
-		memory.sort(Comparator.comparingLong(a -> a.m_physical.val()));
-		registers.sort(Comparator.comparingLong(a -> a.m_physical.val()));
-
-		pm.begin("Examining ...", memory.size() + registers.size());
-		try {
-			runExamineList(memory, 2, pm);
-			runExamineList(registers, 1, pm);
-		} finally {
-			pm.done();
-		}
-		//-- One propagation pass at the end rather than one per word; see MemoryCell.setPdpValue.
-		MemoryCellGroups owner = g.getOwner();
-		if(owner != null) {
-			for(MemoryCell mc : List.copyOf(g.getCells())) {
-				owner.syncMemoryCells(mc);
-			}
-		}
+		bulkExamine(g, memory, registers, pm, BLOCKS);
 	}
 
 	/**
-	 * Keep passing over the list until nothing is left - or until a pass answers nothing new.
-	 *
-	 * <p>The Pascal's {@code while not examineAddrList(...) do ;} ({@code :1013-1014}) relies on
-	 * a stated invariant: every call marks at least one more cell answered. That holds as long
-	 * as a failure can be attributed to a cell, and {@link #collectBlock} works hard to keep it
-	 * true - but "the loop terminates because a comment says it must" is not a property, it is a
-	 * hope, and this one spins forever against a SimH that answers about an address nobody
-	 * asked for. Counting what is left makes termination something the code enforces.</p>
+	 * A comma-separated list of ranges and single addresses in one {@code E}. A range runs while
+	 * the addresses step by exactly 2 and no register name interrupts them.
 	 */
-	private void runExamineList(List<ExamineItem> list, int addrInc, ProgressMonitor pm) throws ConsoleException {
-		int outstanding = list.size();
-		while(!examineAddrList(list, addrInc, pm)) {
-			int now = 0;
-			for(ExamineItem it : list) {
-				if(!it.m_done)
-					now++;
-			}
-			if(now >= outstanding) {
-				getLogger().log(LogChannel.OTHER,
-					"EXAMINE list: giving up with " + now + " cell(s) unanswered - no progress this pass");
-				return;
-			}
-			outstanding = now;
-		}
-	}
-
-	/**
-	 * One pass over the not-yet-answered cells.
-	 *
-	 * @param addrInc 2 between memory words, 1 between the byte-spaced pseudo-registers
-	 * @return true when there is nothing left to do - every cell answered, cancelled, or given
-	 *         up on. False means "call me again", and the invariant that makes that terminate is
-	 *         that every call marks at least one more cell answered.
-	 */
-	private boolean examineAddrList(List<ExamineItem> list, int addrInc, ProgressMonitor pm) throws ConsoleException {
-		int blockstart = -1;
-		for(int i = 0; i < list.size(); i++) {
-			if(!list.get(i).m_done) {
-				blockstart = i;
-				break;
-			}
-		}
-		if(blockstart < 0)
-			return true;                                    // all answered, or the list is empty
-
-		boolean blockFailure = false;
-		while(!pm.isCancelled() && !blockFailure && blockstart < list.size()) {
+	private final BulkExamineProtocol BLOCKS = new BulkExamineProtocol() {
+		@Override
+		public ExamineBlock nextBlock(List<ExamineItem> list, int blockstart, int addrInc) {
 			StringBuilder cmd = new StringBuilder("E");
 			String sep = " ";
 			int blockend = blockstart;
-			//-- Build a comma-separated list of ranges and single addresses. A range runs while
-			//-- the addresses step by exactly 2 and no register name interrupts them, and is cut
-			//-- off at MAX_BLOCK_LEN so one command cannot become unmanageable.
 			do {
 				int rangestart = blockend;
 				blockend = rangestart + 1;
 				while(blockend < list.size()
-					&& !list.get(blockend - 1).m_done
-					&& list.get(blockend - 1).m_physical.val() + 2 == list.get(blockend).m_physical.val()
-					&& addrToRegName(list.get(blockend).m_physical) == null
-					&& (blockend - blockstart) < MAX_BLOCK_LEN) {
+					&& !list.get(blockend - 1).isDone()
+					&& list.get(blockend - 1).getPhysical().val() + 2 == list.get(blockend).getPhysical().val()
+					&& addrToRegName(list.get(blockend).getPhysical()) == null
+					&& (blockend - blockstart) < MAX_EXAMINE_BLOCK_LEN) {
 					blockend++;
 				}
 				if(blockend - rangestart > 1) {
 					cmd.append(sep)
-						.append(Octal.format(list.get(rangestart).m_physical.val(), 1))
+						.append(Octal.format(list.get(rangestart).getPhysical().val(), 1))
 						.append('-')
-						.append(Octal.format(list.get(blockend - 1).m_physical.val(), 1));
+						.append(Octal.format(list.get(blockend - 1).getPhysical().val(), 1));
 				} else {
-					cmd.append(sep).append(commandOperand(list.get(rangestart).m_physical));
+					cmd.append(sep).append(commandOperand(list.get(rangestart).getPhysical()));
 				}
 				sep = ",";
-			} while(blockend < list.size() && (blockend - blockstart) < MAX_BLOCK_LEN);
-
-			if(!collectBlock(list, blockstart, blockend, addrInc, cmd.toString(), pm))
-				return true;                                // timed out; do not retry, ever
-			blockFailure = anyUnanswered(list, blockstart, blockend);
-			blockstart = blockend;
+			} while(blockend < list.size() && (blockend - blockstart) < MAX_EXAMINE_BLOCK_LEN);
+			return new ExamineBlock(blockend, cmd.toString());
 		}
-		return pm.isCancelled() || !blockFailure;
-	}
 
-	private static boolean anyUnanswered(List<ExamineItem> list, int from, int to) {
-		for(int i = from; i < to; i++) {
-			if(!list.get(i).m_done)
-				return true;
+		@Override
+		public int sendBlockCommand(String command) throws ConsoleException {
+			//-- SimH echoes, and its prompt for the previous command can still be in flight, so
+			//-- the answers to scan start after this command's own echo.
+			return sendCommand(command) + 1;
 		}
-		return false;
-	}
-
-	/**
-	 * Send one {@code E} command and take in its replies.
-	 *
-	 * <p>SimH answers strictly in ascending address order, one line per address, and simply
-	 * stops when it hits a nonexistent one - so a UNIBUS timeout ends the block early and the
-	 * address it happened at has to be inferred from the last good answer ({@code :906-940}).</p>
-	 *
-	 * @return false if SimH stopped answering altogether, which is not worth retrying
-	 */
-	private boolean collectBlock(List<ExamineItem> list, int blockstart, int blockend, int addrInc,
-		String cmd, ProgressMonitor pm) throws ConsoleException {
-		int echo = sendCommand(cmd);
-		int scanFrom = echo + 1;
-		long nextExpected = list.get(blockstart).m_physical.val();
-
-		while(!pm.isCancelled()) {
-			if(!anyUnanswered(list, blockstart, blockend))
-				return true;
-			int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult,
-				scanFrom, CMD_TIMEOUT_MS);
-			if(at < 0) {
-				getLogger().log(LogChannel.OTHER, "EXAMINE list failure: timeout waiting for "
-					+ Octal.format(nextExpected, 8));
-				return false;
-			}
-			AnswerPhrase.ExamineResult r = (AnswerPhrase.ExamineResult) getAnswers().get(at);
-			scanFrom = at + 1;
-
-			//-- A timeout answer names no address, so it belongs to whatever was next in line.
-			long answerAddr = r.value().isKnown() && r.examineAddr() != null
-				? r.examineAddr().val()
-				: nextExpected;
-			boolean found = false;
-			for(int j = blockstart; j < blockend; j++) {
-				ExamineItem it = list.get(j);
-				if(it.m_physical.val() == answerAddr) {
-					nextExpected = answerAddr + addrInc;
-					if(!it.m_done)
-						pm.step(1);
-					it.m_done = true;
-					it.m_cell.setPdpValue(r.value());
-					found = true;
-				}
-			}
-			if(!found) {
-				getLogger().log(LogChannel.OTHER, "No memory cell matches SimH's answer \"" + r.rawText() + "\"");
-				if(!r.value().isKnown()) {
-					//-- A failure that cannot be attributed would otherwise leave the block
-					//-- unanswered forever, and the caller retries until something changes.
-					//-- Give up on the first outstanding cell so the retry can make progress.
-					for(int j = blockstart; j < blockend; j++) {
-						ExamineItem it = list.get(j);
-						if(!it.m_done) {
-							it.m_done = true;
-							it.m_cell.setPdpValue(CellValue.UNKNOWN);
-							pm.step(1);
-							break;
-						}
-					}
-				}
-			}
-			if(!r.value().isKnown())
-				return true;                                // the block ended here
-		}
-		return true;
-	}
+	};
 
 	// -------------------------------------------------------------------------------------
 	// Execution control
@@ -1078,10 +935,20 @@ public final class SimhConsole extends AbstractConsole {
 		m_cpuState = CpuState.RUNNING;
 	}
 
-	/** Carry on from where it stopped. No reset, no prompt to wait for. ({@code :1108-1116}) */
+	/**
+	 * Carry on from where it stopped. No reset, no prompt to wait for. ({@code :1108-1116})
+	 *
+	 * <p>The same two pieces of state {@link #resetAndStart} drops, and for the same reasons.
+	 * The stop flag describes where the machine last stopped, which is no longer where it is;
+	 * and a silent-halt resolution scheduled just before this runs would otherwise still fire,
+	 * sending {@code E PC} at a machine that is now running - which SimH does not answer, so the
+	 * command thread sits out the full timeout and logs a failure that never happened.</p>
+	 */
 	@Override
 	public void continueCpu() throws ConsoleException {
 		clearAnswers();
+		m_silentHaltPending = false;
+		clearExecutionStop();
 		writeToPdp("cont" + CR);
 		//-- Optimistic, like resetAndStart; the decoder corrects it if this turns out wrong.
 		m_cpuState = CpuState.RUNNING;

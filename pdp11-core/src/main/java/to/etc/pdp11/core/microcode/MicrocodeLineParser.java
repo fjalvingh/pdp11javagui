@@ -4,6 +4,7 @@ import to.etc.pdp11.core.util.Octal;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Turns one line of the microcode listing into a {@link MicroInstruction}.
@@ -169,7 +170,7 @@ final class MicrocodeLineParser {
 			if(c < 'A' || c > 'Z')
 				return tag;
 		}
-		return prefix + String.format("%02d", Integer.parseInt(page)) + "-" + block;
+		return prefix + String.format(Locale.ROOT, "%02d", Integer.parseInt(page)) + "-" + block;
 	}
 
 	private static int octal(String text, String what) {

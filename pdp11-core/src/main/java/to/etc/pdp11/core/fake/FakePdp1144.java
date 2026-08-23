@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.fake;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.core.util.Scheduler;
@@ -58,7 +59,8 @@ public class FakePdp1144 extends FakePdp11 {
 	protected static final char CTRL_P = 0x10;
 
 	/** R0..R7 and R10..R17 at sixteen consecutive byte addresses. {@code :92-93}. */
-	protected static final long GLOBAL_REGISTER_BASE = 017777700L;
+	protected static final long GLOBAL_REGISTER_BASE =
+		CpuRegisters.addressIn(MemoryAddressType.PHYSICAL22, CpuRegisters.R0_OFFSET);
 
 	/**
 	 * Every address a 22-bit machine has, odd ones included.

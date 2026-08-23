@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.CpuRegisters;
 import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCell;
@@ -72,7 +73,8 @@ public final class Pdp1144Console extends AbstractConsole {
 	 * console will not take one. It is also why the address step inside a register block is 1 and
 	 * not 2 ({@code :117-119}).</p>
 	 */
-	private static final long GLOBAL_REGISTER_BASE = 017777700L;
+	private static final long GLOBAL_REGISTER_BASE =
+		CpuRegisters.addressIn(MemoryAddressType.PHYSICAL22, CpuRegisters.R0_OFFSET);
 
 	private static final int GLOBAL_REGISTER_BLOCKSIZE = 16;
 
@@ -177,22 +179,6 @@ public final class Pdp1144Console extends AbstractConsole {
 			&& addrValue < GLOBAL_REGISTER_BASE + GLOBAL_REGISTER_BLOCKSIZE;
 	}
 
-	/** This console only speaks physical addresses, so anything virtual goes through the MMU. */
-	private Address toPhysical(Address addr, boolean instructionSpace) throws ConsoleException {
-		if(addr.type() == MemoryAddressType.VIRTUAL) {
-			TranslationResult tr = instructionSpace
-				? getMmu().translateInstruction(addr)
-				: getMmu().translateData(addr);
-			if(!tr.isValid())
-				throw new ConsoleException("Cannot translate " + addr.toOctal() + ": " + tr.failure());
-			return tr.address().withWidth(MemoryAddressType.PHYSICAL22);
-		}
-		if(addr.type() == MemoryAddressType.PHYSICAL22)
-			return addr;
-		if(addr.type().isConcretePhysical())
-			return addr.withWidth(MemoryAddressType.PHYSICAL22);
-		throw new ConsoleException("A PDP-11/44 console cannot address " + addr);
-	}
 
 	// -------------------------------------------------------------------------------------
 	// Decoding - reader thread
@@ -265,8 +251,10 @@ public final class Pdp1144Console extends AbstractConsole {
 	 * examine and two back is the halt.</p>
 	 */
 	private AnswerPhrase makePrompt(String curline) {
-		int size = getAnswers().size();
-		AnswerPhrase beforeLast = size >= 2 ? getAnswers().get(size - 2) : null;
+		//-- One locked look back, not size() then get(): a command thread clearing the list in
+		//-- the gap between the two used to throw IndexOutOfBoundsException here, on the reader
+		//-- thread, which reads any throwable as the transport dying.
+		AnswerPhrase beforeLast = getAnswers().getFromEnd(1);
 		if(beforeLast instanceof AnswerPhrase.Halt halt)
 			signalExecutionStop(halt.haltAddr());
 		else
@@ -410,44 +398,42 @@ public final class Pdp1144Console extends AbstractConsole {
 	 * <p>Ported from {@code Deposit} ({@code :420-455}). The address is translated through the
 	 * <b>instruction</b> map, on the Pascal's reasoning that what gets written is nearly always
 	 * code ({@code :428-429}).</p>
+	 *
+	 * <p><b>The remembered address is committed only once the console has confirmed the
+	 * command.</b> {@code D +} means "the word after the one you last deposited into", and the
+	 * machine's own idea of that only advances when the deposit actually happens. Recording it
+	 * before the prompt came back meant a failed deposit - which the caller may well carry on
+	 * from, since the exception says only that the prompt did not arrive - left this console
+	 * believing the machine had moved on when it had not, and the next sequential deposit went
+	 * out as {@code D +} and landed one word short, silently.</p>
 	 */
 	@Override
 	public void deposit(Address addr, int value) throws ConsoleException {
 		Address physical = toPhysical(addr, true);
 		String valueText = Octal.format(value & 0xFFFF, 1);
+		boolean global = isGlobalRegister(physical.val());
 		String cmd;
-		if(isGlobalRegister(physical.val())) {
+		if(global) {
 			cmd = "D/G " + Octal.format(physical.val() - GLOBAL_REGISTER_BASE, 1) + " " + valueText;
-			m_lastDepositAddr = null;                       // "+" means the next memory word, not the next register
 		} else {
 			//-- Consecutive deposits can say "+" instead of repeating the address.
 			cmd = m_lastDepositAddr != null && physical.val() == m_lastDepositAddr.val() + 2
 				? "D + " + valueText
 				: "D " + Octal.format(physical.val(), 1) + " " + valueText;
-			m_lastDepositAddr = physical;
 		}
+		//-- Whatever happens next, what the machine last deposited into is no longer what this
+		//-- console remembers: clear first, and record the new one only on the way out.
+		m_lastDepositAddr = null;                           // "+" after a register means the next memory word
 		clearAnswers();
 		writeToPdp(cmd + CR);
 		checkPrompt("DEPOSIT failed, no prompt");
+		if(!global)
+			m_lastDepositAddr = physical;
 	}
 
 	// -------------------------------------------------------------------------------------
 	// Bulk examine
 	// -------------------------------------------------------------------------------------
-
-	/** One cell, its physical address, and whether the console has answered about it yet. */
-	private static final class ExamineItem {
-		private final MemoryCell m_cell;
-
-		private final Address m_physical;
-
-		private boolean m_done;
-
-		private ExamineItem(MemoryCell cell, Address physical) {
-			m_cell = cell;
-			m_physical = physical;
-		}
-	}
 
 	/**
 	 * Read a whole group, a block per command.
@@ -458,7 +444,9 @@ public final class Pdp1144Console extends AbstractConsole {
 	 * round trip, against sixty-four round trips without it.</p>
 	 *
 	 * <p>Memory and global registers go in separate lists because they step differently, 2 against
-	 * 1, and because the registers need {@code /G} and an offset rather than an address.</p>
+	 * 1, and because the registers need {@code /G} and an offset rather than an address. Which
+	 * cell is which is all this decides; the passes over the lists are
+	 * {@link AbstractConsole#bulkExamine}, shared with the SimH console.</p>
 	 */
 	@Override
 	public void examine(MemoryCellGroup g, boolean unknownOnly, ProgressMonitor pm) throws ConsoleException {
@@ -473,182 +461,42 @@ public final class Pdp1144Console extends AbstractConsole {
 			else
 				memory.add(new ExamineItem(mc, physical));
 		}
-		memory.sort(Comparator.comparingLong(a -> a.m_physical.val()));
-		registers.sort(Comparator.comparingLong(a -> a.m_physical.val()));
-
-		pm.begin("Examining ...", memory.size() + registers.size());
-		try {
-			runExamineList(memory, 2, pm);
-			runExamineList(registers, 1, pm);
-		} finally {
-			pm.done();
-		}
-		//-- One propagation pass at the end rather than one per word.
-		MemoryCellGroups owner = g.getOwner();
-		if(owner != null) {
-			for(MemoryCell mc : List.copyOf(g.getCells())) {
-				owner.syncMemoryCells(mc);
-			}
-		}
+		bulkExamine(g, memory, registers, pm, BLOCKS);
 	}
 
 	/**
-	 * Keep passing over the list until nothing is left, or until a pass answers nothing new.
-	 *
-	 * <p>The Pascal's {@code while not examineAddrList(...) do ;} terminates because a comment
-	 * says every call marks at least one more cell answered. Counting what is left makes that
-	 * something the code enforces rather than something it hopes - the same hardening the SimH
-	 * console got, and for the same reason.</p>
+	 * One contiguous run of addresses per command: {@code E/N:count addr} for memory, and
+	 * {@code E/G/N:count offset} for the byte-spaced global registers.
 	 */
-	private void runExamineList(List<ExamineItem> list, int addrInc, ProgressMonitor pm) throws ConsoleException {
-		int outstanding = list.size();
-		while(!examineAddrList(list, addrInc, pm)) {
-			int now = 0;
-			for(ExamineItem it : list) {
-				if(!it.m_done)
-					now++;
-			}
-			if(now >= outstanding) {
-				getLogger().log(LogChannel.OTHER,
-					"EXAMINE list: giving up with " + now + " cell(s) unanswered - no progress this pass");
-				return;
-			}
-			outstanding = now;
-		}
-	}
-
-	/**
-	 * One pass over the not-yet-answered cells.
-	 *
-	 * @param addrInc 2 between memory words, 1 between the byte-spaced global registers
-	 * @return true when there is nothing left to do
-	 */
-	private boolean examineAddrList(List<ExamineItem> list, int addrInc, ProgressMonitor pm) throws ConsoleException {
-		int blockstart = -1;
-		for(int i = 0; i < list.size(); i++) {
-			if(!list.get(i).m_done) {
-				blockstart = i;
-				break;
-			}
-		}
-		if(blockstart < 0)
-			return true;
-
-		boolean blockFailure = false;
-		while(!pm.isCancelled() && !blockFailure && blockstart < list.size()) {
-			//-- A block runs while the addresses step by exactly addrInc, capped so one command
-			//-- cannot become unmanageable.
+	private final BulkExamineProtocol BLOCKS = new BulkExamineProtocol() {
+		@Override
+		public ExamineBlock nextBlock(List<ExamineItem> list, int blockstart, int addrInc) {
 			int blockend = blockstart + 1;
 			while(blockend < list.size()
-				&& !list.get(blockend - 1).m_done
-				&& list.get(blockend - 1).m_physical.val() + addrInc == list.get(blockend).m_physical.val()
-				&& (blockend - blockstart) < MAX_BLOCK_LEN) {
+				&& !list.get(blockend - 1).isDone()
+				&& list.get(blockend - 1).getPhysical().val() + addrInc == list.get(blockend).getPhysical().val()
+				&& (blockend - blockstart) < MAX_EXAMINE_BLOCK_LEN) {
 				blockend++;
 			}
-
-			long first = list.get(blockstart).m_physical.val();
+			long first = list.get(blockstart).getPhysical().val();
 			String cmd = addrInc == 1
 				? "E/G" + countSuffix(blockend - blockstart) + " " + Octal.format(first - GLOBAL_REGISTER_BASE, 1)
 				: "E" + countSuffix(blockend - blockstart) + " " + Octal.format(first, 1);
-
-			if(!collectBlock(list, blockstart, blockend, addrInc, cmd, pm))
-				return true;                                // timed out; do not retry, ever
-			blockFailure = anyUnanswered(list, blockstart, blockend);
-			blockstart = blockend;
+			return new ExamineBlock(blockend, cmd);
 		}
-		return pm.isCancelled() || !blockFailure;
-	}
+
+		@Override
+		public int sendBlockCommand(String command) throws ConsoleException {
+			//-- This console does not echo, so every answer that arrives is this command's.
+			clearAnswers();
+			writeToPdp(command + CR);
+			return 0;
+		}
+	};
 
 	/** {@code /N:count} for a block, and nothing at all for a single address. */
 	private static String countSuffix(int count) {
 		return count > 1 ? "/N:" + Octal.format(count, 1) : "";
-	}
-
-	/**
-	 * Send one command and take in its replies.
-	 *
-	 * <p>The console answers in ascending order, one line per address, and simply stops at the
-	 * first address that does not exist. The Pascal's own worked example ({@code :531-546}):</p>
-	 *
-	 * <pre>
-	 * &gt;&gt;&gt;E/N:10 17772370
-	 * 17772370 156735
-	 * 17772372 156735
-	 * 17772374 156735
-	 * 17772376 156735
-	 * ?20 TRAN ERR
-	 * &gt;&gt;&gt;
-	 * </pre>
-	 *
-	 * <p>The address the error was about has to be inferred from the last one that answered.</p>
-	 *
-	 * @return false if the console stopped answering altogether, which is not worth retrying
-	 */
-	private boolean collectBlock(List<ExamineItem> list, int blockstart, int blockend, int addrInc,
-		String cmd, ProgressMonitor pm) throws ConsoleException {
-		clearAnswers();
-		writeToPdp(cmd + CR);
-		int scanFrom = 0;
-		long nextExpected = list.get(blockstart).m_physical.val();
-
-		while(!pm.isCancelled()) {
-			if(!anyUnanswered(list, blockstart, blockend))
-				return true;
-			int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.ExamineResult,
-				scanFrom, CMD_TIMEOUT_MS);
-			if(at < 0) {
-				getLogger().log(LogChannel.OTHER,
-					"EXAMINE list failure: timeout waiting for " + Octal.format(nextExpected, 8));
-				return false;
-			}
-			AnswerPhrase.ExamineResult r = (AnswerPhrase.ExamineResult) getAnswers().get(at);
-			scanFrom = at + 1;
-
-			long answerAddr = r.value().isKnown() && r.examineAddr() != null
-				? r.examineAddr().val()
-				: nextExpected;
-			boolean found = false;
-			for(int j = blockstart; j < blockend; j++) {
-				ExamineItem it = list.get(j);
-				if(it.m_physical.val() == answerAddr) {
-					nextExpected = answerAddr + addrInc;
-					if(!it.m_done)
-						pm.step(1);
-					it.m_done = true;
-					it.m_cell.setPdpValue(r.value());
-					found = true;
-				}
-			}
-			if(!found) {
-				getLogger().log(LogChannel.OTHER,
-					"No memory cell matches the console's answer \"" + r.rawText() + "\"");
-				if(!r.value().isKnown()) {
-					//-- An unattributable failure would leave the block outstanding forever and
-					//-- the caller retries until something changes. Give up on the first cell
-					//-- still waiting, so the retry can make progress.
-					for(int j = blockstart; j < blockend; j++) {
-						ExamineItem it = list.get(j);
-						if(!it.m_done) {
-							it.m_done = true;
-							it.m_cell.setPdpValue(CellValue.UNKNOWN);
-							pm.step(1);
-							break;
-						}
-					}
-				}
-			}
-			if(!r.value().isKnown())
-				return true;                                // the block ended here
-		}
-		return true;
-	}
-
-	private static boolean anyUnanswered(List<ExamineItem> list, int from, int to) {
-		for(int i = from; i < to; i++) {
-			if(!list.get(i).m_done)
-				return true;
-		}
-		return false;
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -694,6 +542,15 @@ public final class Pdp1144Console extends AbstractConsole {
 	 * then {@code H}, which reports where it is. Since a stop report is also an examine answer,
 	 * the PC comes back through the ordinary stop event rather than being read out of the reply
 	 * here.</p>
+	 *
+	 * <p><b>Halting a machine that is already halted is not a failure.</b> The interface says so
+	 * - null for "the console could not say, including the common case of a machine that had
+	 * already stopped" - and the execution window calls this unconditionally, so a second click
+	 * on Halt goes down this path every time. V3.40C answers {@code H} with
+	 * {@code ?Already halted} and draws its prompt without a stop report; waiting for the report
+	 * that is not coming used to sit out the whole command timeout and then throw "no answer" at
+	 * the user. So this waits for <i>either</i> the stop report or the prompt, and a prompt
+	 * arriving first means there was nothing to stop.</p>
 	 */
 	@Override
 	public Address haltCpu() throws ConsoleException {
@@ -708,10 +565,16 @@ public final class Pdp1144Console extends AbstractConsole {
 			throw new ConsoleException("Interrupted while halting");
 		}
 		writeToPdp("H" + CR);
-		AnswerPhrase.Halt halt = getAnswers().waitFor(AnswerPhrase.Halt.class, CMD_TIMEOUT_MS);
-		if(halt == null)
+		int at = getAnswers().waitForIndex(
+			p -> p instanceof AnswerPhrase.Halt || p instanceof AnswerPhrase.Prompt, 0, CMD_TIMEOUT_MS);
+		if(at < 0)
 			throw new ConsoleException("Stopping the CPU failed: no answer");
-		checkPrompt("Stopping CPU failed, no prompt");
+		if(!(getAnswers().get(at) instanceof AnswerPhrase.Halt halt)) {
+			getLogger().log(LogChannel.EXECUTION,
+				"haltCpu: the console prompted with no stop report, so it was already halted");
+			return null;
+		}
+		checkPromptAfter(at + 1, "Stopping CPU failed, no prompt");
 		return halt.haltAddr();
 	}
 

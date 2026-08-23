@@ -12,6 +12,7 @@ import to.etc.pdp11.core.util.ProgressMonitor;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
 
@@ -479,7 +480,7 @@ public final class MemoryTester {
 	// -------------------------------------------------------------------------------------
 
 	private void log(String format, Object... args) {
-		String line = args.length == 0 ? format : String.format(format, args);
+		String line = args.length == 0 ? format : String.format(Locale.ROOT, format, args);
 		m_log.add(line);
 		if(m_sink != null)
 			m_sink.line(line);

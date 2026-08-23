@@ -1,5 +1,7 @@
 package to.etc.pdp11.core.util;
 
+import java.util.Locale;
+
 /**
  * One number in every base a PDP-11 person needs it in, at a chosen width.
  *
@@ -125,7 +127,7 @@ public final class NumberConverter {
 			return 0;
 		for(int i = 0; i < s.length(); i++) {
 			if(!isValidDigit(base, s.charAt(i)))
-				throw new NumberFormatException("'" + text + "' is not " + base.getLabel().toLowerCase()
+				throw new NumberFormatException("'" + text + "' is not " + base.getLabel().toLowerCase(Locale.ROOT)
 					+ ": bad character '" + s.charAt(i) + "'");
 		}
 		long value;
@@ -143,7 +145,7 @@ public final class NumberConverter {
 
 	/** Write a number, with no padding - what somebody would type. */
 	public static String format(Base base, long value) {
-		return Long.toString(value, base.getRadix()).toUpperCase();
+		return Long.toString(value, base.getRadix()).toUpperCase(Locale.ROOT);
 	}
 
 	/**

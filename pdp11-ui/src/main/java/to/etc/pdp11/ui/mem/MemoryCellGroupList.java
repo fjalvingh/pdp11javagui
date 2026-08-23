@@ -245,9 +245,16 @@ public final class MemoryCellGroupList extends JPanel {
 			return;
 		ProgressDialog progress = new ProgressDialog(owner);
 		m_context.onConsole("Examining registers", console -> {
+			//-- Snapshot before the long job; see MemoryCellGroupTable.examineAll.
+			List<MemoryCell> cells = List.copyOf(group.getCells());
 			console.examine(group, false, progress);
-			for(MemoryCell mc : group.getCells()) {
-				mc.setEditValue(mc.getPdpValue());
+			if(progress.isCancelled() || !group.holdsExactly(cells)) {
+				AppContext.onUi(this::refresh);
+				return;
+			}
+			for(MemoryCell mc : cells) {
+				if(mc.getPdpValue().isKnown())
+					mc.setEditValue(mc.getPdpValue());
 			}
 			AppContext.onUi(this::refresh);
 		});

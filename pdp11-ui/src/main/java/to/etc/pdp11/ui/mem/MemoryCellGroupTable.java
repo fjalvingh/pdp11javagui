@@ -323,9 +323,24 @@ public final class MemoryCellGroupTable extends JPanel {
 			return;
 		to.etc.pdp11.ui.ProgressDialog progress = new to.etc.pdp11.ui.ProgressDialog(owner);
 		m_context.onConsole("Examining memory", console -> {
+			//-- A snapshot, because this runs on the command thread while the EDT can shiftRange
+			//-- or clear this very group - Show, "<", ">", a connection event - and iterating the
+			//-- live view over its ArrayList then throws ConcurrentModificationException, which
+			//-- reaches the user as "Examining memory failed".
+			List<MemoryCell> cells = List.copyOf(group.getCells());
 			console.examine(group, unknownOnly, progress);
-			for(MemoryCell mc : group.getCells()) {
-				mc.setEditValue(mc.getPdpValue());
+			if(progress.isCancelled() || !group.holdsExactly(cells)) {
+				//-- Cancelled, or the grid is showing a different range than the one just read.
+				//-- Either way these answers are not what is on screen.
+				AppContext.onUi(this::refresh);
+				return;
+			}
+			for(MemoryCell mc : cells) {
+				//-- Only the cells the machine actually answered about. A cell the examine never
+				//-- reached is still UNKNOWN, and copying that over a typed edit throws away
+				//-- something the read never looked at.
+				if(mc.getPdpValue().isKnown())
+					mc.setEditValue(mc.getPdpValue());
 			}
 			AppContext.onUi(this::refresh);
 		});
@@ -356,11 +371,12 @@ public final class MemoryCellGroupTable extends JPanel {
 			return;
 		to.etc.pdp11.ui.ProgressDialog progress = new to.etc.pdp11.ui.ProgressDialog(owner);
 		m_context.onConsole("Verifying against the machine", console -> {
+			List<MemoryCell> cells = List.copyOf(group.getCells());
 			console.examine(group, false, progress);
 			AppContext.onUi(() -> {
 				refresh();
 				if(whenDone != null)
-					whenDone.accept(group.getCells().stream().filter(MemoryCell::isEdited).count());
+					whenDone.accept(cells.stream().filter(MemoryCell::isEdited).count());
 			});
 		});
 	}
