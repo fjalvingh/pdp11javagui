@@ -40,8 +40,14 @@ import java.util.List;
  * examines the same addresses, and the propagation bus offers every one of those values to this
  * grid. Take them and the user's typing is silently replaced by what is already in the machine,
  * which is precisely what they were about to change. The per-group opt-out is
- * {@link MemoryCellGroup#setPdpOverwritesEdit}, and this grid turns it off while it holds
- * uncommitted edits.</p>
+ * {@link MemoryCellGroup#setPdpOverwritesEdit}, and a grid built with
+ * {@link OverwritePolicy#FOLLOW_EDITS} turns it off while it holds uncommitted edits.</p>
+
+ * <p>That is a policy about the <i>group</i>, not about the grid, so a grid whose group has
+ * already made the decision must not take it over: the loader, the dumper and the assembler
+ * code window each turn the flag off permanently in their constructors, and a grid that reset
+ * it from "are there edits right now" undid that on the first refresh after a successful
+ * deposit. Those windows use {@link OverwritePolicy#GROUP_DECIDES}, which is the default.</p>
  *
  * <h2>Two cells at one address is normal</h2>
  *
@@ -51,12 +57,32 @@ import java.util.List;
  * span simply has nowhere to go and is not shown.</p>
  */
 public final class MemoryCellGroupTable extends JPanel {
+	/** Who decides whether values arriving from elsewhere may overwrite this grid's cells. */
+	public enum OverwritePolicy {
+		/**
+		 * The group's own {@code pdpOverwritesEdit} is left exactly as its owner set it. For
+		 * every window whose group is a document rather than a view of the machine - a loaded
+		 * file, a dump to be written, an assembled program - because those turn it off once and
+		 * mean it.
+		 */
+		GROUP_DECIDES,
+
+		/**
+		 * Follow whether the grid currently holds uncommitted edits: protected while there is
+		 * something to protect, tracking the machine when there is not. For the plain memory
+		 * window, which is a view of the machine that happens to be typeable.
+		 */
+		FOLLOW_EDITS
+	}
+
 	/** What the Pascal's constructor sets ({@code :131}). Eight words is 16 bytes a row. */
 	public static final int DEFAULT_COLUMNS = 8;
 
 	private final AppContext m_context;
 
 	private final int m_columns;
+
+	private final OverwritePolicy m_overwritePolicy;
 
 	private final GridModel m_model = new GridModel();
 
@@ -83,15 +109,20 @@ public final class MemoryCellGroupTable extends JPanel {
 	});
 
 	public MemoryCellGroupTable(AppContext context) {
-		this(context, DEFAULT_COLUMNS);
+		this(context, DEFAULT_COLUMNS, OverwritePolicy.GROUP_DECIDES);
 	}
 
-	public MemoryCellGroupTable(AppContext context, int columns) {
+	public MemoryCellGroupTable(AppContext context, OverwritePolicy overwritePolicy) {
+		this(context, DEFAULT_COLUMNS, overwritePolicy);
+	}
+
+	public MemoryCellGroupTable(AppContext context, int columns, OverwritePolicy overwritePolicy) {
 		super(new MigLayout("fill, insets 0", "[grow]", "[grow]"));
 		if(columns < 1)
 			throw new IllegalArgumentException("A memory grid needs at least one column");
 		m_context = context;
 		m_columns = columns;
+		m_overwritePolicy = overwritePolicy;
 
 		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_table.getFont().getSize());
 		m_table.setFont(mono);
@@ -159,6 +190,8 @@ public final class MemoryCellGroupTable extends JPanel {
 
 	/** Lay the group's cells out over the grid again, after the range or the contents moved. */
 	public void rebuild() {
+		//-- The cells are about to change, and with them whether there is anything to protect.
+		updateOverwritePolicy();
 		m_slots = new MemoryCell[0];
 		m_firstAddress = null;
 		if(m_group != null && !m_group.isEmpty()) {
@@ -257,9 +290,13 @@ public final class MemoryCellGroupTable extends JPanel {
 	 * <p>Making it follow whether there is actually anything to protect gets both halves right:
 	 * a grid with uncommitted edits in it is never overwritten, and a grid with none tracks the
 	 * machine, which is what a memory view is for.</p>
+	 *
+	 * <p>Only for a grid that asked for it. A group whose owner turned the flag off permanently
+	 * has already decided - see {@link OverwritePolicy} - and this is not the place to overrule
+	 * it.</p>
 	 */
 	private void updateOverwritePolicy() {
-		if(m_group != null)
+		if(m_overwritePolicy == OverwritePolicy.FOLLOW_EDITS && m_group != null)
 			m_group.setPdpOverwritesEdit(getEditedCells().isEmpty());
 	}
 

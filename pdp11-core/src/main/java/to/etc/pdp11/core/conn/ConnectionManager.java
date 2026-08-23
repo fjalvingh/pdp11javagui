@@ -294,6 +294,7 @@ public final class ConnectionManager implements AutoCloseable {
 			//-- this connection and not about whatever is published at the time they arrive.
 			boolean alsoMachineConsole = protocolIsMachineConsole;
 			cc.setTerminalSink(text -> onProtocolData(text, alsoMachineConsole));
+			cc.setLostListener(this::onConnectionLost);
 			cc.attach(c);
 			cc.run(() -> c.init(cc));
 
@@ -537,6 +538,33 @@ public final class ConnectionManager implements AutoCloseable {
 			m_generation++;
 			closeCurrent();
 		}
+	}
+
+	/**
+	 * The live connection died without being asked to: SimH exited, the line dropped, the socket
+	 * was reset. Called on that connection's reader thread, as the last thing it does.
+	 *
+	 * <p>Everything else in this class is somebody deciding to connect or disconnect. This is the
+	 * machine deciding, and it has to reach the same state machine - otherwise the manager stays
+	 * CONNECTED over a dead wire, the status bar keeps saying so, and every window goes on
+	 * offering buttons that fail one at a time with write and timeout errors.</p>
+	 *
+	 * <p>A connection that is no longer the published one is not news: it was replaced or closed
+	 * deliberately, and whoever did that has already said what the state is.</p>
+	 */
+	private void onConnectionLost(ConsoleConnection connection, Throwable cause) {
+		long generation;
+		String what;
+		synchronized(m_connectionLock) {
+			if(m_connection != connection)
+				return;
+			what = connection.describe();
+			generation = ++m_generation;
+			closeCurrent();
+		}
+		setState(generation, State.FAILED, cause == null
+			? "The connection to " + what + " was closed at the other end"
+			: "The connection to " + what + " was lost: " + cause);
 	}
 
 	/** Close and say so. {@link #close()} on its own is silent, because {@code connect} uses it. */

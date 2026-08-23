@@ -4,6 +4,34 @@
 
 ### Fixes
 
+- **A file loaded into the Memory Loader could be silently replaced by what was already in the
+  machine, before it was deposited.** The loader, the dumper and the assembler each turn their
+  group's `pdpOverwritesEdit` off permanently in their constructors — that flag is the whole
+  reason a loaded file survives another window reading the same addresses. But the shared grid
+  reset it on every refresh from "are there uncommitted edits right now", so the refresh after a
+  successful *Deposit all* turned it back on, and the next *Load file* had no protection at all:
+  any other window examining those addresses propagated the machine's values over the top of the
+  file, and Verify afterwards compared the machine against itself and reported agreement. The
+  dynamic policy is now opt-in (`MemoryCellGroupTable.OverwritePolicy`), and only the plain
+  memory window — a view of the machine that happens to be typeable — asks for it.
+- **Scanning the I/O page of a 16- or 18-bit machine threw away everything it found.** The
+  scanner examined all 4096 addresses — minutes of it over a serial line — and then stored them
+  into a group the window had created at 22 bits, which refuses an address of any other width.
+  The result was an `IllegalArgumentException` on the first address stored and nothing to show
+  for the scan. `IoPageScanner.scan` now re-expresses the target at the machine's width before
+  filling it, which is what the window's "the group's type follows the machine" always assumed.
+  Any 16- or 18-bit console hits it — an 11/23's ODT, real or simulated; the existing test missed
+  it by building its target at the machine's width instead of at the window's.
+- **A connection that dropped left the application saying "Connected".** When the reader thread
+  ended — SimH exited, the serial line was unplugged, the socket was reset — `AbstractConsole`
+  closed its answer queue and that was the whole of it. Nothing told `ConnectionManager`, so the
+  state stayed CONNECTED, the status bar kept saying so, terminal input stayed live, and every
+  window went on offering buttons that reached a dead wire and failed one at a time with write
+  and timeout errors. `ConsoleConnection` now has a `LostListener` that fires when the reader
+  stops for a reason nobody asked for, and the manager tears the connection down and reports
+  FAILED with the reason: *"The connection to … was closed at the other end"*. The main window
+  prints that in the terminal too, but only when a live connection is what was lost — a failed
+  *attempt* already says so on its own.
 - **A second Connect could tear down the connection it was replacing and leave the application
   saying it was not connected while it was.** `ConnectionManager.connect` closed, rebuilt and
   published its fields one at a time with nothing serialising two callers, so an attempt that was

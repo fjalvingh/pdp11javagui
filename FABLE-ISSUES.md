@@ -61,7 +61,25 @@ a newer attempt), and disable Connect while CONNECTING.
 ### 2. A dropped connection never changes ConnectionManager state — the UI stays "Connected" after SimH dies or the line drops
 `pdp11-core/.../console/AbstractConsole.java:167` (no path to ConnectionManager)
 
-When the reader thread ends, `ConsoleConnection.readerLoop` calls
+**FIXED.** `ConsoleConnection` now carries a `LostListener`, set by `ConnectionManager` before
+`attach()` alongside the terminal sink, and the reader thread's `finally` calls it — after
+`onDisconnected`, so anything blocked waiting for an answer is already unblocked — but only when
+the reader did not stop because somebody called `close()`. `ConnectionManager.onConnectionLost`
+ignores a connection that is no longer the published one (it was replaced or closed
+deliberately, and whoever did that has already said what the state is) and otherwise takes over
+the generation, tears the connection down and reports FAILED with the cause: "The connection to
+X was closed at the other end", or "... was lost: <exception>". `ConsoleConnection.close()` no
+longer joins the reader thread when the reader is the one closing it, which is now a real path
+and would otherwise wait out its own 2-second timeout. `MainWindow` also prints the reason in
+the terminal on a CONNECTED → FAILED transition only, so a machine that goes away says so where
+the user is looking, without duplicating what a failed *attempt* already reports in a dialog.
+Regression tests: `ConnectionManagerTest.aConnectionThatDropsBecomesFailedRatherThanStayingConnected`
+(times out waiting for the drop to be noticed against the old code),
+`aDeliberateDisconnectIsNotReportedAsADroppedConnection`,
+`aReplacedConnectionDyingDoesNotDisturbTheLiveOne`, and
+`WindowsBuildTest.aDroppedConnectionSaysSoInTheTerminalAndTheStatusBar`.
+
+The finding as reported: when the reader thread ends, `ConsoleConnection.readerLoop` calls
 `m_receiver.onDisconnected(cause)`, and `AbstractConsole.onDisconnected` only closes the
 answer queue. Nothing notifies `ConnectionManager`, so `m_state` stays CONNECTED,
 `isConnected()` stays true, the status bar keeps saying "Connected", terminal input stays
@@ -73,7 +91,18 @@ FAILED with the cause.
 ### 3. I/O page scan on a 16/18-bit machine runs to completion, then throws away all its results
 `pdp11-core/.../machine/IoPageScanner.java:99,130-136`, `pdp11-ui/.../scan/IoPageScannerPanel.java:63`
 
-`scan()` examines 4096 addresses typed `console.physicalAddressType()` (ODT_16/ODT_18 on a
+**FIXED.** `scan()` now retypes the target to the console's width before storing anything in it —
+`target.shiftRange(Address.of(type, base), 0, false)`, which is how a group is emptied *and*
+re-expressed; `clear()` keeps the type the group was created with, which was the whole bug. The
+window's comment now describes what happens. Regression test:
+`IoPageScannerTest.aNarrowMachineRetypesTheTargetRatherThanLosingTheWholeScan` creates the target
+at 22 bits exactly as the window does, scans an 18-bit ODT machine, and against the old code
+fails with `IllegalArgument Cell address 760000/PHYSICAL18 does not match this group's PHYSICAL22`
+after all 4096 examines — the full failure, reproduced. The existing tests kept their fixture,
+which now goes through a two-argument helper so the width the window uses can be asked for
+explicitly.
+
+The finding as reported: `scan()` examines 4096 addresses typed `console.physicalAddressType()` (ODT_16/ODT_18 on a
 real ODT machine — verified: `OdtConsole.physicalAddressType()` returns the profile width,
 and ODT advertises `NON_FATAL_UNIBUS_TIMEOUT` so the scan is allowed to run), then stores
 them back with `target.clear()` + `target.add(addr)`. The panel creates the target group
@@ -88,7 +117,25 @@ type. Fix: retype/rebuild the target at the console's width inside `scan()` befo
 ### 4. The shared grid's dynamic overwrite policy silently overrides the loader/dumper/assembler groups' permanent `pdpOverwritesEdit(false)` — a loaded file can be clobbered before deposit
 `pdp11-ui/.../mem/MemoryCellGroupTable.java:261-264`; victims: `load/MemoryLoaderPanel.java:89`, `dump/MemoryDumperPanel.java:85`, `macro11/AssemblerModel.java:111`
 
-MemoryLoaderPanel, MemoryDumperPanel and AssemblerModel each set
+**FIXED.** The dynamic policy is now opt-in: `MemoryCellGroupTable.OverwritePolicy` is either
+`GROUP_DECIDES` (the default — the group's own `pdpOverwritesEdit` is left exactly as its owner
+set it) or `FOLLOW_EDITS` (the old behaviour). `MemoryPanel` asks for `FOLLOW_EDITS`, because it
+is a view of the machine that happens to be typeable; the loader, dumper and assembler grids get
+the default and their permanent opt-out is no longer overruled. `rebuild()` now updates the
+policy too, so a `FOLLOW_EDITS` grid does not carry a stale decision across a range change —
+which was the other half of the reported sequence. Regression test:
+`MemoryLoaderPanelTest.aLoadedFileIsNotOverwrittenByAnotherWindowReadingTheSameAddresses` walks
+the exact failure — load A, deposit, load B, let another window examine those addresses — and
+against the old code fails with `expected: <219> but was: <73>`, that is file B's `0333` replaced
+by the machine's `0111`. The `FOLLOW_EDITS` half stays covered by
+`MemoryPanelTest.typingAValueMarksTheCellChangedAndStopsOtherWindowsOverwritingIt` and
+`anotherWindowExaminingTheSameAddressDoesNotEatAnUncommittedEdit`.
+
+`MemoryCellGroupList` has the same dynamic policy at `:223` and was left alone deliberately: its
+two users (the I/O page scanner and the register-group windows) do not declare a permanent
+policy, so there is nothing there for it to override.
+
+The finding as reported: MemoryLoaderPanel, MemoryDumperPanel and AssemblerModel each set
 `pdpOverwritesEdit(false)` permanently in their constructors (with comments saying so).
 But all three display through `MemoryCellGroupTable`, whose `refresh()`/`setValueAt()`
 call `updateOverwritePolicy()`, which unconditionally sets

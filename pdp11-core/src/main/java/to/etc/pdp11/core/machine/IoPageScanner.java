@@ -127,7 +127,13 @@ public final class IoPageScanner {
 			pm.done();
 		}
 
-		target.clear();
+		//-- Retype the target to the machine's width before storing anything in it. A group
+		//-- refuses a cell whose address is not its own width, and the window creates this one at
+		//-- 22 bits before it knows what it is connected to - so on a 16- or 18-bit machine the
+		//-- scan used to run to completion, minutes of it over a serial line, and then throw on
+		//-- the first address it stored and lose the lot. shiftRange with no words is the way to
+		//-- empty a group and re-express it: clear() keeps the type it was created with.
+		target.shiftRange(Address.of(type, base), 0, false);
 		for(int i = 0; i < answered.size(); i++) {
 			MemoryCell mc = target.add(answered.get(i));
 			mc.setPdpValue(values.get(i));

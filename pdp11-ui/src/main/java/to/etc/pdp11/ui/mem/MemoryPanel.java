@@ -62,7 +62,9 @@ public final class MemoryPanel extends JPanel {
 	public MemoryPanel(AppContext context, String instanceId) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
-		m_grid = new MemoryCellGroupTable(context);
+		//-- A view of the machine that happens to be typeable, so it protects what has been typed
+		//-- and otherwise tracks what the machine says. Every other grid shows a document.
+		m_grid = new MemoryCellGroupTable(context, MemoryCellGroupTable.OverwritePolicy.FOLLOW_EDITS);
 
 		//-- The group belongs to this window and lives as long as it does. It is registered with
 		//-- the application's groups because that is what puts it on the propagation bus: a

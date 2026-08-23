@@ -67,6 +67,13 @@ public final class MainWindow extends JFrame {
 	 */
 	private boolean m_connecting;
 
+	/**
+	 * What the connection last was, so that losing one can be told apart from failing to make
+	 * one. A failed attempt has already said so, in the terminal and in a dialog; a connection
+	 * that died under the user has said nothing anywhere.
+	 */
+	private ConnectionManager.State m_lastState = ConnectionManager.State.DISCONNECTED;
+
 	public MainWindow(AppContext context) {
 		super("PDP11GUI");
 		m_context = context;
@@ -315,8 +322,15 @@ public final class MainWindow extends JFrame {
 
 	private void onConnectionState(ConnectionManager manager) {
 		ConnectionManager.State state = manager.getState();
+		ConnectionManager.State was = m_lastState;
+		m_lastState = state;
 		m_panel.showConnectionState(state, manager.getMessage());
 		setConnectionControlsEnabled(!m_connecting && state != ConnectionManager.State.CONNECTING);
+		if(state == ConnectionManager.State.FAILED && was == ConnectionManager.State.CONNECTED) {
+			//-- The machine went away rather than the user going anywhere. Nothing else says so:
+			//-- the windows simply grey out, which on its own looks like the application broke.
+			m_panel.getTerminal().append("\n[" + manager.getMessage() + "]\n", TerminalStyle.SYSTEM);
+		}
 		//-- Typing does something only when there is a machine console to type at. On a SimH
 		//-- connection PDP11GUI did not launch there is not one, and the only wire is the sim>
 		//-- channel, which is not a place to put keystrokes.

@@ -134,6 +134,66 @@ class MemoryLoaderPanelTest {
 	}
 
 	/**
+	 * A file that has been loaded but not yet deposited survives another window reading the same
+	 * addresses off the machine.
+	 *
+	 * <p>This group turns {@code pdpOverwritesEdit} off in its constructor, permanently and for
+	 * exactly this reason. The shared grid used to override that every time it refreshed - it set
+	 * the flag from "are there edits right now", so the refresh after a successful Deposit all
+	 * turned it back on, and the next Load had no protection at all. What arrived then was the
+	 * machine's own values, over the top of the file the user was about to write, with Verify
+	 * afterwards comparing the machine against itself and reporting agreement.</p>
+	 */
+	@Test
+	void aLoadedFileIsNotOverwrittenByAnotherWindowReadingTheSameAddresses(@TempDir Path dir)
+		throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		Edt.run(panel::attach);
+		try {
+			var m = ctx.getConnectionManager();
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+
+			//-- File A, loaded and deposited. After this the grid holds no edits at all, which is
+			//-- what used to turn the permanent opt-out back on.
+			Path file = textFile(dir, "001000: 000111 000222\n");
+			Edt.run(() -> {
+				panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_ONE_ADDR_PER_LINE);
+				panel.getFileField(0).setText(file.toString());
+				panel.getLoadButton().doClick();
+			});
+			Edt.run(() -> panel.getDepositAllButton().doClick());
+			until("the deposit to finish", () -> !panel.getGroup().cell(0).isEdited());
+			Edt.run(() -> {
+			});
+
+			//-- File B, loaded and deliberately not deposited: this is what has to survive.
+			Files.writeString(file, "001000: 000333 000444\n", StandardCharsets.US_ASCII);
+			Edt.run(() -> panel.getLoadButton().doClick());
+			assertTrue(panel.getGroup().cell(0).isEdited(), "nothing has been written to the machine");
+
+			//-- Another window examines the same addresses. Every group at those addresses is
+			//-- offered what the machine said; this one has to refuse it.
+			MemoryAddressType type = panel.getGroup().getType();
+			MemoryCellGroup other = ctx.getMemoryCellGroups().addGroup(type, "another window");
+			other.add(Address.of(type, 01000));
+			other.add(Address.of(type, 01002));
+			m.getConnection().run(() -> m.getConsole().examine(other, false,
+				to.etc.pdp11.core.util.ProgressMonitor.NULL));
+			Edt.run(() -> {
+			});
+
+			assertEquals(0111, other.cell(0).getPdpValue().word(), "the machine still holds file A");
+			assertEquals(0333, panel.getGroup().cell(0).getEditValue().word(),
+				"and the loader still holds file B, which is what Deposit would write");
+			assertEquals(0444, panel.getGroup().cell(1).getEditValue().word());
+			assertTrue(panel.getGroup().cell(0).isEdited(), "still undeposited, and still shown as such");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
 	 * The Pascal writes the execution window's Start PC field directly and then calls that
 	 * field's own change handler by hand. Here the loader says where the program starts and the
 	 * execution window shows it, without either knowing about the other.

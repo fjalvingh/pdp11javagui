@@ -39,14 +39,22 @@ class IoPageScannerTest {
 
 	/** A context with the shipped description loaded and a simulated machine connected. */
 	private static Fixture connected(@TempDir Path dir, ConsoleProtocol protocol) throws Exception {
+		return connected(dir, protocol, protocol.getAddressType());
+	}
+
+	/**
+	 * The same, with the target group created at a width of the caller's choosing - because the
+	 * window creates it at 22 bits before it knows what it is connected to.
+	 */
+	private static Fixture connected(@TempDir Path dir, ConsoleProtocol protocol,
+		MemoryAddressType targetType) throws Exception {
 		Path machines = MachineDescriptionStore.install(dir, Logger.NULL);
 		AppContext ctx = AppTestContext.create(dir).context();
 		MachineDescriptionStore.load(ctx, machines.resolve(MachineDescriptionStore.DEFAULT_NAME));
 		//-- The description first: ConnectionManager builds the simulated machine's I/O page from
 		//-- the groups, so a machine connected before it is loaded has an empty one.
 		ctx.getConnectionManager().connect(ConnectionProfile.simulated(protocol));
-		MemoryCellGroup target = ctx.getMemoryCellGroups()
-			.addGroup(protocol.getAddressType(), "I/O page scan");
+		MemoryCellGroup target = ctx.getMemoryCellGroups().addGroup(targetType, "I/O page scan");
 		target.setUsageTag("iopagescan");
 		return new Fixture(ctx, target);
 	}
@@ -118,6 +126,38 @@ class IoPageScannerTest {
 			//-- Addresses in a description are 16-bit however wide the machine is.
 			assertTrue(r.description().contains("17777") || r.description().contains("177"),
 				"addresses should be written 16-bit: " + r.description());
+		} finally {
+			m.close();
+		}
+	}
+
+	/**
+	 * A scan of a 16- or 18-bit machine has to survive being stored.
+	 *
+	 * <p>The window creates its target group at 22 bits, before it knows what it is connected to,
+	 * and a {@link MemoryCellGroup} refuses a cell whose address is not its own width. So on a
+	 * real ODT machine the scan used to do all 4096 examines - minutes over a serial line - and
+	 * then throw {@code IllegalArgumentException} on the first address it tried to store,
+	 * losing every one of them. The scan retypes the target to the machine's width, which is
+	 * what the window's "the group's type follows the machine" has always assumed.</p>
+	 */
+	@Test
+	void aNarrowMachineRetypesTheTargetRatherThanLosingTheWholeScan(@TempDir Path dir) throws Exception {
+		Fixture f = connected(dir, ConsoleProtocol.ODT_18, MemoryAddressType.PHYSICAL22);
+		ConnectionManager m = f.context().getConnectionManager();
+		try {
+			assertEquals(MemoryAddressType.PHYSICAL18, m.getConsole().physicalAddressType(),
+				"an 11/23's ODT is 18 bits wide, and that is the point of this test");
+
+			IoPageScanner.Result r = m.getConnection().call(() -> IoPageScanner.scan(m.getConsole(),
+				f.context().getMemoryCellGroups(), f.target(), ProgressMonitor.NULL));
+
+			assertEquals(IoPageScanner.IOPAGE_WORDS, r.examined());
+			assertTrue(r.found() > 0, "the machine answers somewhere");
+			assertEquals(MemoryAddressType.PHYSICAL18, f.target().getType(),
+				"the group follows the machine it was scanned against");
+			assertEquals(r.found(), f.target().size(), "and holds every address that answered");
+			assertTrue(r.named() > 0, "which the description can still name at this width");
 		} finally {
 			m.close();
 		}

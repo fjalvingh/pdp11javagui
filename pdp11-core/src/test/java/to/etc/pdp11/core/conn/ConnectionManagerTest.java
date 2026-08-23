@@ -388,6 +388,79 @@ class ConnectionManagerTest {
 		}
 	}
 
+	// ---------------------------------------------------------------------------------------
+	// The machine going away by itself
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * A connection that dies under the application must not leave it saying "Connected".
+	 *
+	 * <p>The reader thread ends, the answer queue closes, and that used to be the whole of it:
+	 * the state stayed CONNECTED, the status bar kept saying so, terminal input stayed live and
+	 * every window went on offering buttons that reached a dead wire, each failing on its own a
+	 * few seconds later.</p>
+	 */
+	@Test
+	void aConnectionThatDropsBecomesFailedRatherThanStayingConnected() throws Exception {
+		MemoryCellGroups groups = new MemoryCellGroups();
+		try(ConnectionManager m = new ConnectionManager(groups, Logger.NULL, new Scheduler.Manual(),
+			Path.of(System.getProperty("java.io.tmpdir")))) {
+			List<ConnectionManager.State> seen = new CopyOnWriteArrayList<>();
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+			m.addListener((mgr, state) -> seen.add(state));
+			assertTrue(m.isConnected());
+
+			//-- The wire dies underneath it: closed by something that is not this manager, which
+			//-- is what SimH exiting or a serial line being unplugged looks like from in here.
+			m.getConnection().getTransport().close();
+
+			waitFor(() -> m.getState() == ConnectionManager.State.FAILED, "the drop to be noticed");
+			assertFalse(m.isConnected());
+			assertEquals(List.of(ConnectionManager.State.FAILED), seen, "and the windows are told");
+			assertNull(m.getConnection(), "nothing may be left to queue work on");
+			assertNull(m.getConsole());
+			assertFalse(m.hasMachineConsole(), "and nothing may be left to type at");
+			assertTrue(m.getMessage().contains("closed at the other end"), m.getMessage());
+			assertEquals(0, mmuGroups(groups), "the dead connection's MMU group goes with it");
+
+			//-- And it is still usable: this is the state the reconnect starts from.
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+			assertTrue(m.isConnected());
+		}
+	}
+
+	@Test
+	void aDeliberateDisconnectIsNotReportedAsADroppedConnection() throws Exception {
+		//-- The same reader thread ends the same way. The difference is whose idea it was, and
+		//-- the state the user is left looking at says which.
+		try(ConnectionManager m = manager()) {
+			List<ConnectionManager.State> seen = new CopyOnWriteArrayList<>();
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			m.addListener((mgr, state) -> seen.add(state));
+			m.disconnect();
+			Thread.sleep(200);
+			assertEquals(List.of(ConnectionManager.State.DISCONNECTED), seen,
+				"a disconnect must not be followed by a failure as the reader notices");
+			assertEquals(ConnectionManager.State.DISCONNECTED, m.getState());
+		}
+	}
+
+	/** The same for a connection that has already been replaced: its death is not news. */
+	@Test
+	void aReplacedConnectionDyingDoesNotDisturbTheLiveOne() throws Exception {
+		try(ConnectionManager m = manager()) {
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_18));
+			ConsoleConnection first = m.getConnection();
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+			assertTrue(m.isConnected());
+
+			first.getTransport().close();
+			Thread.sleep(200);
+			assertEquals(ConnectionManager.State.CONNECTED, m.getState());
+			assertNotNull(m.getConnection());
+		}
+	}
+
 	private static void waitFor(java.util.function.BooleanSupplier condition, String what) throws InterruptedException {
 		long deadline = System.currentTimeMillis() + 10_000;
 		while(!condition.getAsBoolean()) {

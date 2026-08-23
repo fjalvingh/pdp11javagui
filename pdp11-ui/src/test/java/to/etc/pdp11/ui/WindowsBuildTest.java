@@ -2,6 +2,7 @@ package to.etc.pdp11.ui;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
@@ -112,6 +113,52 @@ class WindowsBuildTest {
 			//-- "sim>" itself appears in the note above; what must not be here is the traffic.
 			assertFalse(terminal.contains("sh cpu iospace"),
 				"no sim> traffic in it: " + terminal.replace("\n", " | "));
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * A connection that dies under the user says so, in the window they are looking at.
+	 *
+	 * <p>The state change greys every window out at once, which on its own reads as the
+	 * application having broken rather than as the machine having gone away. The status bar and
+	 * one line in the terminal are the difference.</p>
+	 */
+	@Test
+	void aDroppedConnectionSaysSoInTheTerminalAndTheStatusBar(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			ctx.getConnectionManager().connect(
+				to.etc.pdp11.core.conn.ConnectionProfile.simulated(
+					to.etc.pdp11.core.conn.ConsoleProtocol.ODT_18));
+			onEdt(() -> null);
+			assertEquals("Connected", onEdt(() -> w.getPanel().getStateText()));
+
+			//-- The machine goes away: the transport is closed by something that is not the
+			//-- manager, which is what SimH exiting looks like from in here.
+			ctx.getConnectionManager().getConnection().getTransport().close();
+			long deadline = System.currentTimeMillis() + 10_000;
+			while(ctx.getConnectionManager().getState() != ConnectionManager.State.FAILED) {
+				if(System.currentTimeMillis() > deadline)
+					throw new AssertionError("the drop was never noticed");
+				Thread.sleep(5);
+			}
+			onEdt(() -> null);
+
+			assertEquals("Connection failed", onEdt(() -> w.getPanel().getStateText()));
+			assertTrue(onEdt(() -> w.getPanel().getDetailText()).contains("closed at the other end"),
+				onEdt(() -> w.getPanel().getDetailText()));
+			String terminal = onEdt(() -> w.getPanel().getGlassTerminal().getText());
+			assertTrue(terminal.contains("closed at the other end"),
+				"the terminal should say the machine went away: " + terminal.replace("\n", " | "));
 		} finally {
 			ctx.getConnectionManager().close();
 			onEdt(() -> {

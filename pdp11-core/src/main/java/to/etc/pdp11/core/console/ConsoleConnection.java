@@ -45,6 +45,19 @@ public final class ConsoleConnection implements AutoCloseable {
 		void accept(String data);
 	}
 
+	/**
+	 * Told when the reader thread stops for a reason nobody asked for: the machine went away,
+	 * SimH exited, the serial line was unplugged, the socket was reset.
+	 *
+	 * <p>Not called for a {@link #close()}, which is the same event with somebody's finger on
+	 * it. Called on the reader thread, once, as the last thing it does.</p>
+	 */
+	@FunctionalInterface
+	public interface LostListener {
+		/** @param cause why the reader stopped, or {@code null} for a clean end of stream. */
+		void onConnectionLost(ConsoleConnection connection, Throwable cause);
+	}
+
 	/** A console operation to run on the command thread. */
 	@FunctionalInterface
 	public interface ConsoleTask<T> {
@@ -70,6 +83,8 @@ public final class ConsoleConnection implements AutoCloseable {
 	private volatile SerialReceiver m_receiver;
 
 	private volatile ByteSink m_terminalSink;
+
+	private volatile LostListener m_lostListener;
 
 	private volatile boolean m_closed;
 
@@ -115,6 +130,19 @@ public final class ConsoleConnection implements AutoCloseable {
 	 */
 	public void setTerminalSink(ByteSink terminalSink) {
 		m_terminalSink = terminalSink;
+	}
+
+	/**
+	 * Who to tell when this connection dies of its own accord.
+	 *
+	 * <p>Set by {@link to.etc.pdp11.core.conn.ConnectionManager} before {@link #attach}, because
+	 * a machine that never answers its handshake is a machine that can drop the line during it.
+	 * Without this the reader thread ends, the answer queue closes, and nothing above ever hears:
+	 * the state stays CONNECTED and every window goes on offering buttons that reach a dead
+	 * wire.</p>
+	 */
+	public void setLostListener(LostListener lostListener) {
+		m_lostListener = lostListener;
 	}
 
 	public PhysicalTransport getTransport() {
@@ -170,7 +198,14 @@ public final class ConsoleConnection implements AutoCloseable {
 			m_failure = failure;
 			if(failure != null)
 				m_logger.log(LogChannel.OTHER, "Console connection lost: " + failure);
+			//-- The console first, so that anything blocked waiting for an answer is already
+			//-- unblocked by the time the layers above start tearing the connection down.
 			m_receiver.onDisconnected(failure);
+			if(!m_closed) {
+				LostListener l = m_lostListener;
+				if(l != null)
+					l.onConnectionLost(this, failure);
+			}
 		}
 	}
 
@@ -294,7 +329,10 @@ public final class ConsoleConnection implements AutoCloseable {
 		m_transport.close();
 		m_executor.shutdownNow();
 		Thread reader = m_readerThread;
-		if(reader != null) {
+		//-- Not when the reader is the one closing us: a connection that noticed its own death
+		//-- and told somebody about it ends up here on that thread, and joining itself would
+		//-- simply wait out the timeout.
+		if(reader != null && reader != Thread.currentThread()) {
 			try {
 				reader.join(2000);
 			} catch(InterruptedException x) {
