@@ -22,6 +22,7 @@ public final class LogWindow extends ToolWindow {
 		m_panel = new LogPanel((UiLogger) context.getLogger());
 		setContentPane(m_panel);
 		setSize(new Dimension(1000, 500));
+		setMinimumSize(new Dimension(620, 260));
 	}
 
 	public LogPanel getPanel() {

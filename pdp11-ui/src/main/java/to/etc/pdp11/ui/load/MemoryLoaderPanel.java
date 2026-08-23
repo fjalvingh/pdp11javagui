@@ -24,7 +24,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.Font;
 import java.awt.Window;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +46,9 @@ public final class MemoryLoaderPanel extends JPanel {
 	private final AppContext m_context;
 
 	private final MemoryCellGroup m_group;
+
+	/** A file is being read right now, so nothing may start a second one. */
+	private boolean m_loading;
 
 	private final MemoryCellGroupTable m_grid;
 
@@ -233,33 +235,46 @@ public final class MemoryLoaderPanel extends JPanel {
 				return;
 			start = Address.of(m_group.getType(), typed.val() & ~1L);
 		}
-		try {
-			MemoryFileLoader.Result r = MemoryFileLoader.load(f, m_group, files, start);
-			m_grid.rebuild();
-			for(String w : r.warnings()) {
-				m_context.getLogger().log(LogChannel.OTHER, "%s: %s", files.get(0).getFileName(), w);
-			}
-			//-- A format that says where the program starts tells the execution window, which is
-			//-- a different window and does not know this one exists.
-			if(r.entryAddress() != null) {
-				Address entry = Address.of(MemoryAddressType.VIRTUAL, r.entryAddress().val());
-				m_entryAddr.setText(entry.toOctal());
-				m_context.getMachineState().setStartPc(entry);
-			} else {
-				m_entryAddr.setText("");
-			}
-			m_context.getLogger().log(LogChannel.OTHER, "Loaded %d words from %s",
-				r.wordsLoaded(), files.get(0));
-			m_status.setText(r.wordsLoaded() + " words read from " + files.get(0).getFileName()
-				+ (r.entryAddress() == null ? "" : ", starting at " + m_entryAddr.getText())
-				+ (r.warnings().isEmpty() ? "" : "  -  " + r.warnings().get(0))
-				+ ".  Nothing has been written to the machine yet.",
-				r.warnings().isEmpty() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
-		} catch(IOException | RuntimeException x) {
-			m_context.reportFailure("Could not read " + files.get(0), x);
-			m_status.setText("Nothing loaded", UiColors.ERROR_TEXT);
-		}
+		//-- Off the event thread: reading a file is the one thing this window does that can
+		//-- block for an unbounded time, and on a stale mount it blocks forever
+		//-- (FABLE-ISSUES #62). The group it fills in is guarded by its own lock and is already
+		//-- written from the command thread; the grid it feeds is not, so that is rebuilt below.
+		Address at = start;
+		m_loading = true;
 		updateButtons();
+		m_status.setText("Reading " + files.get(0).getFileName() + " ...", UiColors.SECONDARY_TEXT);
+		m_context.onFile("Could not read " + files.get(0),
+			() -> MemoryFileLoader.load(f, m_group, files, at),
+			r -> {
+				m_loading = false;
+				m_grid.rebuild();
+				for(String w : r.warnings()) {
+					m_context.getLogger().log(LogChannel.OTHER, "%s: %s", files.get(0).getFileName(), w);
+				}
+				//-- A format that says where the program starts tells the execution window, which
+				//-- is a different window and does not know this one exists.
+				if(r.entryAddress() != null) {
+					Address entry = Address.of(MemoryAddressType.VIRTUAL, r.entryAddress().val());
+					m_entryAddr.setText(entry.toOctal());
+					m_context.getMachineState().setStartPc(entry);
+				} else {
+					m_entryAddr.setText("");
+				}
+				m_context.getLogger().log(LogChannel.OTHER, "Loaded %d words from %s",
+					r.wordsLoaded(), files.get(0));
+				m_status.setText(r.wordsLoaded() + " words read from " + files.get(0).getFileName()
+					+ (r.entryAddress() == null ? "" : ", starting at " + m_entryAddr.getText())
+					+ (r.warnings().isEmpty() ? "" : "  -  " + r.warnings().get(0))
+					+ ".  Nothing has been written to the machine yet.",
+					r.warnings().isEmpty() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+				updateButtons();
+			},
+			() -> {
+				m_loading = false;
+				m_grid.rebuild();                           // a partial load still shows what it got
+				m_status.setText("Nothing loaded", UiColors.ERROR_TEXT);
+				updateButtons();
+			});
 	}
 
 	/**
@@ -295,9 +310,10 @@ public final class MemoryLoaderPanel extends JPanel {
 	private void updateButtons() {
 		boolean connected = m_context.getConnectionManager().isConnected();
 		boolean loaded = !m_group.isEmpty();
-		m_depositChanged.setEnabled(connected && loaded);
-		m_depositAll.setEnabled(connected && loaded);
-		m_verify.setEnabled(connected && loaded);
+		m_load.setEnabled(!m_loading);
+		m_depositChanged.setEnabled(connected && loaded && !m_loading);
+		m_depositAll.setEnabled(connected && loaded && !m_loading);
+		m_verify.setEnabled(connected && loaded && !m_loading);
 	}
 
 	private void updateStatus() {

@@ -214,6 +214,47 @@ class MemoryFileLoaderTest {
 		assertEquals(01000, r.entryAddress().val(), "the zero length block says where to start");
 	}
 
+	/**
+	 * An entry block is a block, checksum included.
+	 *
+	 * <p>FABLE-ISSUES #58: a zero-data block went straight back to looking for a header, so its
+	 * checksum byte was re-read as one. Entry address 000370 is the smallest case where that
+	 * byte comes out as 01 - the two address bytes sum to 248 - and a perfectly good tape then
+	 * came back with a complaint about a block that was never there. Nothing verified that
+	 * checksum either, which is what state 7 does now.</p>
+	 */
+	@Test
+	void anEntryBlockWhoseChecksumLooksLikeAHeaderIsStillJustAnEntryBlock(@TempDir Path dir) throws Exception {
+		MemoryCellGroup source = filled(01000, 0111, 0222);
+		Path file = dir.resolve("t.ptap");
+		MemoryDumper.save(MemoryFileFormat.ABSOLUTE_PAPERTAPE, source, List.of(file), at(0370));
+
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.ABSOLUTE_PAPERTAPE,
+			g, List.of(file), at(0));
+
+		assertEquals(0370, r.entryAddress().val());
+		assertEquals(2, r.wordsLoaded());
+		assertEquals(List.of(), r.warnings(), "a good tape has nothing wrong with it");
+	}
+
+	/** And a damaged one is caught, which nothing used to look at. */
+	@Test
+	void aBadChecksumOnTheEntryBlockStopsTheLoad(@TempDir Path dir) throws Exception {
+		MemoryCellGroup source = filled(01000, 0111);
+		Path file = dir.resolve("t.ptap");
+		MemoryDumper.save(MemoryFileFormat.ABSOLUTE_PAPERTAPE, source, List.of(file), at(01000));
+		byte[] bytes = Files.readAllBytes(file);
+		//-- The entry block is the last one: six header bytes, a checksum and four stuff bytes.
+		bytes[bytes.length - 5] ^= 0x20;
+		Files.write(file, bytes);
+
+		MemoryCellGroup g = emptyGroup();
+		IOException x = assertThrows(IOException.class, () -> MemoryFileLoader.load(
+			MemoryFileFormat.ABSOLUTE_PAPERTAPE, g, List.of(file), at(0)));
+		assertTrue(x.getMessage().contains("Checksum error"), x.getMessage());
+	}
+
 	@Test
 	void leaderTapeAndStuffBytesBeforeABlockAreSkipped(@TempDir Path dir) throws Exception {
 		MemoryCellGroup source = filled(01000, 0111);

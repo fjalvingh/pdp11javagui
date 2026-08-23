@@ -117,28 +117,6 @@ public abstract class ConsoleScanner<S extends Enum<S>> {
 		return m_nextCharIndex >= m_input.length();
 	}
 
-	/**
-	 * The character at the parse position, without consuming it.
-	 *
-	 * @throws ScannerInputIncompleteException at the end of what has arrived so far
-	 */
-	public char peek() {
-		if(isAtEnd())
-			throw new ScannerInputIncompleteException("End of console input");
-		return m_input.charAt(m_nextCharIndex);
-	}
-
-	/**
-	 * The character at the parse position, consuming it.
-	 *
-	 * @throws ScannerInputIncompleteException at the end of what has arrived so far
-	 */
-	public char take() {
-		char c = peek();
-		m_nextCharIndex++;
-		return c;
-	}
-
 	/** The character at an absolute index, for decoders that scan ahead. */
 	public char charAt(int index) {
 		return m_input.charAt(index);

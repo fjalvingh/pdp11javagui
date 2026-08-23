@@ -134,19 +134,6 @@ public final class MemoryCell {
 		m_listingLineNr = listingLineNr;
 	}
 
-	/**
-	 * Copy address, values and labels from another cell, leaving group membership alone.
-	 * Ported from {@code TMemoryCell.Assign} ({@code :211-219}).
-	 */
-	public void assignFrom(MemoryCell other) {
-		m_addr = other.m_addr;
-		m_pdpValue = other.m_pdpValue;
-		m_editValue = other.m_editValue;
-		m_name = other.m_name;
-		m_info = other.m_info;
-		m_listingLineNr = other.m_listingLineNr;
-	}
-
 	@Override
 	public String toString() {
 		return m_addr.toOctal() + "=" + m_pdpValue + (m_name.isEmpty() ? "" : " (" + m_name + ")");

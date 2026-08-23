@@ -32,7 +32,7 @@ public final class FakeTransport implements PhysicalTransport {
 
 	private volatile boolean m_closed;
 
-	private long m_byteDelayMillis;
+	private volatile long m_byteDelayMillis;
 
 	public FakeTransport(FakePdp11 fake) {
 		m_fake = fake;
@@ -63,6 +63,7 @@ public final class FakeTransport implements PhysicalTransport {
 
 	@Override
 	public int read(byte[] buf, int off, int len) throws IOException {
+		int n;
 		synchronized(m_lock) {
 			while(!m_closed && m_fake.available() == 0) {
 				try {
@@ -74,7 +75,7 @@ public final class FakeTransport implements PhysicalTransport {
 			}
 			if(m_closed)
 				return -1;
-			int n = 0;
+			n = 0;
 			while(n < len) {
 				int b = m_fake.serialReadByte();
 				if(b < 0)
@@ -83,9 +84,9 @@ public final class FakeTransport implements PhysicalTransport {
 			}
 			if(n == 0)
 				return -1;
-			delay(n);
-			return n;
 		}
+		delay(n);
+		return n;
 	}
 
 	@Override
@@ -96,12 +97,21 @@ public final class FakeTransport implements PhysicalTransport {
 			for(int i = 0; i < len; i++) {
 				m_fake.serialWriteByte(buf[off + i] & 0xFF);
 			}
-			delay(len);
 			//-- The write is what produces output, so wake whoever is blocked in read().
 			m_lock.notifyAll();
 		}
+		delay(len);
 	}
 
+	/**
+	 * Sleep for as long as the bytes would have taken on the wire.
+	 *
+	 * <p>Called by both directions with the fake's monitor <b>not</b> held, which is the whole
+	 * point: a real serial line delays only the direction the bytes are travelling in, and
+	 * holding the lock across the sleep made one direction's delay block the other one and the
+	 * scheduler's run-to-halt callback with it (FABLE-ISSUES #53). Nothing here touches the
+	 * fake, so there is nothing for the monitor to protect.</p>
+	 */
 	private void delay(int byteCount) {
 		if(m_byteDelayMillis <= 0)
 			return;

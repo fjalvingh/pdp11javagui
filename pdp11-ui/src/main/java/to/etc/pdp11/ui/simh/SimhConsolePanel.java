@@ -243,16 +243,23 @@ public final class SimhConsolePanel extends JPanel {
 	/**
 	 * Stop a running simulation.
 	 *
-	 * <p>Goes through the console's own {@code haltCpu} rather than writing a {@code ^E} at the
-	 * channel: that is the one that also tells the rest of the application the machine stopped,
-	 * and it is safe to ask for when the machine is already halted.</p>
+	 * <p>Two steps, and both are needed. The {@code ^E} goes out of band, because this is the
+	 * control whose whole purpose is interrupting a running machine and it cannot be made to
+	 * queue behind the command that started it - a typed {@code go} holds the command thread
+	 * waiting for a prompt that will not come until something stops the simulation, so a queued
+	 * Halt would sit there for the full eight-second command timeout before a byte was sent
+	 * (FABLE-ISSUES #48). {@code haltCpu} then runs on the command thread as usual and does the
+	 * bookkeeping: it is what tells the rest of the application the machine stopped, and it is
+	 * safe to ask for when the machine is already halted.</p>
 	 */
 	private void halt() {
-		if(simh() == null) {
+		SimhConsole simh = simh();
+		if(simh == null) {
 			note("[not connected to SimH]");
 			return;
 		}
 		m_transcript.append("> ^E\n", TerminalStyle.USER);
+		simh.interruptRunningProgram();
 		m_context.onConsole("Halt", Console::haltCpu);
 	}
 

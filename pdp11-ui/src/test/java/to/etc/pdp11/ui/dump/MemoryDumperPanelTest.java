@@ -52,6 +52,15 @@ class MemoryDumperPanelTest {
 		throw new AssertionError("Timed out waiting for " + what);
 	}
 
+	/**
+	 * Wait for a write to finish: the file goes out off the event thread, so the click that
+	 * starts one returns before it has happened (FABLE-ISSUES #62). The Write button coming back
+	 * is what says it is over, whether it worked or not.
+	 */
+	private static void untilWritten(MemoryDumperPanel panel) {
+		until("the write to finish", () -> Edt.call(() -> panel.getDumpButton().isEnabled()));
+	}
+
 	@Test
 	void theFileRowsFollowTheChosenFormat(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);
@@ -117,6 +126,7 @@ class MemoryDumperPanelTest {
 				panel.getFileField(0).setText(out.toString());
 				panel.getDumpButton().doClick();
 			});
+			untilWritten(panel);
 
 			assertTrue(Files.exists(out));
 			byte[] bytes = Files.readAllBytes(out);
@@ -153,6 +163,7 @@ class MemoryDumperPanelTest {
 			panel.getFileField(0).setText(out.toString());
 			panel.getDumpButton().doClick();
 		});
+		untilWritten(panel);
 		assertTrue(Files.exists(out));
 		assertEquals(4, Files.readAllBytes(out).length);
 	}
@@ -208,6 +219,7 @@ class MemoryDumperPanelTest {
 			panel.getFileField(0).setText(out.toString());
 			panel.getDumpButton().doClick();
 		});
+		untilWritten(panel);
 		assertTrue(panel.getStatusText().contains("had never been read"), panel.getStatusText());
 	}
 
@@ -223,6 +235,7 @@ class MemoryDumperPanelTest {
 			panel.getStartField().postActionEvent();
 			panel.getDumpButton().doClick();
 		});
+		untilWritten(panel);
 		assertTrue(failures.toString().contains("Choose a"), failures.toString());
 	}
 

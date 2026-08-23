@@ -305,7 +305,7 @@ public final class MemoryCellGroupList extends JPanel {
 		public String getColumnName(int column) {
 			return switch(column) {
 				case COL_NAME -> "Register";
-				case COL_ADDRESS -> "Addr";
+				case COL_ADDRESS -> "Address";
 				case COL_VALUE -> "Value";
 				default -> "Info";
 			};

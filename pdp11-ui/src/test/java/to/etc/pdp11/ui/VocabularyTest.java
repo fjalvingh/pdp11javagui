@@ -12,7 +12,9 @@ import to.etc.pdp11.ui.load.MemoryLoaderPanel;
 import to.etc.pdp11.ui.macro11.AssemblerPanel;
 import to.etc.pdp11.ui.mem.MemoryPanel;
 import to.etc.pdp11.ui.mem.RegisterGroupPanel;
+import to.etc.pdp11.ui.microcode.MicrocodePanel;
 import to.etc.pdp11.ui.mmu.MmuPanel;
+import to.etc.pdp11.ui.settings.ConnectionSettingsPanel;
 import to.etc.pdp11.ui.scan.IoPageScannerPanel;
 
 import javax.swing.AbstractButton;
@@ -172,6 +174,44 @@ class VocabularyTest {
 		assertTrue(labels.contains("Set PC"), labels.toString());
 		assertFalse(labels.contains("Reset"), "\"Reset\" does not say that it also writes R7");
 		assertFalse(labels.contains("Set/show"), "it does not show anything");
+	}
+
+	/**
+	 * A button that opens a dialog says so the same way in every window.
+	 *
+	 * <p>FABLE-ISSUES #63. The convention is a space and three dots - "Open ...", "Save as ...",
+	 * "Browse ..." - and there were two ways of departing from it: "Load listing..." with the
+	 * dots glued on, and a Browse button in the connection dialog labelled with nothing but the
+	 * dots. A label made of punctuation says what it does to nobody, and reads to a screen
+	 * reader as nothing at all.</p>
+	 */
+	@Test
+	void aButtonThatOpensADialogSpellsItsEllipsisTheSameWayEverywhere(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		List<String> labels = new ArrayList<>();
+		labels.addAll(labelsOf(new MemoryPanel(ctx, "1")));
+		labels.addAll(labelsOf(new MemoryDumperPanel(ctx)));
+		labels.addAll(labelsOf(new MemoryLoaderPanel(ctx)));
+		labels.addAll(labelsOf(new AssemblerPanel(ctx)));
+		labels.addAll(labelsOf(new MicrocodePanel(ctx)));
+		labels.addAll(labelsOf(new ConnectionSettingsPanel(ctx.getSettings())));
+		for(String t : labels) {
+			if(!t.contains("."))
+				continue;
+			assertTrue(t.endsWith(" ..."), "\"" + t + "\" does not spell its ellipsis \"... \" the usual way");
+			assertTrue(t.length() > 4, "\"" + t + "\" is punctuation where a name should be");
+		}
+	}
+
+	/**
+	 * One name for one act. Opening a listing file is the same thing in the Assembler window and
+	 * in the Microcode window, and used to be called two things.
+	 */
+	@Test
+	void openingAListingIsCalledTheSameThingInBothWindowsThatDoIt(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		assertTrue(labelsOf(new AssemblerPanel(ctx)).contains("Open listing ..."));
+		assertTrue(labelsOf(new MicrocodePanel(ctx)).contains("Open listing ..."));
 	}
 
 	/** The counts a window prints and the counts it takes are in the same base. */

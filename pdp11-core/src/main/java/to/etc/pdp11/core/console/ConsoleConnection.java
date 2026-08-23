@@ -91,6 +91,15 @@ public final class ConsoleConnection implements AutoCloseable {
 	/** Set when the reader stops for a reason worth reporting. */
 	private volatile Throwable m_failure;
 
+	/** Held across every transport write, so two threads' bytes never interleave. */
+	private final Object m_writeLock = new Object();
+
+	/**
+	 * Runs {@link #sendOutOfBand}, created on first use because most connections never need one.
+	 * Guarded by this connection's monitor.
+	 */
+	private ExecutorService m_outOfBandExecutor;
+
 	public ConsoleConnection(PhysicalTransport transport, Logger logger) {
 		m_transport = transport;
 		m_logger = logger;
@@ -314,10 +323,63 @@ public final class ConsoleConnection implements AutoCloseable {
 	 */
 	public void write(String text) throws ConsoleException {
 		try {
-			m_transport.write(text.getBytes(StandardCharsets.ISO_8859_1));
+			//-- Serialized against the out-of-band writer below, which is the only other thread
+			//-- that ever writes here. A write hands bytes over and returns; nothing waits for a
+			//-- reply while holding this, so the interrupt byte is never delayed by more than
+			//-- one command's worth of bytes.
+			synchronized(m_writeLock) {
+				m_transport.write(text.getBytes(StandardCharsets.ISO_8859_1));
+			}
 		} catch(IOException x) {
 			throw new ConsoleException("Writing to " + describe() + " failed: " + x, x);
 		}
+	}
+
+	/**
+	 * Send an interrupt character at the machine now, ahead of everything the command thread
+	 * has queued.
+	 *
+	 * <p>For {@code ^E} and nothing else. The command thread is strictly ordered on purpose,
+	 * and almost everything wants to stay that way - but a stop character is the exception the
+	 * Pascal already carves out ({@code ConsolePDP11SimHU.pas:1119-1163} writes it straight at
+	 * the hub). The control that exists to interrupt a running machine cannot be made to queue
+	 * behind the command that started it: a typed {@code go} holds the command thread waiting
+	 * for a prompt that will not come until the machine stops, so Halt would wait out the whole
+	 * command timeout before being sent (FABLE-ISSUES #48).</p>
+	 *
+	 * <p>Sent from a thread of its own rather than from the caller's, so a button may ask for
+	 * it: the event thread must not make a transport write, however short. The byte cannot land
+	 * in the middle of a command's bytes because {@link #write} takes the same lock, and it is
+	 * harmless where it lands in the <i>protocol</i> - SimH ignores {@code ^E} unless it is
+	 * mid-{@code RUN}, and the queued {@code haltCpu} that follows does the bookkeeping either
+	 * way.</p>
+	 *
+	 * @return false if there is no longer a connection to send it on
+	 */
+	public boolean sendOutOfBand(String text) {
+		if(m_closed)
+			return false;
+		outOfBandExecutor().execute(() -> {
+			try {
+				write(text);
+			} catch(ConsoleException x) {
+				m_logger.log(LogChannel.OTHER, "Out-of-band write dropped: " + x.getMessage());
+			}
+		});
+		return true;
+	}
+
+	private synchronized ExecutorService outOfBandExecutor() {
+		ExecutorService e = m_outOfBandExecutor;
+		if(e == null) {
+			e = Executors.newSingleThreadExecutor(r -> {
+				Thread t = new Thread(r, "pdp11-interrupt");
+				t.setDaemon(true);
+				return t;
+			});
+			m_outOfBandExecutor = e;
+		}
+		return e;
 	}
 
 	/**
@@ -345,6 +407,12 @@ public final class ConsoleConnection implements AutoCloseable {
 		//-- exits quietly rather than reporting the close as a failure.
 		m_transport.close();
 		m_executor.shutdownNow();
+		ExecutorService oob;
+		synchronized(this) {
+			oob = m_outOfBandExecutor;
+		}
+		if(oob != null)
+			oob.shutdownNow();
 		Thread reader = m_readerThread;
 		//-- Not when the reader is the one closing us: a connection that noticed its own death
 		//-- and told somebody about it ends up here on that thread, and joining itself would

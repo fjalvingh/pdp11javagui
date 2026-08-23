@@ -21,6 +21,19 @@ import java.io.IOException;
  * arrived.</p>
  */
 public final class SerialTransport implements PhysicalTransport {
+	private static final String[] EMPTY = new String[0];
+
+	/** How long the port list is reused before the machine is asked again. */
+	private static final long PORTS_TTL_MS = 5000;
+
+	private static final Object PORTS_LOCK = new Object();
+
+	/** Guarded by {@link #PORTS_LOCK}. Zero means "never looked". */
+	private static long m_portsAt;
+
+	/** Guarded by {@link #PORTS_LOCK}. */
+	private static String[] m_ports = EMPTY;
+
 	/** The line settings a PDP-11 console might want. */
 	public enum SerialFormat {
 		/** Eight data bits, no parity, one stop bit. */
@@ -71,8 +84,40 @@ public final class SerialTransport implements PhysicalTransport {
 	 * {@code /dev} to look at. The only caller is a dialog listing ports to choose from, and a
 	 * dialog that will not open because there are no serial ports is worse than one offering
 	 * none: every other transport still works.</p>
+	 *
+	 * <p><b>Cached for {@link #PORTS_TTL_MS}</b>. The connection dialog asks for this in its
+	 * constructor and again on every {@code setProfile}, on the event thread, and enumerating
+	 * ports means asking the operating system about every device it has - tens of milliseconds
+	 * on a quiet machine and unbounded on one with a wedged USB adapter (FABLE-ISSUES #62).</p>
 	 */
 	public static String[] availablePortNames() {
+		long now = System.nanoTime();
+		synchronized(PORTS_LOCK) {
+			if(m_portsAt != 0 && now - m_portsAt < PORTS_TTL_MS * 1_000_000L)
+				return m_ports.clone();
+		}
+		String[] found = enumeratePorts();
+		synchronized(PORTS_LOCK) {
+			m_ports = found;
+			m_portsAt = System.nanoTime();
+		}
+		return found.clone();
+	}
+
+	/**
+	 * Throw the cached list away, so the next {@link #availablePortNames} really enumerates.
+	 *
+	 * <p>For a Rescan button, if one is ever added, and for tests. Plugging a USB adapter in is
+	 * noticed within {@link #PORTS_TTL_MS} anyway.</p>
+	 */
+	public static void forgetPorts() {
+		synchronized(PORTS_LOCK) {
+			m_portsAt = 0;
+			m_ports = EMPTY;
+		}
+	}
+
+	private static String[] enumeratePorts() {
 		try {
 			SerialPort[] ports = SerialPort.getCommPorts();
 			String[] names = new String[ports.length];
@@ -83,7 +128,7 @@ public final class SerialTransport implements PhysicalTransport {
 		} catch(Throwable x) {
 			//-- Throwable, and deliberately: what comes out of a missing native library is an
 			//-- UnsatisfiedLinkError, not an exception.
-			return new String[0];
+			return EMPTY;
 		}
 	}
 

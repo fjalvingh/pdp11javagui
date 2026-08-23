@@ -103,6 +103,41 @@ class TransportTest {
 		t.close();
 	}
 
+	/**
+	 * With the line slowed down, a read in progress must not hold up a write.
+	 *
+	 * <p>A real serial line delays only the direction the bytes are travelling in. Sleeping out
+	 * the delay with the fake's monitor held made one direction block the other one - and the
+	 * scheduler's run-to-halt callback with it, since that takes the same monitor
+	 * (FABLE-ISSUES #53).</p>
+	 */
+	@Test
+	void aSlowLineDelaysOnlyTheDirectionTheBytesAreGoing() throws Exception {
+		FakeTransport t = odtTransport();
+		t.setByteDelayMillis(100);                          // the banner is 11 bytes: ~1.1 s
+
+		CountDownLatch reading = new CountDownLatch(1);
+		Thread reader = new Thread(() -> {
+			try {
+				reading.countDown();
+				t.read(new byte[256], 0, 256);
+			} catch(IOException x) {
+				// the assertions below are about the writer, not about this
+			}
+		}, "slow-reader");
+		reader.start();
+		assertTrue(reading.await(2, TimeUnit.SECONDS));
+		Thread.sleep(150);                                  // it is into its delay by now
+
+		long startedAt = System.nanoTime();
+		t.write('R');
+		long tookMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+		reader.join(5000);
+		t.close();
+		assertTrue(tookMillis < 500, "the write waited out the read's delay: " + tookMillis + " ms");
+	}
+
 	/** Closing wakes a blocked reader, which is how a reader thread is stopped. */
 	@Test
 	void closingWakesABlockedReaderWithEndOfStream() throws Exception {

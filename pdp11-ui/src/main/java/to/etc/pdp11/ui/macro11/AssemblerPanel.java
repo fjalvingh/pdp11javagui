@@ -288,11 +288,7 @@ public final class AssemblerPanel extends JPanel {
 		Path file = choose("Open a MACRO-11 source", "MACRO-11 source", "mac", false);
 		if(file == null)
 			return;
-		try {
-			m_model.loadSource(file);
-		} catch(IOException x) {
-			m_context.reportFailure("Could not read " + file, x);
-		}
+		m_model.loadSourceOffTheEventThread(file, null);
 	}
 
 	/** Save, asking for a name when there is none or when Save as was pressed. */
@@ -303,23 +299,14 @@ public final class AssemblerPanel extends JPanel {
 			if(file == null)
 				return;
 		}
-		try {
-			m_model.saveSource(file);
-		} catch(IOException x) {
-			m_context.reportFailure("Could not write " + file, x);
-		}
+		m_model.saveSourceOffTheEventThread(file);
 	}
 
 	private void openListing() {
 		Path file = choose("Open a MACRO-11 listing", "MACRO-11 listing", "lst", false);
 		if(file == null)
 			return;
-		try {
-			m_model.loadListing(file);
-			m_tabs.setSelectedIndex(TAB_LISTING);
-		} catch(IOException x) {
-			m_context.reportFailure("Could not read " + file, x);
-		}
+		m_model.loadListingOffTheEventThread(file, () -> m_tabs.setSelectedIndex(TAB_LISTING));
 	}
 
 	/**

@@ -10,6 +10,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.table.TableColumn;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -60,9 +61,16 @@ public final class LogPanel extends JPanel {
 
 		m_table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		m_table.setShowGrid(false);
-		m_table.getColumnModel().getColumn(0).setPreferredWidth(90);
+		//-- Both widths, never just the preferred one: any auto-resize mode redistributes the
+		//-- preferred widths on the first layout pass and keeps the result, so a change of
+		//-- resize mode would silently squash these (FABLE-ISSUES #61).
+		TableColumn when = m_table.getColumnModel().getColumn(0);
+		when.setPreferredWidth(90);
+		when.setMinWidth(70);                               // a timestamp, whole
 		for(int i = 1; i < m_model.getColumnCount(); i++) {
-			m_table.getColumnModel().getColumn(i).setPreferredWidth(220);
+			TableColumn c = m_table.getColumnModel().getColumn(i);
+			c.setPreferredWidth(220);
+			c.setMinWidth(110);
 		}
 
 		//-- See MemoryCellGroupTable: a JTable wires its header into the scroll pane from
@@ -85,24 +93,45 @@ public final class LogPanel extends JPanel {
 	}
 
 	/**
-	 * Take the history and start following.
+	 * Take the history and start following, in one step.
 	 *
-	 * <p>The buffer exists from the first line logged, long before anybody opens this. Attaching
-	 * late is meant to miss nothing, which is why the snapshot comes first.</p>
+	 * <p>The buffer exists from the first line logged, long before anybody opens this, and
+	 * attaching late is meant to miss nothing. Asking for the history and then subscribing was
+	 * two steps with a gap between them, and a line logged in the gap was buffered and never
+	 * shown until the window was closed and opened again; {@link UiLogger#subscribe} does both
+	 * under one lock (FABLE-ISSUES #51).</p>
+	 *
+	 * <p>Both callbacks arrive on whichever thread logged, holding the logger's lock, so both
+	 * marshal and return.</p>
 	 */
 	public void attach() {
-		m_model.setAll(m_logger.snapshot());
-		m_logger.setListener(line -> SwingUtilities.invokeLater(() -> {
-			boolean atBottom = isScrolledToBottom();
-			m_model.add(line);
-			if(atBottom)
+		m_logger.subscribe(new UiLogger.Listener() {
+			@Override
+			public void onHistory(java.util.List<LogLine> lines) {
+				//-- Straight in, not marshalled: this arrives on whichever thread called
+				//-- subscribe, and that is this one - attach() is the window's onShowing. Posting
+				//-- it instead would leave the window blank for a frame and, worse, let live
+				//-- lines that were delivered from other threads in the meantime be drawn before
+				//-- the history they come after.
+				m_model.setAll(lines);
 				scrollToBottom();
-		}));
+			}
+
+			@Override
+			public void onLine(LogLine line) {
+				SwingUtilities.invokeLater(() -> {
+					boolean atBottom = isScrolledToBottom();
+					m_model.add(line);
+					if(atBottom)
+						scrollToBottom();
+				});
+			}
+		});
 	}
 
 	/** Stop drawing rows nobody is looking at. The buffer keeps filling regardless. */
 	public void detach() {
-		m_logger.setListener(null);
+		m_logger.unsubscribe();
 	}
 
 	private boolean isScrolledToBottom() {

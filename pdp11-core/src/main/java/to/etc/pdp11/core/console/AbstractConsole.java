@@ -252,10 +252,6 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 		}
 	}
 
-	protected <T extends AnswerPhrase> T waitForAnswer(Class<T> type, long timeoutMillis) {
-		return m_answers.waitFor(type, timeoutMillis);
-	}
-
 	/**
 	 * Make sure the prompt came back, so whatever was sent is known to have been dealt with.
 	 *

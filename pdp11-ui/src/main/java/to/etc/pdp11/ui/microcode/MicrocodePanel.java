@@ -91,7 +91,8 @@ public final class MicrocodePanel extends JPanel {
 
 	private final JButton m_next = new JButton("Next instruction");
 
-	private final JButton m_load = new JButton("Load listing...");
+	/** Named after the same act in the Assembler window, and spelled the way every other one is. */
+	private final JButton m_load = new JButton("Open listing ...");
 
 	private final JLabel m_status = new JLabel();
 
@@ -133,11 +134,11 @@ public final class MicrocodePanel extends JPanel {
 
 	private JPanel buildControls() {
 		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]12[][]8[]8[]12[]", "[]"));
-		bar.add(new JLabel("Search by"));
+		bar.add(new JLabel("Search by:"));
 		m_searchBy.addActionListener(e -> refillSearch());
 		bar.add(m_searchBy);
 
-		bar.add(new JLabel("µInstruction"));
+		bar.add(new JLabel("µInstruction:"));
 		//-- Editable, because 1018 microwords is too many to find by scrolling and everybody
 		//-- arrives here already knowing an address or a tag.
 		m_search.setEditable(true);
@@ -157,7 +158,8 @@ public final class MicrocodePanel extends JPanel {
 			+ " when nothing branches");
 		m_next.addActionListener(e -> next());
 		bar.add(m_next);
-		m_load.setToolTipText("Read another copy of the microcode listing");
+		m_load.setToolTipText("Read another copy of the microcode listing."
+			+ " A listing split into one file per page can be chosen all at once.");
 		m_load.addActionListener(e -> chooseListing());
 		bar.add(m_load);
 		return bar;
@@ -197,7 +199,10 @@ public final class MicrocodePanel extends JPanel {
 
 	private void chooseListing() {
 		JFileChooser chooser = new JFileChooser();
-		chooser.setDialogTitle("Open a PDP-11/44 microcode listing");
+		//-- The multi-selection is for a listing split into one file per page, and a chooser
+		//-- that quietly accepts several files without saying why is a feature nobody finds
+		//-- (FABLE-ISSUES #63). The title is where a file chooser can say it.
+		chooser.setDialogTitle("Open a PDP-11/44 microcode listing (or every page of one)");
 		String remembered = m_context.getSettings().getLastMicrocodeFile();
 		if(remembered != null)
 			chooser.setSelectedFile(new java.io.File(remembered));

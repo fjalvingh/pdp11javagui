@@ -111,6 +111,12 @@ public abstract class FakePdp11 {
 	/** Characters this console has printed that have not been read yet. */
 	private final StringBuilder m_serialOut = new StringBuilder();
 
+	/** Set by {@link #holdOutput()}: printing goes to {@link #m_heldOutput} rather than out. */
+	private boolean m_outputHeld;
+
+	/** What was printed while {@link #m_outputHeld} was set, waiting for {@link #releaseOutput()}. */
+	private final StringBuilder m_heldOutput = new StringBuilder();
+
 	/**
 	 * @param type       16, 18 or 22 bit; decides the I/O page base and how much memory is
 	 *                   fitted
@@ -401,13 +407,44 @@ public abstract class FakePdp11 {
 		m_outputListener = outputListener;
 	}
 
+	/**
+	 * Hold everything the console prints from here on, until {@link #releaseOutput()}.
+	 *
+	 * <p>For tests about what happens when output arrives <i>late</i> - after the console layer
+	 * has stopped waiting for it, but before whatever it waits for next. That is not a thing a
+	 * real machine does deliberately, but a loaded host or a congested line produces it, and the
+	 * console layer has to survive it: FABLE-ISSUES #47 is exactly that case, where a command's
+	 * own echo turning up after the echo wait gave up made a successful command look rejected.</p>
+	 */
+	public synchronized void holdOutput() {
+		m_outputHeld = true;
+	}
+
+	/** Let go of everything {@link #holdOutput()} has accumulated, in the order it was printed. */
+	public synchronized void releaseOutput() {
+		m_outputHeld = false;
+		if(m_heldOutput.isEmpty())
+			return;
+		m_serialOut.append(m_heldOutput);
+		m_heldOutput.setLength(0);
+		fireOutput();
+	}
+
 	/** The console prints. */
 	protected void print(String s) {
+		if(m_outputHeld) {
+			m_heldOutput.append(s);
+			return;
+		}
 		m_serialOut.append(s);
 		fireOutput();
 	}
 
 	protected void print(char c) {
+		if(m_outputHeld) {
+			m_heldOutput.append(c);
+			return;
+		}
 		m_serialOut.append(c);
 		fireOutput();
 	}

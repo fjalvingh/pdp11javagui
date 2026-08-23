@@ -8,6 +8,8 @@ import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.Pdp1144Console;
 import to.etc.pdp11.core.console.Pdp1144Firmware;
+import to.etc.pdp11.core.fake.FakePdp11;
+import to.etc.pdp11.core.io.FakeTransport;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.ui.AppContext;
@@ -173,6 +175,41 @@ class SimhConsolePanelTest {
 			Edt.run(() -> {
 			});                                             // let the note reach the transcript
 			assertTrue(transcript(panel).contains("not a SimH connection any more"), transcript(panel));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * Halt stops the machine rather than waiting out the command that started it.
+	 *
+	 * <p>FABLE-ISSUES #48: {@code go} holds the command thread waiting for a {@code sim>} that
+	 * will not come until the simulation stops, and the command timeout is eight seconds, so a
+	 * Halt queued the ordinary way was sent only after the machine had already stopped by
+	 * itself. The fake runs for a minimum of a second before its own HALT
+	 * ({@code FakePdp11.runToHalt}), so a stop that arrives sooner than that can only have come
+	 * from the {@code ^E} this button now writes out of band.</p>
+	 */
+	@Test
+	void haltStopsTheMachineRatherThanWaitingOutTheCommandThatStartedIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.SIMH);
+		try {
+			FakePdp11 fake = ((FakeTransport) ctx.getConnectionManager().getConnection().getTransport()).getFake();
+			SimhConsolePanel panel = Edt.call(() -> new SimhConsolePanel(ctx));
+			Edt.run(panel::attach);
+
+			long startedAt = System.nanoTime();
+			Edt.run(() -> {
+				panel.getCommandField().setText("go 1000");
+				panel.getCommandField().postActionEvent();
+			});
+			until("the machine to start", fake::isRunning);
+			Edt.run(() -> panel.getHaltButton().doClick());
+			until("the machine to stop", () -> !fake.isRunning());
+			long tookMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+			assertTrue(tookMillis < 900,
+				"the machine ran to its own HALT instead of being stopped: " + tookMillis + " ms");
 		} finally {
 			ctx.getConnectionManager().close();
 		}

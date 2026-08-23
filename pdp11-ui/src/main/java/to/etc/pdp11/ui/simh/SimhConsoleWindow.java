@@ -23,6 +23,8 @@ public final class SimhConsoleWindow extends ToolWindow {
 		m_panel = new SimhConsolePanel(context);
 		setContentPane(m_panel);
 		setSize(new Dimension(900, 520));
+		//-- Enough for a sim> transcript line and the command field under it.
+		setMinimumSize(new Dimension(560, 280));
 	}
 
 	public SimhConsolePanel getPanel() {

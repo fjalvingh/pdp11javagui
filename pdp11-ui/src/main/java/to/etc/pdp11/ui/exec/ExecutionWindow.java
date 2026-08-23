@@ -19,6 +19,9 @@ public final class ExecutionWindow extends ToolWindow {
 		m_panel = new ExecutionPanel(context);
 		setContentPane(m_panel);
 		pack();
+		//-- Packed, so the layout's own preferred size is exactly the smallest this window is
+		//-- worth being: everything in it is a labelled control, and there is nothing to give up.
+		setMinimumSize(getSize());
 	}
 
 	public ExecutionPanel getPanel() {

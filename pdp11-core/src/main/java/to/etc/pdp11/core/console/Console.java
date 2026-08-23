@@ -107,6 +107,27 @@ public interface Console {
 	 */
 	Address haltCpu() throws ConsoleException;
 
+	/**
+	 * Ask a running program to stop <i>now</i>, ahead of whatever the command thread is doing.
+	 *
+	 * <p>The one thing in this interface that does not go through the command thread, and the
+	 * one that may therefore be called from the event thread: it hands a stop character to
+	 * {@link ConsoleConnection#sendOutOfBand} and returns, without reading a reply or touching
+	 * any console state. Everything that has to be decided - where the machine stopped, what to
+	 * tell the rest of the application - is still {@link #haltCpu}'s job, queued as usual and
+	 * arriving at a machine that has already been told to stop rather than at one that has
+	 * not.</p>
+	 *
+	 * <p>Answers false where there is nothing to send out of band, which is every console
+	 * except SimH's: a real machine is stopped with the switch on the front of it, and an ODT
+	 * that is running is not listening.</p>
+	 *
+	 * @return true if a stop character was sent
+	 */
+	default boolean interruptRunningProgram() {
+		return false;
+	}
+
 	/** Execute one instruction. */
 	void singleStep() throws ConsoleException;
 

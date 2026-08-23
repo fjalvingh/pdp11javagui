@@ -334,6 +334,10 @@ public final class ExecutionPanel extends JPanel {
 			m_context.reportFailure(haltAdvice(console), null);
 			return;
 		}
+		//-- Out of band first, where the console has such a thing: a command already in flight
+		//-- against a running machine would otherwise hold this one up for its whole timeout
+		//-- (FABLE-ISSUES #48). haltCpu below still does all the deciding.
+		console.interruptRunningProgram();
 		m_context.onConsole("Halt", c -> {
 			Address pc = c.haltCpu();
 			m_context.getMachineState().stopped(pc);

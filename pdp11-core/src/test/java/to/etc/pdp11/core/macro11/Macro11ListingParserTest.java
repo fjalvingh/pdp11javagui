@@ -260,6 +260,29 @@ class Macro11ListingParserTest {
 	}
 
 	/**
+	 * An address of another type that cannot be one of this listing's answers -1, as documented.
+	 *
+	 * <p>FABLE-ISSUES #59: the re-type was a raw {@code Address.of} at the group's width, which
+	 * throws for a value the group's addresses cannot hold - an I/O-page physical PC against a
+	 * virtual code group is exactly that, and it reached the assembler window as an
+	 * IllegalArgumentException where its javadoc promises -1. Below the I/O page a location does
+	 * mean the same thing at every width, and that case still resolves.</p>
+	 */
+	@Test
+	void anAddressThisListingCannotExpressIsNoLineRatherThanAnException() {
+		MemoryCellGroup g = group();
+		Macro11Listing r = Macro11ListingParser.parse(List.of(
+			"       1 001000 012706  000400          \tmov\t#400,sp"), g);
+
+		//-- The PSW, as a 22-bit physical address. There is no code there and never will be.
+		assertEquals(-1, r.listingLineOfAddress(Address.of(MemoryAddressType.PHYSICAL22, 017777776L)));
+		//-- Ordinary memory on a big machine, wider than a virtual address can hold.
+		assertEquals(-1, r.listingLineOfAddress(Address.of(MemoryAddressType.PHYSICAL22, 0400000L)));
+		//-- Below the I/O page the two agree, so this one really is line 0.
+		assertEquals(0, r.listingLineOfAddress(Address.of(MemoryAddressType.PHYSICAL22, 001000)));
+	}
+
+	/**
 	 * A word out of a listing is an edit value with the machine value unknown.
 	 *
 	 * <p>The file says what memory should hold; the machine has not been told. That is what makes

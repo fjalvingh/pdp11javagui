@@ -23,6 +23,9 @@ public final class NumberConverterWindow extends ToolWindow {
 		setContentPane(m_panel);
 		//-- Wide enough for 32 bits of binary in groups of three, which is the widest line here.
 		setSize(new Dimension(560, 340));
+		//-- Not much less: the binary line is what decides this, and eliding it makes the window
+		//-- pointless.
+		setMinimumSize(new Dimension(460, 280));
 	}
 
 	public NumberConverterPanel getPanel() {

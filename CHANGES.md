@@ -119,7 +119,78 @@
   left `UNKNOWN` where something typed used to be. It now copies back only what was actually read,
   and a cancelled examine changes nothing.
 
+- **Halt stops a running machine at once, instead of eight seconds later.** A typed `go` at the
+  SimH Console holds the command thread waiting for a `sim>` prompt that does not come until the
+  simulation stops, so Halt - the control whose whole purpose is stopping it - was queued behind
+  the command that started it and sent only after the command timeout expired. The `^E` now goes
+  out of band, on a thread of its own, and the ordinary `haltCpu` follows it on the command thread
+  and still does all the deciding. The Execution window's Halt does the same.
+- **The Memory Loader, the Memory Dumper, the assembler and the SimH export read and write their
+  files off the event thread.** On a local disk this was instant and invisible; on a stale NFS
+  mount or a stick somebody pulled out, the whole application stopped responding with nothing to
+  say why. The loader and the dumper now say "Reading x ..." / "Writing x ..." and hold their own
+  button down until it is over. Two costs that were being paid over and over on the event thread
+  are cached for a few seconds each: looking for `macro11` on the PATH, which every repaint of two
+  windows was doing, and enumerating serial ports, which the connection dialog did in its
+  constructor and again on every profile change.
+- **The six windows that could be dragged into unusable slivers have a minimum size.** MMU,
+  Microcode, Log, SimH Console, Number Converter and Execution set none, where the other eight
+  did; a test now checks all fourteen, because "the ones that have one" is not something anybody
+  can keep track of by hand.
+- **A paper tape's entry block is checksummed like every other block.** Its checksum byte was
+  never verified and was re-read as a possible block header, so an entry address whose two bytes
+  sum to 248 - 000370 among them - produced a warning about a damaged block on a perfectly good
+  tape.
+- **`eval`'s third argument works.** m4's `eval(expr, radix, width)` zero-pads to the width, and
+  the width was accepted and ignored - which is the "silently wrong I/O page" failure the
+  preprocessor exists to prevent: an address written to come out six digits long came out three. A
+  radix or width that is not a number is now an m4 error naming the file, not a bare
+  `NumberFormatException`.
+- **One vocabulary for opening a file.** "Load listing..." in the Microcode window is "Open
+  listing ..." - the same words the Assembler uses for the same act, spelled the way every other
+  ellipsis in the application is - and the connection dialog's Browse button says "Browse ..."
+  rather than being three dots on their own, which says what it does to nobody. The Microcode file
+  chooser says what its multi-selection is for. Table headers are in Title case, MMU and Microcode
+  field labels have their colons, and the memory test window's "Clear log" is "Clear" like the
+  other two.
+- **The Dumper's entry address sits with the file, not with the range.** It was among the
+  addresses that say what to read off the machine, a row away from the format selector that shows
+  and hides it.
+- **Ctrl/Cmd+Comma no longer opens the connection settings.** It is the macOS preferences
+  convention and means nothing on Linux. Connect and Quit keep theirs.
+
 ### Internal
+
+- **The Log window misses nothing while it is opening, and sees things in the order they
+  happened.** Asking the logger for its history and then subscribing is two calls with a gap
+  between them, and a line logged in the gap was buffered and never shown until the window was
+  closed and opened again; and `log()` called the listener after releasing its lock, so two
+  threads logging at once could reach the window in the opposite order to the buffer. Both are now
+  the shape `TextChannel` has had all along: `UiLogger.subscribe` replays and subscribes under one
+  lock, and delivery happens inside it.
+- **A command SimH echoed late is no longer read as a command SimH rejected.** When the echo does
+  not arrive within the timeout the reply is read from the start of the answers, which puts the
+  echo itself inside the range the rejection check scans - so an echo that turned up after the
+  wait gave up but before the prompt made a successful `DEPOSIT` or `RESET` look refused.
+- **The simulated serial line delays only the direction the bytes are going.** `FakeTransport`
+  slept out its per-byte delay holding the fake's monitor, so one direction's delay blocked the
+  other and the scheduler's run-to-halt callback with it. Only used when the delay is turned on,
+  which is for watching the terminal.
+- **The ODT lexer answers end-of-input everywhere it is asked to.** `nextSymbol(false)` is
+  documented to say so rather than throw, and only one of its three ways of running out of input
+  honoured that.
+- **`Macro11Listing.listingLineOfAddress` returns the -1 it documents.** It re-typed the address
+  to the code group's width by raw value, which throws for anything the group cannot hold - an
+  I/O-page physical PC against a virtual code group is exactly that.
+- **Dead code removed:** `AbstractConsole.waitForAnswer`, `ConsoleScanner.take()`/`peek()`,
+  `MemoryCell.assignFrom` (which rewrote a cell's address without reindexing) and
+  `Macro11.Run.timedOut` (always false: a timeout throws before any `Run` is built).
+  `MemoryCellGroups.changeAddressWidth` stays and the documents that disagreed with it were
+  corrected - it is not needed by the application, which is not the same as not being ported, and
+  the address model has to be able to do it.
+- **Every table column has a minimum width as well as a preferred one**, in the two tables that
+  set only the second. AUTO_RESIZE_OFF makes that invisible today, which is exactly why a change
+  of resize mode would have regressed it silently.
 
 - **One owner for the memory cells.** The application's single `MemoryCellGroups` is reached
   from the event thread (every window adds a group when it opens), from the command thread (a

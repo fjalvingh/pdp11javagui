@@ -563,12 +563,18 @@ public final class SimhConsole extends AbstractConsole {
 	 * to the prompt, so a plain prompt check does not notice. {@code DEPOSIT} and {@code RESET}
 	 * produce no output at all when they work, so any line at all after the echo means
 	 * rejection.</p>
+	 *
+	 * <p>When {@link #sendCommand} could not find the echo it answers -1 and everything is read
+	 * from position 0, which puts the command's own echo inside the range scanned here if it
+	 * arrived after the wait gave up but before the prompt. That is a successful command, not a
+	 * rejected one, so the echo is skipped by text exactly as {@link #command} skips it.</p>
 	 */
-	private void checkPromptNoOutput(int echoIndex, String errinfo) throws ConsoleException {
+	private void checkPromptNoOutput(int echoIndex, String command, String errinfo) throws ConsoleException {
 		checkPromptAfter(echoIndex + 1, errinfo);
+		String echoed = command.trim();
 		StringBuilder err = new StringBuilder();
 		for(AnswerPhrase p : getAnswers().snapshotFrom(echoIndex + 1)) {
-			if(p instanceof AnswerPhrase.OtherLine ol && !ol.text().isBlank())
+			if(p instanceof AnswerPhrase.OtherLine ol && !ol.text().isBlank() && !ol.text().trim().equals(echoed))
 				err.append(ol.text().trim()).append(' ');
 		}
 		String text = err.toString().trim();
@@ -803,7 +809,7 @@ public final class SimhConsole extends AbstractConsole {
 
 		String cmd = "D " + operand + " " + Octal.format(value & 0xFFFF, 1);
 		int echo = sendCommand(cmd);
-		checkPromptNoOutput(echo, "DEPOSIT failed, no prompt");
+		checkPromptNoOutput(echo, cmd, "DEPOSIT failed, no prompt");
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -902,7 +908,7 @@ public final class SimhConsole extends AbstractConsole {
 	@Override
 	public void resetMachine(Address newPc) throws ConsoleException {
 		int echo = sendCommand("reset all");
-		checkPromptNoOutput(echo, "Reset failed, no prompt");
+		checkPromptNoOutput(echo, "reset all", "Reset failed, no prompt");
 		m_cpuState = CpuState.HALTED;                       // a reset always halts
 	}
 
@@ -982,6 +988,21 @@ public final class SimhConsole extends AbstractConsole {
 		}
 		checkPrompt("Stopping CPU failed, no prompt");
 		return halt.haltAddr();
+	}
+
+	/**
+	 * Write the {@code ^E} straight at the transport, without queueing behind the command
+	 * thread.
+	 *
+	 * <p>See {@link Console#interruptRunningProgram}. Nothing is decided here: the state is not
+	 * touched and no answer is read, because the {@link #haltCpu} that follows does both, and
+	 * the extra {@code ^E} it sends is inert on a machine that has already stopped - which is
+	 * the same reason the Pascal can send this one unconditionally.</p>
+	 */
+	@Override
+	public boolean interruptRunningProgram() {
+		ConsoleConnection c = getConnection();
+		return c != null && c.sendOutOfBand(String.valueOf(HALT_CHAR));
 	}
 
 	/**

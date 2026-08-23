@@ -60,6 +60,16 @@ class MemoryLoaderPanelTest {
 		throw new AssertionError("Timed out waiting for " + what);
 	}
 
+	/**
+	 * Wait for a load to finish: the file is read off the event thread, so the click that starts
+	 * one returns before it has happened (FABLE-ISSUES #62). The Load button coming back is what
+	 * says it is over, whether it worked or not - and a load that was refused before it started
+	 * never disabled it, so this returns at once for those.
+	 */
+	private static void untilLoaded(MemoryLoaderPanel panel) {
+		until("the load to finish", () -> Edt.call(() -> panel.getLoadButton().isEnabled()));
+	}
+
 	/** A text listing, which is the format that is easiest to write by hand. */
 	private static Path textFile(Path dir, String content) throws Exception {
 		Path f = dir.resolve("program.txt");
@@ -96,6 +106,7 @@ class MemoryLoaderPanelTest {
 			panel.getFileField(0).setText(file.toString());
 			panel.getLoadButton().doClick();
 		});
+		untilLoaded(panel);
 
 		assertEquals(3, panel.getGroup().size());
 		assertEquals(012701, panel.getGroup().cell(0).getEditValue().word());
@@ -119,6 +130,7 @@ class MemoryLoaderPanelTest {
 				panel.getFileField(0).setText(file.toString());
 				panel.getLoadButton().doClick();
 			});
+			untilLoaded(panel);
 			assertTrue(panel.getDepositAllButton().isEnabled());
 			Edt.run(() -> panel.getDepositAllButton().doClick());
 			until("the deposit to finish", () -> !panel.getGroup().cell(0).isEdited());
@@ -162,6 +174,7 @@ class MemoryLoaderPanelTest {
 				panel.getFileField(0).setText(file.toString());
 				panel.getLoadButton().doClick();
 			});
+			untilLoaded(panel);
 			Edt.run(() -> panel.getDepositAllButton().doClick());
 			until("the deposit to finish", () -> !panel.getGroup().cell(0).isEdited());
 			Edt.run(() -> {
@@ -170,6 +183,7 @@ class MemoryLoaderPanelTest {
 			//-- File B, loaded and deliberately not deposited: this is what has to survive.
 			Files.writeString(file, "001000: 000333 000444\n", StandardCharsets.US_ASCII);
 			Edt.run(() -> panel.getLoadButton().doClick());
+			untilLoaded(panel);
 			assertTrue(panel.getGroup().cell(0).isEdited(), "nothing has been written to the machine");
 
 			//-- Another window examines the same addresses. Every group at those addresses is
@@ -219,6 +233,7 @@ class MemoryLoaderPanelTest {
 			loader.getFileField(0).setText(tape.toString());
 			loader.getLoadButton().doClick();
 		});
+		untilLoaded(loader);
 
 		assertEquals("001000", loader.getEntryField().getText());
 		assertEquals("001000", execution.getStartPcField().getText(),
@@ -239,6 +254,7 @@ class MemoryLoaderPanelTest {
 				panel.getFileField(0).setText(file.toString());
 				panel.getLoadButton().doClick();
 			});
+			untilLoaded(panel);
 
 			//-- Nothing deposited yet, so the machine holds zeros and everything disagrees.
 			Edt.run(() -> panel.getVerifyButton().doClick());
@@ -280,6 +296,7 @@ class MemoryLoaderPanelTest {
 			panel.getFileField(0).setText(dir.resolve("nope.bin").toString());
 			panel.getLoadButton().doClick();
 		});
+		untilLoaded(panel);
 		assertTrue(failures.toString().contains("Could not read"), failures.toString());
 		assertTrue(panel.getGroup().isEmpty());
 	}
@@ -304,6 +321,7 @@ class MemoryLoaderPanelTest {
 			panel.getFileField(0).setText(file.toString());
 			panel.getLoadButton().doClick();
 		});
+		untilLoaded(panel);
 		Path png = UiRenderer.renderToFile(panel, 980, 460, Path.of("target", "ui-render", "memory-loader.png"));
 		assertTrue(Files.size(png) > 0);
 	}

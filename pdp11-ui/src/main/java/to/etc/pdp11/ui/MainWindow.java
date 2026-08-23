@@ -151,8 +151,10 @@ public final class MainWindow extends JFrame {
 		connect.addActionListener(e -> connect(m_context.getSettings().currentProfile()));
 		m_connectItem = connect;
 
+		//-- No accelerator. Ctrl/Cmd+Comma is the macOS preferences convention and means nothing
+		//-- on the Linux this port is for, and opening the connection dialog is not something
+		//-- anybody does often enough to reach for a key (FABLE-ISSUES #63).
 		JMenuItem settings = new JMenuItem("Connection settings ...");
-		settings.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, menuMask));
 		settings.addActionListener(e -> SettingsDialog.open(this, m_context, this::connect));
 
 		JMenuItem disconnect = new JMenuItem("Disconnect");

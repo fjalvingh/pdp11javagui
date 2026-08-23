@@ -4,15 +4,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
+import to.etc.pdp11.ui.dump.MemoryDumperWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
+import to.etc.pdp11.ui.load.MemoryLoaderWindow;
 import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.macro11.AssemblerWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
+import to.etc.pdp11.ui.memtest.MemoryTestWindow;
 import to.etc.pdp11.ui.microcode.MicrocodeWindow;
 import to.etc.pdp11.ui.mmu.MmuWindow;
 import to.etc.pdp11.ui.numbers.NumberConverterWindow;
+import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.simh.SimhConsoleWindow;
 import to.etc.pdp11.ui.window.ToolWindow;
@@ -639,10 +644,14 @@ class WindowsBuildTest {
 		}
 	}
 
-	@Test
-	void everyToolWindowBuilds(@TempDir Path dir) throws Exception {
-		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
-		AppContext ctx = context(dir);
+	/** The window types this test can build without a machine description behind them. */
+	private static final WindowType[] SELF_CONTAINED_WINDOWS = {
+		WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION, WindowType.DISASSEMBLER,
+		WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE, WindowType.MMU, WindowType.MICROCODE,
+		WindowType.NUMBER_CONVERTER, WindowType.BITFIELDS, WindowType.MEMORY_TEST,
+		WindowType.MEMORY_DUMPER, WindowType.MEMORY_LOADER, WindowType.IO_PAGE_SCANNER};
+
+	private static void registerSelfContainedWindows(AppContext ctx) {
 		LogWindow.register(ctx);
 		MemoryWindow.register(ctx);
 		ExecutionWindow.register(ctx);
@@ -652,13 +661,56 @@ class WindowsBuildTest {
 		MmuWindow.register(ctx);
 		MicrocodeWindow.register(ctx);
 		NumberConverterWindow.register(ctx);
+		BitfieldsWindow.register(ctx);
+		MemoryTestWindow.register(ctx);
+		MemoryDumperWindow.register(ctx);
+		MemoryLoaderWindow.register(ctx);
+		IoPageScannerWindow.register(ctx);
+	}
+
+	@Test
+	void everyToolWindowBuilds(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		registerSelfContainedWindows(ctx);
 		try {
-			for(WindowType type : new WindowType[] {WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION,
-				WindowType.DISASSEMBLER, WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE, WindowType.MMU, WindowType.MICROCODE,
-				WindowType.NUMBER_CONVERTER}) {
+			for(WindowType type : SELF_CONTAINED_WINDOWS) {
 				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
 				assertNotNull(w, type + " builds");
 				assertTrue(w.getTitle().startsWith(type.getTitle()), w.getTitle());
+			}
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * A window has a floor it cannot be dragged below.
+	 *
+	 * <p>FABLE-ISSUES #61: eight of the fourteen set one and six did not, so the MMU, Microcode,
+	 * Log, SimH Console, Number Converter and Execution windows could be dragged into slivers
+	 * showing nothing - the kind of state a window manager will happily save and restore. Every
+	 * window is checked rather than the six, because "the ones that have one" is not a property
+	 * anybody can keep track of by hand.</p>
+	 */
+	@Test
+	void everyToolWindowHasAMinimumSizeItCannotBeSquashedBelow(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		registerSelfContainedWindows(ctx);
+		try {
+			for(WindowType type : SELF_CONTAINED_WINDOWS) {
+				ToolWindow w = onEdt(() -> ctx.getWindowManager().open(type));
+				assertTrue(w.isMinimumSizeSet(), type + " sets no minimum size");
+				java.awt.Dimension min = w.getMinimumSize();
+				assertTrue(min.width >= 200 && min.height >= 120,
+					type + " minimum size is " + min.width + "x" + min.height);
+				assertTrue(min.width <= w.getWidth() && min.height <= w.getHeight(),
+					type + " cannot fit its own opening size: min " + min.width + "x" + min.height
+						+ ", opens at " + w.getWidth() + "x" + w.getHeight());
 			}
 		} finally {
 			onEdt(() -> {

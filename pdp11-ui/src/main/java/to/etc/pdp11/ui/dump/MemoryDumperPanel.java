@@ -24,7 +24,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.Font;
 import java.awt.Window;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +49,9 @@ public final class MemoryDumperPanel extends JPanel {
 	private final AppContext m_context;
 
 	private final MemoryCellGroup m_group;
+
+	/** A file is being written right now, so nothing may start a second one. */
+	private boolean m_writing;
 
 	private final MemoryCellGroupTable m_grid;
 
@@ -113,15 +115,17 @@ public final class MemoryDumperPanel extends JPanel {
 		return console == null ? MemoryAddressType.PHYSICAL22 : console.physicalAddressType();
 	}
 
+	/**
+	 * The range to read off the machine. Nothing about the file being written is here - see
+	 * {@link #buildFileBar}.
+	 */
 	private JPanel buildRangeBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]8[][]16[]16[][]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]8[][]16[]", "[]"));
 		bar.add(new JLabel("From:"));
 		bar.add(m_startAddr);
 		bar.add(new JLabel("to:"));
 		bar.add(m_endAddr);
 		bar.add(m_examine);
-		bar.add(m_entryLabel);
-		bar.add(m_entryAddr);
 		m_examine.setToolTipText("Read this range off the machine into the grid below");
 		m_examine.addActionListener(e -> readFromMachine());
 		m_startAddr.addActionListener(e -> readFromMachine());
@@ -130,10 +134,23 @@ public final class MemoryDumperPanel extends JPanel {
 		return bar;
 	}
 
+	/**
+	 * The file: its format, its name or names, and the entry address the format may want.
+	 *
+	 * <p>The entry address used to sit in the range bar above, next to the addresses that say
+	 * what to read off the machine - which is a different subject, and worse, it was shown and
+	 * hidden by the format selector in this bar with a whole row between the two
+	 * (FABLE-ISSUES #63). It is a property of the file, so it lives beside the thing that
+	 * decides whether the file has one.</p>
+	 */
 	private JPanel buildFileBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][grow][]", "[][][]"));
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][grow][][]", "[][][]"));
 		bar.add(new JLabel("Format:"));
 		bar.add(m_format, "growx");
+		JPanel entry = new JPanel(new MigLayout("insets 0", "[][]", "[]"));
+		entry.add(m_entryLabel);
+		entry.add(m_entryAddr);
+		bar.add(entry);
 		bar.add(m_dump, "wrap");
 		m_format.addActionListener(e -> showFormat());
 		m_dump.addActionListener(e -> writeFile());
@@ -151,7 +168,7 @@ public final class MemoryDumperPanel extends JPanel {
 			m_fileBrowse.add(browse);
 			bar.add(label);
 			bar.add(field, "growx");
-			bar.add(browse, "wrap");
+			bar.add(browse, "span 2, wrap");
 		}
 		return bar;
 	}
@@ -252,19 +269,30 @@ public final class MemoryDumperPanel extends JPanel {
 			if(entry == null)
 				return;
 		}
-		try {
-			MemoryDumper.Result r = MemoryDumper.save(f, m_group, files, entry);
-			m_context.getLogger().log(LogChannel.OTHER, "Wrote %d words to %s", r.wordsWritten(), files.get(0));
-			m_status.setText(r.wordsWritten() + " words written to " + files.get(0).getFileName()
-				+ (f == MemoryFileFormat.ABSOLUTE_PAPERTAPE ? " in " + r.blocks() + " blocks" : "")
-				+ (r.isComplete() ? ""
-					: "  -  " + r.unknownWords() + " word" + (r.unknownWords() == 1 ? "" : "s")
-						+ " had never been read from the machine"),
-				r.isComplete() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
-		} catch(IOException | RuntimeException x) {
-			m_context.reportFailure("Could not write " + files.get(0), x);
-			m_status.setText("Nothing written", UiColors.ERROR_TEXT);
-		}
+		//-- Off the event thread: writing a dump is file I/O, and on a mount that has gone away
+		//-- it does not come back (FABLE-ISSUES #62). The button stays down until it does.
+		Address entryAddress = entry;
+		m_writing = true;
+		updateButtons();
+		m_status.setText("Writing " + files.get(0).getFileName() + " ...", UiColors.SECONDARY_TEXT);
+		m_context.onFile("Could not write " + files.get(0),
+			() -> MemoryDumper.save(f, m_group, files, entryAddress),
+			r -> {
+				m_writing = false;
+				m_context.getLogger().log(LogChannel.OTHER, "Wrote %d words to %s", r.wordsWritten(), files.get(0));
+				m_status.setText(r.wordsWritten() + " words written to " + files.get(0).getFileName()
+					+ (f == MemoryFileFormat.ABSOLUTE_PAPERTAPE ? " in " + r.blocks() + " blocks" : "")
+					+ (r.isComplete() ? ""
+						: "  -  " + r.unknownWords() + " word" + (r.unknownWords() == 1 ? "" : "s")
+							+ " had never been read from the machine"),
+					r.isComplete() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
+				updateButtons();
+			},
+			() -> {
+				m_writing = false;
+				m_status.setText("Nothing written", UiColors.ERROR_TEXT);
+				updateButtons();
+			});
 	}
 
 	private Address parse(JTextField field, MemoryAddressType type) {
@@ -281,10 +309,10 @@ public final class MemoryDumperPanel extends JPanel {
 	// -------------------------------------------------------------------------------------
 
 	private void updateButtons() {
-		m_examine.setEnabled(m_context.getConnectionManager().isConnected());
+		m_examine.setEnabled(m_context.getConnectionManager().isConnected() && !m_writing);
 		//-- Writing needs cells, not a machine: a dump read earlier can be written after the
 		//-- machine has gone away.
-		m_dump.setEnabled(!m_group.isEmpty());
+		m_dump.setEnabled(!m_group.isEmpty() && !m_writing);
 	}
 
 	private void updateStatus() {

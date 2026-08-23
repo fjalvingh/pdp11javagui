@@ -165,6 +165,21 @@ public final class FakePdp1144V340c extends FakePdp1144 {
 	// Addresses and output format
 	// -------------------------------------------------------------------------------------
 
+	/**
+	 * The highest global register number this firmware will look at.
+	 *
+	 * <p>Thirty-two, not sixteen, and deliberately: the Pascal fake checks
+	 * {@code display_memaddr > 32} ({@code FakePDP1144v340cU.pas:436}), which is the only
+	 * evidence anywhere about what the real V3.40C firmware answers - the console layer's own
+	 * {@code global_register_blocksize} of 16 is a statement about which addresses PDP11GUI
+	 * <i>asks</i> for, not about which ones the firmware rejects. So 16..32 are not
+	 * {@code ?Too big}: they are read like any other address and answer whatever is there,
+	 * which for these is a bus timeout. Nobody has checked that against a real 11/44, and
+	 * changing it on the strength of the number 16 would be inventing firmware behaviour
+	 * rather than porting it (FABLE-ISSUES #60).</p>
+	 */
+	private static final int GLOBAL_REGISTER_TOO_BIG = 32;
+
 	/** Masked into the address space rather than rejected. {@code :365-366}. */
 	@Override
 	protected long maskDepositAddress(long addrValue) {
@@ -186,9 +201,9 @@ public final class FakePdp1144V340c extends FakePdp1144 {
 		//-- already been printed - which is what the console really looks like.
 		print("" + CR + LF + "  " + space + "  " + Octal.format(shown, 8));
 		int value = 0;
-		if(m.global && shown > 32) {
-			//-- Sixteen global registers exist; a higher number is a firmware complaint of its
-			//-- own rather than a bus error, and it is checked before the read for that reason.
+		if(m.global && shown > GLOBAL_REGISTER_TOO_BIG) {
+			//-- A firmware complaint of its own rather than a bus error, which is why it is
+			//-- checked before the read.
 			setError("?Too big");
 		} else {
 			value = safeGetMem(addr);

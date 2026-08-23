@@ -22,6 +22,8 @@ public final class MmuWindow extends ToolWindow {
 		setContentPane(m_panel);
 		//-- Wide enough for the status line beside the mode selector to be read rather than elided.
 		setSize(new Dimension(900, 520));
+		//-- The map is eight columns wide; below this the addresses in it start being elided.
+		setMinimumSize(new Dimension(640, 320));
 	}
 
 	public MmuPanel getPanel() {

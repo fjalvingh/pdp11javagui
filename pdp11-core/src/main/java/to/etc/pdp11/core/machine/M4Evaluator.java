@@ -13,9 +13,10 @@ package to.etc.pdp11.core.machine;
  * CSR=eval(0172100+ (($1 - 1) * 2), 8)
  * </pre>
  *
- * <p>Division, modulo and the bitwise and comparison operators are implemented anyway - they
- * are three lines each and their absence would be a puzzling failure rather than an obvious
- * one - but the shift, logical and ternary operators are not. See
+ * <p>Division, modulo and unary {@code ~} are implemented anyway - they are three lines each
+ * and their absence would be a puzzling failure rather than an obvious one. The binary bitwise
+ * operators are not, and neither are the shift, comparison, logical and ternary ones: an
+ * expression using any of them fails loudly at the character it does not recognise. See
  * {@code machines/README.md}.</p>
  *
  * <p><b>The leading zero matters.</b> {@code _offset} is written as
@@ -46,9 +47,36 @@ final class M4Evaluator {
 
 	/** Format for m4's {@code eval(expr, radix)}. Radix 8 is the only one used here. */
 	static String format(long value, int radix) {
+		return format(value, radix, 1);
+	}
+
+	/**
+	 * Format for m4's {@code eval(expr, radix, width)}.
+	 *
+	 * <p>{@code width} is a <b>minimum</b>, zero-padded, exactly as GNU m4 does it, and the
+	 * padding goes after the sign rather than before it. This used to be accepted and silently
+	 * ignored (FABLE-ISSUES #57), which is the "silently wrong I/O page" failure mode
+	 * {@link M4Preprocessor} exists to prevent: an address written {@code eval(0100,8,6)} to
+	 * make it six digits came out as {@code 100}.</p>
+	 */
+	static String format(long value, int radix, int width) {
 		if(radix < 2 || radix > 36)
 			throw new M4Exception("eval: radix must be 2..36, got " + radix);
-		return Long.toString(value, radix);
+		if(width < 0)
+			throw new M4Exception("eval: width cannot be negative, got " + width);
+		boolean negative = value < 0;
+		//-- Long.toString of the magnitude, which for MIN_VALUE has to go the unsigned way
+		//-- round: -MIN_VALUE is still MIN_VALUE.
+		String digits = negative
+			? Long.toString(value, radix).substring(1)
+			: Long.toString(value, radix);
+		StringBuilder sb = new StringBuilder();
+		if(negative)
+			sb.append('-');
+		for(int i = digits.length(); i < width; i++) {
+			sb.append('0');
+		}
+		return sb.append(digits).toString();
 	}
 
 	private long parseExpression() {

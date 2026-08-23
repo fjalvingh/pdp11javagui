@@ -228,9 +228,10 @@ public final class MemoryFileLoader {
 	 * a block may start at an odd address and two blocks may meet inside one word - the format is
 	 * byte-addressed and memory is not.</p>
 	 *
-	 * <p>A block whose data length is zero carries the entry address rather than data. A checksum
-	 * that does not come to zero stops the load: a paper tape image with a bad block is a file
-	 * that would deposit wrong values into a machine, and there is no way to tell which ones.</p>
+	 * <p>A block whose data length is zero carries the entry address rather than data, and is
+	 * checksummed like any other. A checksum that does not come to zero stops the load: a paper
+	 * tape image with a bad block is a file that would deposit wrong values into a machine, and
+	 * there is no way to tell which ones.</p>
 	 */
 	private static Result loadPaperTape(MemoryCellGroup group, Path file, Address startAddr)
 		throws IOException {
@@ -295,9 +296,15 @@ public final class MemoryFileLoader {
 							+ " whose size field says " + blockSize + " bytes");
 						state = 0;
 					} else if(dataBytes == 0) {
-						//-- A block with no data is where to start executing.
+						//-- A block with no data is where to start executing. Its checksum byte
+						//-- is still to come, and going straight back to state 0 left that byte
+						//-- to be read as the start of the next block: when it happens to be 01 -
+						//-- every entry address whose two bytes sum to 248 mod 256, 000370 among
+						//-- them - the bytes after it were misparsed and a good tape came back
+						//-- with a warning on it (FABLE-ISSUES #58). State 7 consumes it and
+						//-- checks it, which is also the only thing that ever verified it.
 						entry = Address.of(startAddr.type(), address);
-						state = 0;
+						state = 7;
 					} else {
 						state = 6;
 					}
@@ -314,6 +321,7 @@ public final class MemoryFileLoader {
 					if(blockByteIdx >= blockSize)
 						state = 7;
 				}
+				//-- State 7: the checksum byte that ends every block, data or entry.
 				default -> {
 					sum += b;
 					if((sum & 0xFF) != 0)

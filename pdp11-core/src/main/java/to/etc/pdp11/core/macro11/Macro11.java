@@ -62,10 +62,28 @@ public final class Macro11 {
 	 */
 	public static final long DEFAULT_TIMEOUT_MS = 5000;
 
-	/** What one run of the assembler did. */
-	public record Run(List<String> command, int exitCode, String output, boolean timedOut) {
+	/** How long {@link #findExecutable}'s answer is reused before the PATH is walked again. */
+	private static final long LOOKUP_TTL_MS = 5000;
+
+	private static final Object LOOKUP_LOCK = new Object();
+
+	/** Guarded by {@link #LOOKUP_LOCK}. Zero means "never looked". */
+	private static long m_lookupAt;
+
+	/** Guarded by {@link #LOOKUP_LOCK}. */
+	private static Path m_lookedUp;
+
+	/**
+	 * What one run of the assembler did.
+	 *
+	 * <p>There is no {@code timedOut} flag. There was, and it was always false: a run that
+	 * exceeds {@link #DEFAULT_TIMEOUT_MS} is killed and reported as a {@link Macro11Exception},
+	 * so no {@code Run} describing it is ever built (FABLE-ISSUES #55). A record of it would
+	 * have to be reached through the exception, and the exception already says what happened.</p>
+	 */
+	public record Run(List<String> command, int exitCode, String output) {
 		public boolean succeeded() {
-			return !timedOut && exitCode == 0;
+			return exitCode == 0;
 		}
 	}
 
@@ -93,7 +111,43 @@ public final class Macro11 {
 	 * Windows original ran a {@code macro11.bat} sitting beside the executable; that is gone,
 	 * and with it the assumption that the tool travels with the application.</p>
 	 */
+	/**
+	 * Where {@code macro11} is, or null.
+	 *
+	 * <p><b>Cached for {@link #LOOKUP_TTL_MS}</b>, because the answer decides whether a button is
+	 * enabled and so is asked for on every {@code updateButtons()} - a repaint storm was walking
+	 * the whole PATH doing two filesystem checks per entry, on the event thread, tens of times a
+	 * second (FABLE-ISSUES #62). A short life rather than none at all: installing the assembler
+	 * while the application is running still gets noticed, within a few seconds, without anything
+	 * having to know to ask again.</p>
+	 */
 	public static Path findExecutable() {
+		long now = System.nanoTime();
+		synchronized(LOOKUP_LOCK) {
+			if(m_lookupAt != 0 && now - m_lookupAt < LOOKUP_TTL_MS * 1_000_000L)
+				return m_lookedUp;
+		}
+		Path found = searchPath();
+		synchronized(LOOKUP_LOCK) {
+			m_lookedUp = found;
+			m_lookupAt = System.nanoTime();
+		}
+		return found;
+	}
+
+	/**
+	 * Throw the cached answer away, so the next {@link #findExecutable} really looks.
+	 *
+	 * <p>For tests that change the PATH under it; nothing in the application needs this.</p>
+	 */
+	public static void forgetExecutable() {
+		synchronized(LOOKUP_LOCK) {
+			m_lookupAt = 0;
+			m_lookedUp = null;
+		}
+	}
+
+	private static Path searchPath() {
 		String path = System.getenv("PATH");
 		if(path == null || path.isEmpty())
 			return null;
@@ -260,7 +314,7 @@ public final class Macro11 {
 		}
 		if(!text.isBlank())
 			logger.log(LogChannel.OTHER, "MACRO11: %s", text.strip());
-		return new Run(List.copyOf(command), process.exitValue(), text, false);
+		return new Run(List.copyOf(command), process.exitValue(), text);
 	}
 
 	private static void drainInto(InputStream in, StringBuilder into) {

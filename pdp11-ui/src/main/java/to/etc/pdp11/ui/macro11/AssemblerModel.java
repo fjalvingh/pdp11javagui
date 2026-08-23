@@ -244,9 +244,26 @@ public final class AssemblerModel {
 	 * the file unchanged.</p>
 	 */
 	public void loadSource(Path file) throws IOException {
-		//-- ISO-8859-1 for the same reason the listing is read that way: assembler source is
-		//-- bytes, and a stray high byte must not fail the read on a UTF-8 machine.
-		String text = Files.readString(file, StandardCharsets.ISO_8859_1);
+		installSource(file, readSourceText(file));
+	}
+
+	/**
+	 * Read a source file, and nothing else.
+	 *
+	 * <p>Separated from {@link #installSource} so the read can happen off the event thread while
+	 * the state change stays on it - {@link #loadSourceOffTheEventThread} is that pairing, and
+	 * the synchronous {@link #loadSource} above is the two of them together for the callers that
+	 * are already off it.</p>
+	 *
+	 * <p>ISO-8859-1 for the same reason the listing is read that way: assembler source is bytes,
+	 * and a stray high byte must not fail the read on a UTF-8 machine.</p>
+	 */
+	public static String readSourceText(Path file) throws IOException {
+		return Files.readString(file, StandardCharsets.ISO_8859_1);
+	}
+
+	/** Take text that has already been read as the program being worked on. */
+	public void installSource(Path file, String text) {
 		m_sourceText = text;
 		m_savedText = text;
 		m_sourceFile = file.toAbsolutePath();
@@ -256,11 +273,42 @@ public final class AssemblerModel {
 		fire();
 	}
 
+	/**
+	 * Open a source file without freezing the window while the file is read.
+	 *
+	 * <p>FABLE-ISSUES #62: every load, save and export ran on the event thread. That is instant
+	 * on a local disk and unbounded on a mount that has gone away, and there is no reason for the
+	 * one to be indistinguishable from the other.</p>
+	 */
+	public void loadSourceOffTheEventThread(Path file, Runnable whenDone) {
+		m_context.onFile("Could not read " + file, () -> readSourceText(file), text -> {
+			installSource(file, text);
+			if(whenDone != null)
+				whenDone.run();
+		}, null);
+	}
+
 	/** Write the editor's contents out, and remember that this is now the source file. */
 	public void saveSource(Path file) throws IOException {
 		Path target = file.toAbsolutePath();
 		Files.writeString(target, m_sourceText, StandardCharsets.ISO_8859_1);
-		m_savedText = m_sourceText;
+		sourceSaved(target, m_sourceText);
+	}
+
+	/** Save without freezing the window while the file is written. See {@link #loadSourceOffTheEventThread}. */
+	public void saveSourceOffTheEventThread(Path file) {
+		Path target = file.toAbsolutePath();
+		//-- Taken here, on the event thread, so the worker writes what the editor held when the
+		//-- button was pressed rather than whatever it holds by the time the write happens.
+		String text = m_sourceText;
+		m_context.onFile("Could not write " + target, () -> {
+			Files.writeString(target, text, StandardCharsets.ISO_8859_1);
+			return target;
+		}, written -> sourceSaved(written, text), null);
+	}
+
+	private void sourceSaved(Path target, String text) {
+		m_savedText = text;
 		m_sourceFile = target;
 		rememberSourceFile();
 		m_context.getLogger().log(LogChannel.OTHER, "Saved MACRO-11 source %s", target);
@@ -380,7 +428,29 @@ public final class AssemblerModel {
 	 * still be deposited into a machine without the source or the assembler being present.</p>
 	 */
 	public void loadListing(Path file) throws IOException {
-		Macro11Listing listing = Macro11ListingParser.parse(file, getGroup());
+		installListing(file, Macro11ListingParser.parse(file, getGroup().getType()));
+	}
+
+	/**
+	 * Read and parse a listing off the event thread, and install it back on it.
+	 *
+	 * <p>The parse is detached - {@link Macro11ListingParser.Parsed} holds words, not cells - so
+	 * the only thing that touches the code group is {@code installInto}, which runs on the event
+	 * thread with everything else that does. Same split as an assembly, and the same reason.</p>
+	 */
+	public void loadListingOffTheEventThread(Path file, Runnable whenDone) {
+		MemoryAddressType type = getGroup().getType();
+		m_context.onFile("Could not read " + file,
+			() -> Macro11ListingParser.parse(file, type),
+			parsed -> {
+				installListing(file, parsed);
+				if(whenDone != null)
+					whenDone.run();
+			}, null);
+	}
+
+	private void installListing(Path file, Macro11ListingParser.Parsed parsed) {
+		Macro11Listing listing = parsed.installInto(getGroup());
 		m_listing = listing;
 		m_listingFile = file.toAbsolutePath();
 		//-- Loaded, not assembled: there is no source behind this and nothing to mark errors in.

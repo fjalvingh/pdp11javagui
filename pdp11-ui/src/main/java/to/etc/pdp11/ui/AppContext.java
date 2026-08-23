@@ -36,6 +36,11 @@ import java.util.function.BiConsumer;
  * no way to get one from nowhere; that is deliberate, and it is what keeps a window testable.</p>
  */
 public final class AppContext {
+	/**
+	 * Runs {@link #onFile}, created on first use. Guarded by this context's monitor.
+	 */
+	private java.util.concurrent.ExecutorService m_fileExecutor;
+
 	private final SettingsStore m_settingsStore;
 
 	private final Logger m_logger;
@@ -287,6 +292,64 @@ public final class AppContext {
 			return false;
 		}
 		return true;
+	}
+
+	/** File work: runs off the event thread, and may throw. */
+	public interface FileJob<T> {
+		T run() throws Exception;
+	}
+
+	/**
+	 * Read or write a file without freezing the application while it happens.
+	 *
+	 * <p>The counterpart of {@link #onConsole} for the other slow thing a window does. On a
+	 * local disk a load or a save is instant and this changes nothing; on a stale NFS mount or a
+	 * USB stick somebody pulled out it is the difference between a window that says "Loading ..."
+	 * and an application that has stopped responding with no clue why (FABLE-ISSUES #62).</p>
+	 *
+	 * <p>File jobs run one at a time, on one thread, so two saves cannot interleave. The job runs
+	 * <b>off the event thread</b> and must therefore touch nothing that belongs to it - Swing
+	 * components above all. Memory cell groups are safe: they are guarded by
+	 * {@link MemoryCellGroups#lock()} and are already mutated from the command thread. Whatever
+	 * the job answers is handed to {@code onDone} back on the event thread; a job that throws is
+	 * reported through {@link #reportFailure} and {@code onFailed} runs instead, so a window can
+	 * put its buttons back either way.</p>
+	 *
+	 * @param what     names the operation in a failure message
+	 * @param job      the file work
+	 * @param onDone   given the job's answer, on the event thread
+	 * @param onFailed run on the event thread instead of {@code onDone}; may be null
+	 */
+	public <T> void onFile(String what, FileJob<T> job, java.util.function.Consumer<T> onDone, Runnable onFailed) {
+		fileExecutor().execute(() -> {
+			T result;
+			try {
+				result = job.run();
+			} catch(Exception x) {
+				onUi(() -> {
+					reportFailure(what, x);
+					if(onFailed != null)
+						onFailed.run();
+				});
+				return;
+			}
+			onUi(() -> onDone.accept(result));
+		});
+	}
+
+	private synchronized java.util.concurrent.ExecutorService fileExecutor() {
+		java.util.concurrent.ExecutorService e = m_fileExecutor;
+		if(e == null) {
+			e = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+				Thread t = new Thread(r, "pdp11-file");
+				//-- Daemon: a write blocked on a mount that has gone away must not keep the JVM
+				//-- alive after the last window closes.
+				t.setDaemon(true);
+				return t;
+			});
+			m_fileExecutor = e;
+		}
+		return e;
 	}
 
 	/** Do this on the event thread, from wherever you are. */

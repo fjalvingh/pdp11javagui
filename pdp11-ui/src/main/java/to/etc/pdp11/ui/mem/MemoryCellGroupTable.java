@@ -18,6 +18,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
@@ -212,12 +213,26 @@ public final class MemoryCellGroupTable extends JPanel {
 		m_onUpdate.run();
 	}
 
+	/**
+	 * Both widths, never just the preferred one.
+	 *
+	 * <p>AUTO_RESIZE_OFF makes this invisible today, which is exactly why it is worth setting:
+	 * any auto-resize mode redistributes the preferred widths on the first layout pass and keeps
+	 * the result, so a column asked for at 110 comes back at 67 with its address elided beside
+	 * an emptier neighbour. A later change of resize mode would regress this silently
+	 * (FABLE-ISSUES #61). The minimum is the address a column has to be able to show; the value
+	 * columns get theirs from six octal digits.</p>
+	 */
 	private void sizeColumns() {
 		if(m_table.getColumnCount() == 0)
 			return;
-		m_table.getColumnModel().getColumn(0).setPreferredWidth(110);
+		TableColumn first = m_table.getColumnModel().getColumn(0);
+		first.setPreferredWidth(110);
+		first.setMinWidth(70);
 		for(int i = 1; i < m_table.getColumnCount(); i++) {
-			m_table.getColumnModel().getColumn(i).setPreferredWidth(72);
+			TableColumn c = m_table.getColumnModel().getColumn(i);
+			c.setPreferredWidth(72);
+			c.setMinWidth(56);
 		}
 	}
 
@@ -479,7 +494,7 @@ public final class MemoryCellGroupTable extends JPanel {
 		@Override
 		public String getColumnName(int column) {
 			//-- "start \ offset" in the corner, and the byte offset over each value column.
-			return column == 0 ? "start \\ offset" : "+" + Octal.format((column - 1) * 2L, 1);
+			return column == 0 ? "Start \\ offset" : "+" + Octal.format((column - 1) * 2L, 1);
 		}
 
 		@Override

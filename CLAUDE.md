@@ -210,8 +210,12 @@ breaks for everyone whose copy is not already on disk.
 Descriptions declare every address as a **16-bit I/O page address** so one definition serves 16,
 18 and 22-bit machines. Nothing has to be done about that: every console normalises addresses to
 its own width in its own `toPhysical`, and `MemoryCellGroups` keys its propagation index on the
-22-bit form. The Pascal's `ChangeAdddressWidth`, called from nine places in `FormMainU`, is not
-ported and is not needed — `RegisterGroupWidthTest` holds that claim down.
+22-bit form. The Pascal's `ChangeAdddressWidth`, called from nine places in `FormMainU`, **is not
+needed** — `RegisterGroupWidthTest` holds that claim down, and nothing in the application calls
+the Java equivalent. It *is* ported, as `MemoryCellGroups.changeAddressWidth`, with tests: the
+address model has to be able to re-express a group at another width and reindex it, and a routine
+that is described but does not exist cannot be checked. Do not call it to "fix" a width; if a
+window seems to need it, the address is being compared at the wrong width somewhere else.
 
 ## External tools
 

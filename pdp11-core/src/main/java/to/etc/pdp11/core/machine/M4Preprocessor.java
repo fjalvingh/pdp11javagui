@@ -121,6 +121,9 @@ public final class M4Preprocessor {
 
 	/** Preprocess text. {@code origin} only names the source in error messages. */
 	public String process(String text, String origin) {
+		//-- Per run, not cumulative: the count calibrates MAX_EXPANSIONS and reports what the
+		//-- last run cost, and a reused instance was adding every earlier run to both.
+		m_expansions = 0;
 		try {
 			return scan(text);
 		} catch(M4Exception x) {
@@ -223,14 +226,33 @@ public final class M4Preprocessor {
 				if(args.isEmpty() || args.size() > 3)
 					throw new M4Exception("eval takes 1 to 3 arguments, got " + args.size());
 				long v = M4Evaluator.evaluate(args.get(0));
-				int radix = args.size() > 1 && !args.get(1).isBlank()
-					? Integer.parseInt(args.get(1).trim())
-					: 10;
-				yield M4Evaluator.format(v, radix);
+				//-- The third argument is a minimum width, zero-padded. Accepting it and
+				//-- ignoring it is how an address that was written to be six digits long comes
+				//-- out as three (FABLE-ISSUES #57).
+				yield M4Evaluator.format(v, intArg(args, 1, 10, "radix"), intArg(args, 2, 1, "width"));
 			}
 			default -> throw new M4Exception("m4 builtin '" + name + "' is used but not implemented; "
 				+ "see machines/README.md for the subset the machine descriptions were measured to need");
 		};
+	}
+
+	/**
+	 * One of {@code eval}'s trailing numeric arguments, or {@code fallback} when it is absent
+	 * or empty.
+	 *
+	 * <p>A bare {@code NumberFormatException} out of here says "For input string" and names
+	 * neither the file nor the macro; every other way of writing a machine description wrongly
+	 * produces an {@link M4Exception}, which {@code process()} then prefixes with the source.</p>
+	 */
+	private static int intArg(List<String> args, int index, int fallback, String what) {
+		if(args.size() <= index || args.get(index).isBlank())
+			return fallback;
+		String text = args.get(index).trim();
+		try {
+			return Integer.parseInt(text);
+		} catch(NumberFormatException x) {
+			throw new M4Exception("eval: " + what + " must be a number, got \"" + text + "\"");
+		}
 	}
 
 	/** Substitute {@code $0}..{@code $9} in a macro body. */

@@ -162,7 +162,7 @@ public final class MemoryTestPanel extends JPanel {
 		bar.add(m_addressLines);
 		bar.add(m_dataBits);
 		bar.add(m_random);
-		JButton clear = new JButton("Clear log");
+		JButton clear = new JButton("Clear");
 		bar.add(clear);
 
 		m_dataLines.setToolTipText("Move a one and a zero through the sixteen data bits;"

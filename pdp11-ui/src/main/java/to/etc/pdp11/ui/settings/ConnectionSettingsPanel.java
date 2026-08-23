@@ -144,7 +144,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 		simh.add(new JLabel(""), "wrap");
 		simh.add(new JLabel("Configuration:"));
 		simh.add(m_simhConfig, "growx");
-		JButton browse = new JButton("...");
+		JButton browse = new JButton("Browse ...");
 		browse.addActionListener(e -> chooseSimhConfig());
 		simh.add(browse, "wrap");
 

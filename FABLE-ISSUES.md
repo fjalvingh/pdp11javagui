@@ -1106,6 +1106,17 @@ and-clear under the decode lock.
 ### 47. SimH echo-fallback can misreport a successful command as rejected *(needs confirmation)*
 `pdp11-core/.../console/SimhConsole.java:560-571`
 
+**FIXED.** `checkPromptNoOutput` now takes the command it is checking and skips a line equal to
+it, exactly as `command()` already does. The rejection scan reads from the echo onwards, and when
+`sendCommand` could not find the echo there is no "onwards" - it reads from zero, which puts the
+command's own echo inside the range whenever the echo arrives after the echo wait gave up and
+before the prompt. Regression test:
+`SimhConsoleTest.anEchoThatArrivesAfterTheWaitGaveUpIsNotReadAsARejection`, which holds the fake's
+output back past a shortened echo timeout and then lets it all go at once; against the old code it
+fails with `DEPOSIT failed, no prompt: SimH rejected the command: "D 1000 123456"` - the reported
+symptom, reproduced. `FakePdp11.holdOutput()`/`releaseOutput()` are new, and are how any fake can
+now be made to answer late.
+
 When `sendCommand` misses the echo (returns -1), `checkPromptNoOutput(-1, …)` scans from
 position 0 and treats any non-blank `OtherLine` — including the command's own late echo —
 as a rejection. Requires the echo to arrive after the full timeout but before the prompt
@@ -1113,6 +1124,21 @@ check. Fix: exclude a line equal to the command, as `command()` (`:715`) already
 
 ### 48. Halt can queue up to 8 s behind an in-flight sim> command
 `pdp11-ui/.../simh/SimhConsolePanel.java:236-244`; `SimhConsole.CMD_TIMEOUT_MS = 8000`
+
+**FIXED.** There is now one thing that does not go through the command thread:
+`Console.interruptRunningProgram()`, a default no-op that SimH's console implements by handing
+`^E` to `ConsoleConnection.sendOutOfBand`. That writes it from a thread of its own - a button may
+therefore ask for it, and the event thread still never makes a transport write - and takes the
+same lock `write()` does, so the byte cannot land in the middle of a command's bytes. Nothing is
+decided out of band: both Halt buttons (SimH Console and Execution) call it and then queue
+`haltCpu` as before, which is still what reads the answer and tells the rest of the application
+where the machine stopped, and the second `^E` it sends is inert on a machine that has already
+stopped. Regression tests:
+`SimhConsoleTest.haltReachesTheMachineWithoutQueueingBehindTheCommandThatStartedIt`, which shows a
+job queued the ordinary way still sitting un-run at the moment the `^E` has already been acted on,
+and `SimhConsolePanelTest.haltStopsTheMachineRatherThanWaitingOutTheCommandThatStartedIt`, which
+clicks the button and requires the machine to stop sooner than the fake's own minimum run of one
+second - it times out against the old code.
 
 A user command like `go` holds the command thread waiting for a prompt that will not come
 while the simulation runs; Halt — the control whose purpose is interrupting exactly that —
@@ -1164,6 +1190,21 @@ written into the new cell. Every other panel captures the cell object. Fix: capt
 ### 51. Log window attach has a snapshot-to-subscribe gap; UiLogger delivers outside its lock
 `pdp11-ui/.../log/LogPanel.java:93-97`, `log/UiLogger.java:63-75`
 
+**FIXED**, both halves, by making this the shape `TextChannel` already has.
+
+`UiLogger.subscribe(Listener)` replaces `snapshot()` + `setListener()`: the listener is handed the
+backlog and installed under one lock, so nothing can arrive in between. And `log()` now delivers
+inside the lock rather than after releasing it, which is what makes the order a listener sees the
+order things actually happened in - outside it, two threads logging at once could reach the
+listener in the opposite order to the one they reached the buffer in. The listener's two halves
+say which thread each arrives on: `onHistory` on the subscriber's own, from inside `subscribe`, so
+the window draws it directly; `onLine` on whichever thread logged, holding the lock, so it
+marshals and returns and must not block. Regression test:
+`UiLoggerTest.aWindowThatStartsWatchingMidStreamSeesEveryLineOnceAndInOrder` subscribes while a
+thread is writing five thousand lines and requires the history and the live stream together to be
+exactly all of them, once, in order; the two-call shape loses whatever lands in the gap and fails
+it.
+
 A line logged between `snapshot()` and `setListener(…)` is buffered but never shown until
 reopen; and `UiLogger.log` invokes the listener after releasing the monitor, so concurrent
 loggers can deliver out of buffer order. `TextChannel` solved exactly this (replay and
@@ -1185,6 +1226,13 @@ convention) or volatile.
 
 ### 53. FakeTransport.delay() sleeps while holding the fake's monitor
 `pdp11-core/.../io/FakeTransport.java:141-189`
+
+**FIXED.** Both directions now sleep with the fake's monitor released: `read()` copies its bytes
+under the lock and delays after leaving it, `write()` hands its bytes over and notifies before
+delaying. `m_byteDelayMillis` became `volatile`, since it is now read outside the lock. Regression
+test: `TransportTest.aSlowLineDelaysOnlyTheDirectionTheBytesAreGoing`, which starts a read of the
+11-byte power-on banner at 100 ms a byte and then times a one-byte write; against the old code the
+write takes 1049 ms.
 
 With `byteDelayMillis` set, both directions and the scheduler's run-to-halt callback block
 behind one direction's delay — a real serial line delays only its own direction. Off by
@@ -1210,6 +1258,26 @@ examine/deposit/step waits in all three consoles hard-code the static constant. 
 the timeout via the setter therefore half-works. Use the getter throughout.
 
 ### 55. Dead code and dead plumbing (core)
+
+**FIXED.** Three of the five deleted, two documented:
+
+- `AbstractConsole.waitForAnswer`, `ConsoleScanner.take()/peek()` and `MemoryCell.assignFrom` are
+  gone. The last of those was the one worth removing rather than annotating: it rewrote a cell's
+  address without reindexing, which is an invariant violation waiting for its first caller.
+- `MemoryCellGroups.changeAddressWidth` **stays**, and the documents that disagreed with it were
+  the thing that was wrong. `Pdp11Mmu`'s constructor no longer claims a later call moves its
+  register group; it says the group stays at 22 bits, why that is right, and that
+  `getPhysicalAddressType()` therefore always answers PHYSICAL22. CLAUDE.md said the routine "is
+  not ported and is not needed" where only the second half was true; it now says both halves and
+  says not to reach for it. `changeAddressWidth`'s own javadoc says the same from the other end.
+  Deleting it would have taken three tests of the address model with it - re-expressing a group
+  at another width and reindexing it is something the model has to be able to do, and a routine
+  that exists only in a comment cannot be checked.
+- `isMapping22Bit()` now says in its javadoc that it is a diagnostic and deliberately not an
+  input to `translate()`, as in the Pascal.
+- `Macro11.Run.timedOut` is gone, with the record's javadoc saying why there is no such field: a
+  run that exceeds the timeout is killed and reported as a `Macro11Exception`, so no `Run`
+  describing one is ever built.
 - `AbstractConsole.waitForAnswer` (`:208`): no callers; the position-free form invites the
   stale-prompt bug the design fixed. Delete or annotate.
 - `ConsoleScanner.take()/peek()` (`:278-293`): used by no decoder.
@@ -1227,12 +1295,32 @@ the timeout via the setter therefore half-works. Use the getter throughout.
 ### 56. OdtScanner honours `raiseIncompleteOnEof=false` for only one of its three incomplete-input throws
 `pdp11-core/.../console/OdtScanner.java:442-470`
 
+**FIXED.** All three ways of running out of input go through one `endOfInput(raise, why)`, which
+is what makes the flag mean the same thing for each of them; nothing is consumed either way, so
+the partial symbol is still there to be scanned whole when the rest of it arrives. Regression
+test: the new `OdtScannerTest.askedToSaySoRatherThanThrow_everyWayOfRunningOutAnswersEndOfInput`
+walks `""`, `"123"`, `"R"` and `"$"` and fails on two of the four against the old code.
+
 Octal digits running to buffer end (`:465`) and a trailing `R`/`$` (`:470`) still throw
 unconditionally, against the `ConsoleScanner.nextSymbol` javadoc. Currently harmless (the
 only `false` caller is `clear()` on an empty buffer); tighten the javadoc or honour the
 flag.
 
 ### 57. M4 layer: doc/behaviour mismatches
+
+**FIXED.** Both, plus the third.
+
+- `M4Evaluator`'s javadoc claimed the bitwise and comparison operators; it now says what the
+  grammar has - `+ - * / %`, unary `+ - ~`, parentheses - and that everything else fails loudly at
+  the character it does not recognise.
+- `eval(expr, radix, width)` pads. `M4Evaluator.format` grew a width argument that zero-pads to a
+  minimum, with the padding after the sign, and every case in
+  `M4PreprocessorTest.evalZeroPadsToTheWidthItIsGiven` was checked against GNU m4 1.4.21. The
+  radix and the width are both parsed through one helper that answers `M4Exception` naming which
+  of the two was wrong, so a machine description written wrongly says so about itself the way
+  every other mistake in one does, rather than as a bare "For input string".
+- `m_expansions` resets at the start of every `process()`. It calibrates `MAX_EXPANSIONS` and
+  reports what the last run cost, and a reused instance was adding every earlier run to both.
 - `M4Evaluator.java:14-18`: Javadoc claims bitwise and comparison operators are
   implemented; the grammar has only `+ - * / %`, unary `+ - ~`, parentheses. The failure
   is loud, but the comment misleads the next machine-description author.
@@ -1245,6 +1333,14 @@ flag.
 ### 58. Paper-tape loader: the entry block's checksum byte is never verified and is re-scanned as data
 `pdp11-core/.../memfile/MemoryFileLoader.java:270-283`
 
+**FIXED.** A zero-data block now goes to state 7 like every other block, which consumes its
+checksum byte and checks it. Two regression tests:
+`MemoryFileLoaderTest.anEntryBlockWhoseChecksumLooksLikeAHeaderIsStillJustAnEntryBlock` writes a
+tape with entry address 000370 - the smallest entry address whose two bytes sum to 248, so its
+checksum byte comes out as 01 - and requires the load to have nothing to complain about; against
+the old code it fails with `[The image ends in the middle of a block]`. And
+`aBadChecksumOnTheEntryBlockStopsTheLoad`, because nothing ever verified that byte at all.
+
 A zero-data entry block jumps straight back to state 0, so its checksum byte is re-parsed
 as a potential header; when that byte happens to be 01 (entry addresses whose bytes sum to
 248 mod 256, e.g. 000370) the following bytes are misparsed and a spurious "Skipped a
@@ -1254,6 +1350,16 @@ consumes and verifies the entry-block checksum.
 ### 59. `Macro11Listing.listingLineOfAddress` can throw instead of returning its documented -1 *(needs confirmation)*
 `pdp11-core/.../macro11/Macro11Listing.java:169-177`
 
+**FIXED**, and confirmed: `Address.of(m_group.getType(), addr.val())` throws for any value the
+group's width cannot hold, and an I/O-page physical PC against a 16-bit virtual code group is
+exactly that. The re-type now goes through `sameLocationInThisListing`, which answers null - so
+`listingLineOfAddress` answers the -1 its javadoc promises - for an address inside an I/O page or
+too wide for the group, and re-types by raw value only below the I/O page, where a location does
+mean the same thing at every width. Regression test:
+`Macro11ListingParserTest.anAddressThisListingCannotExpressIsNoLineRatherThanAnException`, which
+fails against the old code with `IllegalArgumentException: Address 017777776 does not fit in a 16
+bit address`.
+
 For an address of a different type it re-types by raw value with `Address.of`, which
 throws when the value exceeds the group width (e.g. an I/O-page physical PC against the
 VIRTUAL code group); it would also silently match the wrong virtual cell rather than
@@ -1262,12 +1368,34 @@ rebasing. Guard and return -1.
 ### 60. FakePdp1144V340c global-register bound disagrees with its own comment *(needs confirmation)*
 `pdp11-core/.../fake/FakePdp1144V340c.java:189-193`
 
+**WON'T FIX** as a bound; **FIXED** as a comment, which is what the finding offers as the
+alternative. The Pascal fake checks `display_memaddr > 32` ({@code FakePDP1144v340cU.pas:436}) and
+that is the only evidence anywhere about what the real V3.40C firmware answers. The console
+layer's `global_register_blocksize` of 16 is a statement about which addresses PDP11GUI *asks*
+for, not about which ones the firmware rejects, so the two do not in fact disagree. The bound is
+now a named constant, `GLOBAL_REGISTER_TOO_BIG`, whose javadoc says all of that and says plainly
+that nobody has checked it against a real 11/44 - changing it on the strength of the number 16
+would be inventing firmware behaviour rather than porting it.
+
 Comment says "Sixteen global registers exist; a higher number is a firmware complaint",
 but the guard fires only above 32, so registers 16..32 skip `?Too big` and draw a bus-
 timeout instead. If that is faithful to the real firmware, say which in the comment; if
 not, the bound is wrong (or octal/decimal got confused).
 
 ### 61. JTable minimum-width rule and window minimum sizes applied inconsistently
+
+**FIXED**, both halves.
+
+- `MemoryCellGroupTable.sizeColumns` and `LogPanel` set a minimum width beside every preferred
+  one, with the comment saying why it is worth setting something AUTO_RESIZE_OFF makes invisible:
+  a later change of resize mode would otherwise regress it silently.
+- All six windows that had no `setMinimumSize` have one. Execution, which is packed rather than
+  sized, takes its own packed size - everything in it is a labelled control and there is nothing
+  to give up. Regression test:
+  `WindowsBuildTest.everyToolWindowHasAMinimumSizeItCannotBeSquashedBelow` checks all fourteen
+  self-contained window types rather than the six, because "the ones that have one" is not
+  something anybody can keep track of by hand; it fails with "LOG sets no minimum size" when any
+  one of them is put back.
 - `mem/MemoryCellGroupTable.java:182-189` and `log/LogPanel.java:63-66` set only preferred
   column widths, against CLAUDE.md's unconditional "set both" (mitigated today by
   AUTO_RESIZE_OFF; a resize-mode change regresses silently). Every other table sets both.
@@ -1280,6 +1408,29 @@ not, the bound is wrong (or octal/decimal got confused).
 ### 62. File I/O runs on the EDT for load/save/export
 `dump/MemoryDumperPanel.java:252-265`, `load/MemoryLoaderPanel.java:230-256`, `mem/MemoryPanel.java:244-257`, `macro11/AssemblerModel.java:198-220,320-328`
 
+**FIXED.** `AppContext.onFile` is the counterpart of `onConsole` for the other slow thing a
+window does: it runs the job on one daemon thread, so two saves cannot interleave, reports a
+failure through `reportFailure`, and hands the answer back on the event thread. The dumper's
+write, the loader's read, the Memory window's SimH export and the assembler's source load, source
+save and listing load all go through it. The dumper and the loader show "Writing x ..." /
+"Reading x ..." and hold their own button down while it runs, which is also what their tests now
+wait on. The assembler's listing load uses the detached `Macro11ListingParser.Parsed`, so the
+parse happens on the worker and only `installInto` touches the code group - the same split an
+assembly already used, for the same reason. The model keeps its synchronous `loadSource` and
+friends, which is what `loadLastSource` and the tests use.
+
+The two repeated costs are cached at the source rather than at each caller, since neither is a
+question about the application's own state: `Macro11.findExecutable()` and
+`SerialTransport.availablePortNames()` each remember their answer for five seconds, so a repaint
+storm no longer walks the whole PATH and the connection dialog no longer enumerates every device
+the machine has on every `setProfile`. A short life rather than none: installing the assembler or
+plugging in a USB adapter while the application runs is still noticed, within a few seconds,
+without anything having to know to ask again. Both have a `forget...()` for a test that changes
+the world underneath them.
+
+`MicrocodePanel`'s EDT read is left alone: it documents itself as deliberate, which is what the
+finding says the others do not.
+
 Fine on local disks; on hung media (NFS, USB) the whole UI freezes with no progress or
 cancel — in contrast to every console operation. MicrocodePanel documents its EDT read as
 deliberate; the others don't. Related: `Macro11.isAvailable()` walks the PATH doing
@@ -1289,6 +1440,35 @@ filesystem checks on every `updateDisplay()`/`updateButtons()` call
 constructor and on every `setProfile`.
 
 ### 63. Label, casing and layout polish (grouped)
+
+**FIXED**, except the last two, which are answered rather than changed.
+
+- The connection dialog's Browse button is "Browse ..." like the other two, and the Microcode
+  window's is "Open listing ..." - the same words the Assembler uses for the identical act,
+  spelled the way every other ellipsis in the application is.
+  `VocabularyTest.aButtonThatOpensADialogSpellsItsEllipsisTheSameWayEverywhere` holds both down
+  across six panels, and refuses a label that is nothing but punctuation: it says what it does to
+  nobody, and reads to a screen reader as nothing at all.
+  `openingAListingIsCalledTheSameThingInBothWindowsThatDoIt` holds the other half.
+- The Microcode chooser says what its multi-selection is for, in its title ("Open a PDP-11/44
+  microcode listing (or every page of one)") and in the button's tooltip.
+- Table headers: the memory grid's corner is "Start \ offset" and the register list's address
+  column is "Address".
+- MMU and Microcode field labels have their colons.
+- The memory test window's "Clear log" is "Clear", like the other two.
+- **Ctrl/Cmd+Comma is gone** from "Connection settings ...". It is the macOS preferences
+  convention and means nothing on the Linux this port is for, and opening that dialog is not
+  something anybody does often enough to reach for a key. Connect (Ctrl+K) and Quit (Ctrl+Q) stay:
+  those are ordinary on every platform.
+- The Dumper's entry address moved out of the range bar and into the file bar, beside the format
+  selector that shows and hides it. It is a property of the file being written, and it was sitting
+  among the addresses that say what to read off the machine, a whole row away from the control
+  that governs it.
+- **The Number Converter keeps its mnemonics and its Alt-O/Alt-H/Alt-D bindings.** They are label
+  mnemonics on a form of labelled fields, which is the standard Swing idiom for exactly that, they
+  are ported from the original, and they move the caret rather than doing anything. Being the only
+  window that is a form is why it is the only window with them; taking a real affordance away to
+  make the application uniform is the wrong direction.
 - Browse button is "..." in `settings/ConnectionSettingsPanel.java:133` and "Browse ..."
   everywhere else; ellipsis spelling drifts ("Load listing..." at
   `microcode/MicrocodePanel.java:94` vs "Open ...", "Save as ..." with a space).

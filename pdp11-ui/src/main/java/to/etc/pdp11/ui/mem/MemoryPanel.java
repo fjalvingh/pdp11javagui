@@ -23,7 +23,6 @@ import javax.swing.SwingUtilities;
 import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -275,12 +274,16 @@ public final class MemoryPanel extends JPanel {
 		if(chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
 			return;
 		Path file = chooser.getSelectedFile().toPath();
-		try {
-			Files.writeString(file, m_grid.toSimhScript(), StandardCharsets.US_ASCII);
-			m_context.getLogger().log(to.etc.pdp11.core.util.LogChannel.OTHER, "Wrote " + file);
-		} catch(IOException x) {
-			m_context.reportFailure("Could not write " + file, x);
-		}
+		//-- The script is built here, where the grid lives; only the write goes off the event
+		//-- thread, which is the part that can block for an unbounded time (FABLE-ISSUES #62).
+		String script = m_grid.toSimhScript();
+		m_context.onFile("Could not write " + file,
+			() -> {
+				Files.writeString(file, script, StandardCharsets.US_ASCII);
+				return file;
+			},
+			written -> m_context.getLogger().log(to.etc.pdp11.core.util.LogChannel.OTHER, "Wrote " + written),
+			null);
 	}
 
 	// -------------------------------------------------------------------------------------

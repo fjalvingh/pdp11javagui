@@ -8,7 +8,6 @@ import java.util.Deque;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
 
 /**
  * The application's log: a bounded buffer that the Log window draws, and that exists before it.
@@ -38,7 +37,27 @@ public final class UiLogger implements Logger {
 	private final Set<LogChannel> m_enabled = EnumSet.complementOf(
 		EnumSet.of(LogChannel.TRANSPORT_READ, LogChannel.TRANSPORT_WRITE));
 
-	private volatile Consumer<LogLine> m_listener;
+	/** Guarded by {@link #m_lines}, like everything else here - see {@link #subscribe}. */
+	private Listener m_listener;
+
+	/**
+	 * What the Log window implements.
+	 *
+	 * <p>Called on whichever thread logged, holding this logger's monitor, so an implementation
+	 * marshals and returns rather than doing anything.</p>
+	 */
+	public interface Listener {
+		/**
+		 * Everything buffered when this listener subscribed, oldest first. Exactly one call, and
+		 * always before the first {@link #onLine}.
+		 *
+		 * <p>Unlike {@link #onLine} this arrives on the subscriber's own thread, from inside
+		 * {@link UiLogger#subscribe}, so a window may draw it directly.</p>
+		 */
+		void onHistory(List<LogLine> lines);
+
+		void onLine(LogLine line);
+	}
 
 	@Override
 	public boolean isEnabled(LogChannel channel) {
@@ -56,6 +75,15 @@ public final class UiLogger implements Logger {
 		}
 	}
 
+	/**
+	 * Record one line, and tell whoever is watching - both under this logger's monitor.
+	 *
+	 * <p>Delivering inside the lock is what makes the order a listener sees the order things
+	 * actually happened in. Outside it, two threads logging at once could reach the listener in
+	 * the opposite order to the one they reached the buffer in, so the window would show a reply
+	 * before the command that produced it (FABLE-ISSUES #51). {@code TextChannel} does the same
+	 * thing for the same reason, and imposes the same duty on a listener: do not block.</p>
+	 */
 	@Override
 	public void log(LogChannel channel, String message) {
 		LogLine line = new LogLine(System.currentTimeMillis(), channel, message);
@@ -66,10 +94,9 @@ public final class UiLogger implements Logger {
 			while(m_lines.size() > MAX_LINES) {
 				m_lines.removeFirst();
 			}
+			if(m_listener != null)
+				m_listener.onLine(line);
 		}
-		Consumer<LogLine> l = m_listener;
-		if(l != null)
-			l.accept(line);
 	}
 
 	/** Everything buffered so far, oldest first. */
@@ -86,11 +113,27 @@ public final class UiLogger implements Logger {
 	}
 
 	/**
-	 * Where new lines go as well as into the buffer.
+	 * Take everything logged so far and start following, in one step.
 	 *
-	 * <p>Called from whichever thread logged, so the listener marshals for itself.</p>
+	 * <p>Both halves under one lock, so nothing can arrive in between. Snapshotting and then
+	 * subscribing as two calls has exactly that gap, and a line that fell into it was buffered
+	 * but never shown until the window was closed and opened again (FABLE-ISSUES #51) - which is
+	 * the same gap {@code TextChannel.subscribe} exists to close, and this is now the same
+	 * shape.</p>
+	 *
+	 * <p>One listener at a time: there is one Log window, and it replaces whatever was there.</p>
 	 */
-	public void setListener(Consumer<LogLine> listener) {
-		m_listener = listener;
+	public void subscribe(Listener listener) {
+		synchronized(m_lines) {
+			listener.onHistory(List.copyOf(m_lines));
+			m_listener = listener;
+		}
+	}
+
+	/** Stop following. The buffer keeps filling. */
+	public void unsubscribe() {
+		synchronized(m_lines) {
+			m_listener = null;
+		}
 	}
 }

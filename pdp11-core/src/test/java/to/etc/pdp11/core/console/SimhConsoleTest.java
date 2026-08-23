@@ -204,6 +204,37 @@ class SimhConsoleTest {
 	}
 
 	@Test
+	void anEchoThatArrivesAfterTheWaitGaveUpIsNotReadAsARejection() throws Exception {
+		try(Rig rig = new Rig()) {
+			//-- The rejection check reads from the echo onwards, and when sendCommand could not
+			//-- find the echo there is no "onwards" - it reads from zero, which puts the
+			//-- command's own echo inside the range. An echo that arrives after the echo wait
+			//-- gave up but before the prompt therefore reads as SimH complaining about a
+			//-- command it in fact carried out (FABLE-ISSUES #47).
+			rig.console.setCommandTimeoutMillis(300);       // no need to sit out a real timeout
+			rig.fake.holdOutput();
+			Thread releaser = new Thread(() -> {
+				try {
+					long deadline = System.currentTimeMillis() + 10_000;
+					while(System.currentTimeMillis() < deadline
+						&& rig.fake.getCommands().stream().noneMatch(c -> c.startsWith("D ")))
+						Thread.sleep(5);
+					Thread.sleep(400);                      // longer than the echo wait above
+					rig.fake.releaseOutput();
+				} catch(InterruptedException x) {
+					Thread.currentThread().interrupt();
+				}
+			}, "late-echo");
+			releaser.start();
+			rig.connection.run(() -> rig.console.deposit(phys(01000), 0123456));
+			releaser.join();
+
+			assertEquals(0123456, rig.connection.call(() -> rig.console.examine(phys(01000))).word(),
+				"the deposit really did happen");
+		}
+	}
+
+	@Test
 	void aRejectedCommandIsReportedRatherThanSilentlyIgnored() throws Exception {
 		try(Rig rig = new Rig()) {
 			//-- A deposit produces no output when it works, so any line at all after the echo
@@ -563,6 +594,60 @@ class SimhConsoleTest {
 			assertFalse(result.get().prompted(), "the simulation is running");
 			assertTrue(rig.fake.isRunning(), "and really is");
 		}
+	}
+
+	/**
+	 * Halt reaches a running machine without queueing behind the command that started it.
+	 *
+	 * <p>FABLE-ISSUES #48. A typed {@code go} holds the command thread waiting for a prompt that
+	 * will not come until something stops the simulation, and the command timeout is eight
+	 * seconds - so the control whose entire purpose is stopping a running machine was waiting
+	 * behind the command that set it running. The latch below is what the queued route would
+	 * have been: still sitting there, un-run, at the moment the {@code ^E} has already arrived
+	 * and been acted on.</p>
+	 */
+	@Test
+	void haltReachesTheMachineWithoutQueueingBehindTheCommandThatStartedIt() throws Exception {
+		try(Rig rig = new Rig()) {
+			rig.console.setCommandTimeoutMillis(4000);
+			rig.fake.setMem(phys(017777707L), 01000);
+			Thread typed = new Thread(() -> {
+				try {
+					rig.connection.run(() -> rig.console.command("go 1000"));
+				} catch(ConsoleException x) {
+					// the assertions are about the halt, not about this
+				}
+			}, "typed-go");
+			typed.start();
+			until("the machine to start", rig.fake::isRunning);
+
+			//-- Anything asked for through the command thread from here on cannot run until the
+			//-- command above gives up or the machine stops. That is the whole finding.
+			CountDownLatch queuedRoute = new CountDownLatch(1);
+			assertTrue(rig.connection.execute(queuedRoute::countDown));
+			Thread.sleep(100);
+			assertEquals(1, queuedRoute.getCount(), "the command thread is busy, as it should be");
+
+			long startedAt = System.nanoTime();
+			assertTrue(rig.console.interruptRunningProgram(), "^E was sent");
+			until("the machine to stop", () -> !rig.fake.isRunning());
+			long tookMillis = (System.nanoTime() - startedAt) / 1_000_000;
+
+			typed.join(5000);
+			assertTrue(tookMillis < 1000, "the halt waited for the command thread: " + tookMillis + " ms");
+		}
+	}
+
+	/** Poll for something another thread is going to do. */
+	private static void until(String what, java.util.function.BooleanSupplier condition)
+		throws InterruptedException {
+		long deadline = System.currentTimeMillis() + 10_000;
+		while(System.currentTimeMillis() < deadline) {
+			if(condition.getAsBoolean())
+				return;
+			Thread.sleep(5);
+		}
+		throw new AssertionError("Timed out waiting for " + what);
 	}
 
 	// ---------------------------------------------------------------------------------------

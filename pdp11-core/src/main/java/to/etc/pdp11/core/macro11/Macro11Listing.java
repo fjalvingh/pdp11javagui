@@ -1,6 +1,7 @@
 package to.etc.pdp11.core.macro11;
 
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.addr.MemoryAddressType;
 import to.etc.pdp11.core.mem.MemoryCell;
 import to.etc.pdp11.core.mem.MemoryCellGroup;
 
@@ -169,11 +170,36 @@ public final class Macro11Listing {
 	public int listingLineOfAddress(Address addr) {
 		if(addr == null)
 			return -1;
-		//-- A PC is a virtual address and the code group holds virtual addresses, but the two
-		//-- can still be expressed at different widths; compare at the group's own.
-		Address at = addr.type() == m_group.getType() ? addr : Address.of(m_group.getType(), addr.val());
+		Address at = sameLocationInThisListing(addr);
+		if(at == null)
+			return -1;
 		MemoryCell mc = m_group.findByAddress(at);
 		return mc == null ? -1 : mc.getListingLineNr();
+	}
+
+	/**
+	 * The same location, expressed the way this listing expresses addresses, or null if it
+	 * cannot be one of them.
+	 *
+	 * <p>A PC is a virtual address and the code group holds virtual addresses, but the two can
+	 * still be expressed at different widths, so the address is re-typed to the group's own.
+	 * Re-typing by raw value is only sound below the I/O page, where a location means the same
+	 * thing at every width: {@link Address#withWidth} exists because the I/O page sits at the
+	 * <i>top</i> of the address space and the top moves. Inside the I/O page, and for a value
+	 * wider than the group's addresses can hold, this answers null rather than throwing or
+	 * matching the wrong cell - a listing has no line for a device register either way, and
+	 * the documented answer for "no line" is -1 (FABLE-ISSUES #59).</p>
+	 */
+	private Address sameLocationInThisListing(Address addr) {
+		MemoryAddressType type = m_group.getType();
+		if(addr.type() == type)
+			return addr;
+		if(addr.isInIopage())
+			return null;
+		if((type.isConcretePhysical() || type == MemoryAddressType.VIRTUAL)
+			&& addr.val() > (1L << type.getBits()) - 1)
+			return null;
+		return Address.of(type, addr.val());
 	}
 
 	@Override

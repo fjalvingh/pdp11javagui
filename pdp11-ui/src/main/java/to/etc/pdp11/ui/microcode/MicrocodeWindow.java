@@ -20,6 +20,7 @@ public final class MicrocodeWindow extends ToolWindow {
 		//-- Tall: there are 43 rows and they are all one microword, so scrolling between two of
 		//-- its fields to compare them is the thing to avoid.
 		setSize(new Dimension(900, 760));
+		setMinimumSize(new Dimension(640, 360));
 	}
 
 	public MicrocodePanel getPanel() {

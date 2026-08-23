@@ -61,6 +61,32 @@ class M4PreprocessorTest {
 		assertEquals("172102", m4("eval(0172100+ ((2 - 1) * 2), 8)"));
 	}
 
+	/**
+	 * {@code eval}'s third argument is a minimum width, zero-padded.
+	 *
+	 * <p>FABLE-ISSUES #57: it was accepted and silently ignored, which is the "silently wrong
+	 * I/O page" failure the preprocessor's own doc says it exists to prevent - an address
+	 * written to come out six digits long came out three. Every value below was checked against
+	 * GNU m4 1.4.21, including where the padding goes on a negative number.</p>
+	 */
+	@Test
+	void evalZeroPadsToTheWidthItIsGiven() {
+		assertEquals("000100", m4("eval(0100,8,6)"));
+		assertEquals("-0005", m4("eval(-5,10,4)"));
+		assertEquals("5", m4("eval(5,10,0)"), "a width smaller than the number is not a truncation");
+		assertEquals("000", m4("eval(0,10,3)"));
+		assertEquals("177562", m4("eval(0177560+2,8,3)"), "and it really is a minimum");
+	}
+
+	/** A machine description written wrongly says so about itself, whichever way it is wrong. */
+	@Test
+	void aRadixOrWidthThatIsNotANumberIsAnM4ErrorLikeEverythingElse() {
+		M4Exception x = assertThrows(M4Exception.class, () -> m4("eval(1,eight)"));
+		assertTrue(x.getMessage().contains("radix"), x.getMessage());
+		x = assertThrows(M4Exception.class, () -> m4("eval(1,8,wide)"));
+		assertTrue(x.getMessage().contains("width"), x.getMessage());
+	}
+
 	@Test
 	void quotedTextLosesOneLevelAndIsNotExpanded() {
 		assertEquals("X", m4("define(X,`Y')`X'"));

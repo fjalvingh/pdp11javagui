@@ -15,7 +15,9 @@ package to.etc.pdp11.core.console;
  * of octal digits reaching the end of the buffer - {@code 123} may yet become {@code 1234} -
  * and an {@code R} or {@code $} with nothing after it, which may become {@code R0} or may be a
  * stray character. The decoder catches it, rewinds to its mark, and tries again when more has
- * arrived.</p>
+ * arrived. All three are "not all of it has arrived", so all three obey
+ * {@code nextSymbol(false)} and answer {@link Sym#EOF} instead, for the caller that wants to be
+ * told rather than interrupted.</p>
  *
  * <p>Line feeds are dropped outright ({@code :151-154}). ODT sends CR LF and only the CR is
  * structural; filtering here means no rule downstream has to mention LF at all.</p>
@@ -64,18 +66,34 @@ public final class OdtScanner extends ConsoleScanner<OdtScanner.Sym> {
 		return c >= '0' && c <= '7';
 	}
 
+	/**
+	 * Nothing more can be read yet: either say so or ask the caller to come back.
+	 *
+	 * <p>All three ways of running out of input come through here, which is what makes
+	 * {@code raiseIncompleteOnEof} mean the same thing for each of them. Two of them used to
+	 * throw whatever the flag said (FABLE-ISSUES #56): a number whose digits reach the end of
+	 * the buffer and a bare {@code R} or {@code $} are both "not all of it has arrived", exactly
+	 * like an empty buffer, and a caller that asked to be told rather than interrupted was told
+	 * for one of the three and interrupted for the other two.</p>
+	 *
+	 * <p>Nothing is consumed either way. The partial symbol stays where it is, so the next call
+	 * - with the rest of the line in the buffer by then - scans the whole of it.</p>
+	 */
+	private String endOfInput(boolean raiseIncompleteOnEof, String why) {
+		setCurSymText("EOF");
+		setCurSymType(Sym.EOF);
+		//-- Tell the decoder to stop and come back later. Not an error.
+		if(raiseIncompleteOnEof)
+			throw new ScannerInputIncompleteException(why);
+		return "EOF";
+	}
+
 	@Override
 	public String nextSymbol(boolean raiseIncompleteOnEof) {
 		for(;;) {
 			int start = getNextCharIndex();
-			if(start >= length()) {
-				setCurSymText("EOF");
-				setCurSymType(Sym.EOF);
-				//-- Tell the decoder to stop and come back later. Not an error.
-				if(raiseIncompleteOnEof)
-					throw new ScannerInputIncompleteException("End of console input");
-				return "EOF";
-			}
+			if(start >= length())
+				return endOfInput(raiseIncompleteOnEof, "End of console input");
 			char c = charAt(start);
 			int symlen;
 			if(c == LF) {
@@ -88,12 +106,12 @@ public final class OdtScanner extends ConsoleScanner<OdtScanner.Sym> {
 					i++;
 				}
 				if(i >= length())
-					throw new ScannerInputIncompleteException("Octal digits run to the end of the buffer");
+					return endOfInput(raiseIncompleteOnEof, "Octal digits run to the end of the buffer");
 				setCurSymType(Sym.OCTAL);
 				symlen = i - start;
 			} else if(c == 'r' || c == 'R' || c == '$') {
 				if(start + 1 >= length())
-					throw new ScannerInputIncompleteException("A register name may still be coming");
+					return endOfInput(raiseIncompleteOnEof, "A register name may still be coming");
 				char n = charAt(start + 1);
 				if(isOctalDigit(n) || n == 'S' || n == 's') {
 					symlen = 2;

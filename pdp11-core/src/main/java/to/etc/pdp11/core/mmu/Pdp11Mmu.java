@@ -147,8 +147,14 @@ public final class Pdp11Mmu {
 	 * Build the MMU's register group inside the application's groups, so that examining these
 	 * registers anywhere updates the MMU and vice versa.
 	 *
-	 * <p>Created at 22 bits, like the Pascal ({@code :148}); a later
-	 * {@link MemoryCellGroups#changeAddressWidth} moves it to the target machine's width.</p>
+	 * <p>Created at 22 bits, like the Pascal ({@code :148}), and it stays there:
+	 * {@link MemoryCellGroups#changeAddressWidth} is what would move it to a narrower machine's
+	 * width, and nothing in the application calls it. That is deliberate rather than an
+	 * oversight - see CLAUDE.md, "Machine descriptions" - and it is numerically harmless,
+	 * because every console normalises addresses to its own width in its own {@code toPhysical}
+	 * and {@link MemoryCellGroups} keys its propagation index on the 22-bit form. So
+	 * {@link #getPhysicalAddressType()} answers PHYSICAL22 for every machine, which is what
+	 * {@link #translate} then produces its results in (FABLE-ISSUES #55).</p>
 	 */
 	public Pdp11Mmu(MemoryCellGroups groups) {
 		m_group = groups.addGroup(MemoryAddressType.PHYSICAL22, "MMU");
@@ -223,6 +229,15 @@ public final class Pdp11Mmu {
 		return m_dSpaceEnabled[mode.ordinal()];
 	}
 
+	/**
+	 * MMR3 bit 4, the 22-bit mapping enable.
+	 *
+	 * <p>Read and shown, and deliberately not used by {@link #translate}, which is what the
+	 * Pascal does too: the physical width comes from the register group's own address type, so
+	 * a machine whose MMR3 says otherwise is a machine whose description is wrong rather than a
+	 * case to translate differently. It is a diagnostic - the MMU window says "22-bit mapping"
+	 * or "18-bit mapping" from it - not an input to the arithmetic.</p>
+	 */
 	public boolean isMapping22Bit() {
 		return m_mapping22Bit;
 	}

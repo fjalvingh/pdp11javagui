@@ -120,7 +120,7 @@ public final class MmuPanel extends JPanel {
 			}
 		});
 		m_currentMode.setForeground(UiColors.SECONDARY_TEXT);
-		bar.add(new JLabel("CPU mode"));
+		bar.add(new JLabel("CPU mode:"));
 		bar.add(m_mode);
 		bar.add(m_currentMode);
 		//-- "wmin 0" because a JLabel's minimum width is the width of its text, and this label's

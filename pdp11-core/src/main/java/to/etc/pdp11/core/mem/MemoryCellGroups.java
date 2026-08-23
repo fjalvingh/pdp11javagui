@@ -264,6 +264,15 @@ public final class MemoryCellGroups {
 	 * <p>Unlike the Pascal this is all-or-nothing. A conversion that does not fit throws
 	 * before anything has been modified, rather than leaving half the application at one width
 	 * and half at another.</p>
+	 *
+	 * <p><b>Nothing in the application calls this</b>, and that is the design rather than an
+	 * omission: the Pascal calls it from nine places in {@code FormMainU} because its addresses
+	 * carry the width they were declared at, and here every console normalises to its own width
+	 * in its own {@code toPhysical} while the propagation index is keyed on the 22-bit form.
+	 * {@code RegisterGroupWidthTest} holds that down. It is kept because the address model has
+	 * to be able to do this and a routine that only exists in a comment cannot be checked
+	 * (FABLE-ISSUES #55). If a window looks like it needs this, an address is being compared at
+	 * the wrong width somewhere else.</p>
 	 */
 	public void changeAddressWidth(MemoryAddressType newType) {
 		if(!newType.isConcretePhysical())

@@ -111,7 +111,7 @@ class MemoryPanelTest {
 
 		assertEquals(9, table.getColumnCount(), "one address column and eight words");
 		assertEquals(8, table.getRowCount(), "64 words at 8 a row");
-		assertEquals("start \\ offset", table.getColumnName(0));
+		assertEquals("Start \\ offset", table.getColumnName(0));
 		assertEquals("+0", table.getColumnName(1));
 		assertEquals("+16", table.getColumnName(8), "the offsets are octal, so the eighth is +16");
 
