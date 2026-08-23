@@ -20,7 +20,6 @@ import to.etc.pdp11.core.io.SerialTransport;
 import to.etc.pdp11.core.io.SimhProcessTransport;
 import to.etc.pdp11.core.io.TelnetTransport;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.core.util.Scheduler;
@@ -46,6 +45,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * and it runs a console handshake at the end of it. It must not be called on the Swing event
  * thread. Everything after it goes through {@link ConsoleConnection#call}, which enforces the
  * same rule for itself.</p>
+ *
+ * <p>Connecting, reconnecting and disconnecting are serialised against each other by a
+ * generation counter rather than by a lock held across the blocking part, so a disconnect never
+ * waits on an attempt that is itself waiting on a machine. An attempt builds everything into
+ * locals and publishes it in one step at the end; an attempt that has been overtaken by then
+ * closes what it built and changes no state at all.</p>
  */
 public final class ConnectionManager implements AutoCloseable {
 	/** Where a connection is. */
@@ -79,6 +84,27 @@ public final class ConnectionManager implements AutoCloseable {
 	private final Path m_dataDir;
 
 	private final List<Listener> m_listeners = new CopyOnWriteArrayList<>();
+
+	/**
+	 * Guards the connect/disconnect sequence: the generation counter, the published connection
+	 * below, and the state change that goes with them.
+	 *
+	 * <p>The blocking part of {@link #connect} - launching SimH, opening a port, the handshake -
+	 * deliberately runs <i>outside</i> this lock, so a disconnect never waits on a connection
+	 * attempt that is waiting on a machine. What the lock covers is the moment an attempt takes
+	 * over and the moment it publishes its result.</p>
+	 */
+	private final Object m_connectionLock = new Object();
+
+	/**
+	 * Bumped by every connect, disconnect and close. An attempt whose generation is no longer
+	 * the current one has been superseded: it closes what it built and touches nothing else.
+	 *
+	 * <p>This is what stops the sequence that used to strand the UI - a second connect while the
+	 * first is still blocked launching SimH, the first then failing and closing the <i>second's</i>
+	 * transport and firing FAILED over its CONNECTED. Guarded by {@link #m_connectionLock}.</p>
+	 */
+	private long m_generation;
 
 	private volatile State m_state = State.DISCONNECTED;
 
@@ -170,12 +196,29 @@ public final class ConnectionManager implements AutoCloseable {
 		m_listeners.remove(l);
 	}
 
-	private void setState(State state, String message) {
-		m_state = state;
-		m_message = message == null ? "" : message;
-		m_logger.log(LogChannel.OTHER, "Connection: " + state + (m_message.isEmpty() ? "" : " - " + m_message));
-		for(Listener l : m_listeners) {
-			l.onConnectionState(this, state);
+	/**
+	 * Publish a state change on behalf of one connect/disconnect attempt.
+	 *
+	 * <p>Does nothing at all when that attempt has been superseded, which is the whole point: a
+	 * stale attempt's FAILED must never land on top of a newer attempt's CONNECTED.</p>
+	 *
+	 * <p>Listeners are told while the lock is held, so that the order they see states in is the
+	 * order the states happened in. They are expected not to block - every listener in the
+	 * application marshals to the event thread with {@code AppContext.onUi} and returns.</p>
+	 *
+	 * @return whether this attempt was still the current one, and the state therefore changed
+	 */
+	private boolean setState(long generation, State state, String message) {
+		synchronized(m_connectionLock) {
+			if(generation != m_generation)
+				return false;
+			m_state = state;
+			m_message = message == null ? "" : message;
+			m_logger.log(LogChannel.OTHER, "Connection: " + state + (m_message.isEmpty() ? "" : " - " + m_message));
+			for(Listener l : m_listeners) {
+				l.onConnectionState(this, state);
+			}
+			return true;
 		}
 	}
 
@@ -188,50 +231,91 @@ public final class ConnectionManager implements AutoCloseable {
 	 *
 	 * <p>Blocks. Any existing connection is closed first, so this doubles as "reconnect".</p>
 	 *
+	 * <p>Safe to call while another attempt is still running, and that is the point: the last
+	 * call in wins, and every earlier one abandons what it built without touching the winner.
+	 * The UI should still not offer it - a connection being made is not cancellable and there is
+	 * nothing useful to do twice - but a race here cannot leave the manager saying one thing
+	 * while the connection does another.</p>
+	 *
+	 * @throws ConnectionSupersededException if a newer connect or disconnect took over meanwhile;
+	 * 	nothing failed, and the connection the caller asked for is simply not the live one
 	 * @throws ConsoleException if the transport could not be opened or the console did not answer
 	 */
 	public void connect(ConnectionProfile profile) throws ConsoleException {
 		String problem = profile.validate();
 		if(problem != null)
 			throw new ConsoleException(problem);
-		close();
-		m_profile = profile;
+
+		long generation;
+		synchronized(m_connectionLock) {
+			generation = ++m_generation;
+			closeCurrent();
+			m_profile = profile;
+		}
 		m_machineConsole.clear();
 		m_protocolChannel.clear();
-		setState(State.CONNECTING, profile.describe());
+		if(!setState(generation, State.CONNECTING, profile.describe()))
+			throw new ConnectionSupersededException();
+
+		//-- Everything this attempt builds stays in locals until it is published, below. An
+		//-- attempt that is overtaken while it is blocked launching SimH then has its own
+		//-- transport, its own console and its own drain thread to close, and no way to reach
+		//-- the connection that overtook it.
+		boolean separateMachineConsole = false;
+		boolean protocolIsMachineConsole = profile.protocol() != ConsoleProtocol.SIMH;
+		PhysicalTransport transport = null;
+		PhysicalTransport consoleChannel = null;
+		Thread drain = null;
+		AbstractConsole console = null;
+		ConsoleConnection connection = null;
 		try {
-			PhysicalTransport transport = openTransport(profile);
-			m_transport = transport;
-			m_separateMachineConsole = transport instanceof SimhProcessTransport;
-			m_protocolIsMachineConsole = profile.protocol() != ConsoleProtocol.SIMH;
-			if(transport instanceof SimhProcessTransport simh)
-				startConsoleDrain(simh.getConsoleChannel());
+			transport = openTransport(profile);
+			separateMachineConsole = transport instanceof SimhProcessTransport;
+			if(transport instanceof SimhProcessTransport simh) {
+				consoleChannel = simh.getConsoleChannel();
+				drain = startConsoleDrain(consoleChannel);
+			}
 
 			//-- AbstractConsole rather than Console, because attaching and the handshake are
 			//-- the console's own plumbing rather than things the windows above ever call.
-			AbstractConsole console = createConsole(profile);
+			AbstractConsole c = createConsole(profile);
+			console = c;
 			//-- The console has just built its MMU, and with it a register group at addresses the
 			//-- simulated machine was told nothing about - it was given the I/O page a moment ago,
 			//-- before those cells existed. Telling it again is what lets the MMU window's
 			//-- Refresh read something back from a machine that is not there.
 			if(transport instanceof FakeTransport fake)
 				fake.getFake().resetIoPageValidMap(m_groups, null);
-			ConsoleConnection connection = new ConsoleConnection(transport, m_logger);
+			ConsoleConnection cc = new ConsoleConnection(transport, m_logger);
+			connection = cc;
 			//-- Before attach(), which starts the reader: the handshake is the most interesting
-			//-- thing that ever crosses this channel and it happens in init(), below.
-			connection.setTerminalSink(this::onProtocolData);
-			m_console = console;
-			m_connection = connection;
-			connection.attach(console);
-			connection.run(() -> console.init(connection));
-			setState(State.CONNECTED, profile.describe());
+			//-- thing that ever crosses this channel and it happens in init(), below. The sink is
+			//-- this attempt's own, because which channels those bytes belong on is a fact about
+			//-- this connection and not about whatever is published at the time they arrive.
+			boolean alsoMachineConsole = protocolIsMachineConsole;
+			cc.setTerminalSink(text -> onProtocolData(text, alsoMachineConsole));
+			cc.attach(c);
+			cc.run(() -> c.init(cc));
+
+			synchronized(m_connectionLock) {
+				if(generation != m_generation)
+					throw new ConnectionSupersededException();
+				m_transport = transport;
+				m_consoleChannel = consoleChannel;
+				m_consoleDrain = drain;
+				m_separateMachineConsole = separateMachineConsole;
+				m_protocolIsMachineConsole = protocolIsMachineConsole;
+				m_console = c;
+				m_connection = cc;
+			}
+			setState(generation, State.CONNECTED, profile.describe());
 		} catch(IOException x) {
-			close();
-			setState(State.FAILED, x.getMessage());
+			abandon(connection, consoleChannel, drain, transport, console);
+			setState(generation, State.FAILED, x.getMessage());
 			throw new ConsoleException("Could not open " + profile.transport().describe() + ": " + x, x);
 		} catch(ConsoleException | RuntimeException x) {
-			close();
-			setState(State.FAILED, x.getMessage());
+			abandon(connection, consoleChannel, drain, transport, console);
+			setState(generation, State.FAILED, x.getMessage());
 			throw x;
 		}
 	}
@@ -360,10 +444,15 @@ public final class ConnectionManager implements AutoCloseable {
 		return m_separateMachineConsole || m_protocolIsMachineConsole;
 	}
 
-	/** Everything read from the console protocol's wire, on the reader thread. */
-	private void onProtocolData(String text) {
+	/**
+	 * Everything read from the console protocol's wire, on the reader thread.
+	 *
+	 * @param alsoMachineConsole whether this connection's protocol wire <i>is</i> the machine's
+	 * 	console, decided when the connection was built rather than read from the manager now
+	 */
+	private void onProtocolData(String text, boolean alsoMachineConsole) {
 		m_protocolChannel.append(text);
-		if(m_protocolIsMachineConsole)
+		if(alsoMachineConsole)
 			m_machineConsole.append(text);
 	}
 
@@ -414,8 +503,7 @@ public final class ConnectionManager implements AutoCloseable {
 	 * emulated PDP-11's own serial console, it is connected because the remote console does not
 	 * work without it, and a socket nobody empties eventually blocks SimH itself.</p>
 	 */
-	private void startConsoleDrain(PhysicalTransport channel) {
-		m_consoleChannel = channel;
+	private Thread startConsoleDrain(PhysicalTransport channel) {
 		Thread t = new Thread(() -> {
 			byte[] buf = new byte[4096];
 			try {
@@ -429,7 +517,7 @@ public final class ConnectionManager implements AutoCloseable {
 		}, "simh-console");
 		t.setDaemon(true);
 		t.start();
-		m_consoleDrain = t;
+		return t;
 	}
 
 	/** The emulated machine's own console channel, or {@code null} when there is not one. */
@@ -444,39 +532,86 @@ public final class ConnectionManager implements AutoCloseable {
 	/** Close whatever is open. Idempotent, and safe to call on a manager that never connected. */
 	@Override
 	public void close() {
-		ConsoleConnection c = m_connection;
-		m_connection = null;
-		m_console = null;
-		if(c != null)
-			c.close();
-
-		PhysicalTransport channel = m_consoleChannel;
-		m_consoleChannel = null;
-		m_separateMachineConsole = false;
-		m_protocolIsMachineConsole = false;
-		if(channel != null)
-			channel.close();
-
-		PhysicalTransport t = m_transport;
-		m_transport = null;
-		if(t != null)
-			t.close();
-
-		//-- The console built an MMU, and the MMU built a register group inside the application's
-		//-- groups so that examining those registers anywhere updates it. That group belongs to
-		//-- the connection: leaving it behind means every reconnect adds another 99 cells to the
-		//-- propagation index, all of them still listening.
-		m_groups.removeGroupsByUsageTag(Pdp11Mmu.USAGE_TAG);
-
-		Thread drain = m_consoleDrain;
-		m_consoleDrain = null;
-		if(drain != null)
-			drain.interrupt();
+		synchronized(m_connectionLock) {
+			//-- Anything still being built is stale from here on, and closes itself.
+			m_generation++;
+			closeCurrent();
+		}
 	}
 
 	/** Close and say so. {@link #close()} on its own is silent, because {@code connect} uses it. */
 	public void disconnect() {
-		close();
-		setState(State.DISCONNECTED, "");
+		long generation;
+		synchronized(m_connectionLock) {
+			generation = ++m_generation;
+			closeCurrent();
+		}
+		setState(generation, State.DISCONNECTED, "");
+	}
+
+	/** Close and forget the published connection. The caller holds {@link #m_connectionLock}. */
+	private void closeCurrent() {
+		ConsoleConnection connection = m_connection;
+		Console console = m_console;
+		PhysicalTransport consoleChannel = m_consoleChannel;
+		PhysicalTransport transport = m_transport;
+		Thread drain = m_consoleDrain;
+		m_connection = null;
+		m_console = null;
+		m_consoleChannel = null;
+		m_transport = null;
+		m_consoleDrain = null;
+		m_separateMachineConsole = false;
+		m_protocolIsMachineConsole = false;
+		closeParts(connection, consoleChannel, drain, transport, console);
+	}
+
+	/**
+	 * Give up on one connection attempt: unpublish it if it got as far as being published, and
+	 * close what it built either way.
+	 *
+	 * <p>Unpublishing is by identity rather than by generation, because a stale attempt reaching
+	 * here has by definition published nothing - and must not clear the fields of the connection
+	 * that overtook it.</p>
+	 */
+	private void abandon(ConsoleConnection connection, PhysicalTransport consoleChannel, Thread drain,
+		PhysicalTransport transport, Console console) {
+		synchronized(m_connectionLock) {
+			if(connection != null && m_connection == connection) {
+				m_connection = null;
+				m_console = null;
+				m_consoleChannel = null;
+				m_transport = null;
+				m_consoleDrain = null;
+				m_separateMachineConsole = false;
+				m_protocolIsMachineConsole = false;
+			}
+		}
+		closeParts(connection, consoleChannel, drain, transport, console);
+	}
+
+	/**
+	 * Close one connection's plumbing. Every argument is optional: an attempt can fail half-built,
+	 * and a manager that never connected has none of it.
+	 */
+	private void closeParts(ConsoleConnection connection, PhysicalTransport consoleChannel, Thread drain,
+		PhysicalTransport transport, Console console) {
+		if(connection != null)
+			connection.close();
+		if(consoleChannel != null)
+			consoleChannel.close();
+		if(transport != null)
+			transport.close();
+
+		//-- The console built an MMU, and the MMU built a register group inside the application's
+		//-- groups so that examining those registers anywhere updates it. That group belongs to
+		//-- the connection: leaving it behind means every reconnect adds another 99 cells to the
+		//-- propagation index, all of them still listening. Removed by identity rather than by
+		//-- usage tag, so that an abandoned attempt cannot remove the live connection's group.
+		if(console != null && console.getMmu() != null)
+			m_groups.removeGroup(console.getMmu().getRegisterGroup());
+
+		if(drain != null)
+			drain.interrupt();
 	}
 }

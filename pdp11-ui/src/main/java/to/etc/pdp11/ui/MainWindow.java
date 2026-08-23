@@ -2,6 +2,7 @@ package to.etc.pdp11.ui;
 
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConnectionSupersededException;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TextChannel;
 import to.etc.pdp11.core.console.Console;
@@ -48,6 +49,24 @@ public final class MainWindow extends JFrame {
 
 	private final JMenu m_windowsMenu = new JMenu("Windows");
 
+	/**
+	 * The three ways to start a connection, kept so that they can be turned off while one is
+	 * being made. Two connects at once used to race inside {@link ConnectionManager}, and the
+	 * loser could tear down the winner's transport on its way out.
+	 */
+	private JMenuItem m_connectItem;
+
+	private JMenu m_connectToMenu;
+
+	private JMenuItem m_disconnectItem;
+
+	/**
+	 * Whether a connect worker is running. Read and written on the event thread only: the state
+	 * change to CONNECTING arrives a moment later than the click, and a second click inside that
+	 * moment is exactly what the disabled menu items cannot catch.
+	 */
+	private boolean m_connecting;
+
 	public MainWindow(AppContext context) {
 		super("PDP11GUI");
 		m_context = context;
@@ -91,12 +110,14 @@ public final class MainWindow extends JFrame {
 		JMenuItem connect = new JMenuItem("Connect");
 		connect.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_K, menuMask));
 		connect.addActionListener(e -> connect(m_context.getSettings().currentProfile()));
+		m_connectItem = connect;
 
 		JMenuItem settings = new JMenuItem("Connection settings ...");
 		settings.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, menuMask));
 		settings.addActionListener(e -> SettingsDialog.open(this, m_context, this::connect));
 
 		JMenuItem disconnect = new JMenuItem("Disconnect");
+		m_disconnectItem = disconnect;
 		disconnect.addActionListener(e -> {
 			m_context.getConnectionManager().disconnect();
 			m_panel.getTerminal().append("\n[disconnected]\n", TerminalStyle.SYSTEM);
@@ -108,9 +129,10 @@ public final class MainWindow extends JFrame {
 
 		JMenu file = new JMenu("File");
 		file.setMnemonic(KeyEvent.VK_F);
+		m_connectToMenu = buildConnectToMenu();
 		file.add(connect);
 		file.add(settings);
-		file.add(buildConnectToMenu());
+		file.add(m_connectToMenu);
 		file.add(disconnect);
 		file.addSeparator();
 		file.add(quit);
@@ -245,22 +267,56 @@ public final class MainWindow extends JFrame {
 	 * and the menu item is the place it gets crossed.</p>
 	 */
 	private void connect(ConnectionProfile profile) {
+		if(m_connecting) {
+			//-- Belt and braces with the disabled menu items: this closes the gap between the
+			//-- click and CONNECTING coming back, which is where a double-click lands.
+			m_context.getLogger().log(LogChannel.OTHER, "Connect ignored: already connecting");
+			return;
+		}
+		m_connecting = true;
+		setConnectionControlsEnabled(false);
 		m_panel.getTerminal().append("\n[connecting to " + profile.describe() + "]\n", TerminalStyle.SYSTEM);
 		Thread worker = new Thread(() -> {
 			try {
 				m_context.getConnectionManager().connect(profile);
 				m_context.getSettings().setLastProfileName(profile.name());
+			} catch(ConnectionSupersededException x) {
+				//-- Somebody asked for a different connection while this one was being made. The
+				//-- one they asked for is the one that is live; there is nothing to report.
+				m_context.getLogger().log(LogChannel.OTHER, "Connect abandoned: " + x.getMessage());
 			} catch(Exception x) {
 				m_context.reportFailure("Could not connect to " + profile.describe(), x);
+			} finally {
+				SwingUtilities.invokeLater(() -> {
+					m_connecting = false;
+					onConnectionState(m_context.getConnectionManager());
+				});
 			}
 		}, "pdp11-connect");
 		worker.setDaemon(true);
 		worker.start();
 	}
 
+	/**
+	 * Turn the three ways to start or end a connection on or off together.
+	 *
+	 * <p>Connecting is not cancellable and not re-entrant: while it is happening the machine is
+	 * being launched or a port opened, and a second Connect - or a Disconnect - would be racing
+	 * that. See {@link ConnectionManager#connect}.</p>
+	 */
+	private void setConnectionControlsEnabled(boolean enabled) {
+		if(m_connectItem != null)
+			m_connectItem.setEnabled(enabled);
+		if(m_connectToMenu != null)
+			m_connectToMenu.setEnabled(enabled);
+		if(m_disconnectItem != null)
+			m_disconnectItem.setEnabled(enabled);
+	}
+
 	private void onConnectionState(ConnectionManager manager) {
 		ConnectionManager.State state = manager.getState();
 		m_panel.showConnectionState(state, manager.getMessage());
+		setConnectionControlsEnabled(!m_connecting && state != ConnectionManager.State.CONNECTING);
 		//-- Typing does something only when there is a machine console to type at. On a SimH
 		//-- connection PDP11GUI did not launch there is not one, and the only wire is the sim>
 		//-- channel, which is not a place to put keystrokes.

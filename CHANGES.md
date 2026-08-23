@@ -4,6 +4,20 @@
 
 ### Fixes
 
+- **A second Connect could tear down the connection it was replacing and leave the application
+  saying it was not connected while it was.** `ConnectionManager.connect` closed, rebuilt and
+  published its fields one at a time with nothing serialising two callers, so an attempt that was
+  overtaken while it was blocked launching SimH or waiting out a handshake went on to close the
+  *newer* attempt's transport and console and to fire FAILED after the newer one had fired
+  CONNECTED. What was left was a working command thread behind a manager that said FAILED: the
+  MMU window showing "Not connected to a machine", the status bar showing "Connection failed",
+  both of them correct about what they were told. An attempt now takes a generation number,
+  builds everything into locals and publishes it in one step; one that has been overtaken by then
+  closes what it built, removes its own MMU register group by identity rather than every group
+  with the MMU usage tag, and changes no state at all. It reports that with
+  `ConnectionSupersededException`, which is not a failure and is not shown as one. The main
+  window disables Connect, "Connect to simulated" and Disconnect while a connection is being
+  made, so the race is not offered in the first place.
 - **The MMU window could show "Not connected to a machine" beside a Refresh button that was
   enabled and worked.** Building the two memory maps is 65536 translations, and it happened
   between the line that enables the button and the line that sets the status — so anything thrown
@@ -16,10 +30,11 @@
   its widgets afterwards, and a failure it cannot recover from goes into the status line instead
   of leaving the last answer standing.
 - **The MMU window no longer shows a map of a machine that has not answered yet.** A console —
-  and its MMU — exists from the moment `connect` builds it, which is before the handshake says
-  whether there is a machine there. Opening the window in that gap showed a full memory map with
-  the Refresh button greyed out beside it, because the tables asked "is there an MMU" and the
-  button asked "are we connected". It is one question now.
+  and its MMU — used to exist from the moment `connect` built it, which is before the handshake
+  says whether there is a machine there. Opening the window in that gap showed a full memory map
+  with the Refresh button greyed out beside it, because the tables asked "is there an MMU" and the
+  button asked "are we connected". It is one question now — and since the fix above, a console is
+  not published until it has answered, so there is no longer a gap to open the window in.
 - **"Read the MMU registers" took eight seconds and never read the PSW.** SimH shows a register
   declared with a `BITFIELD` table decoded — `E PSW` on an 11/70 answers
   `PSW:	000340	CM=K PM=K RS0 FPD0 IPL=7 TBIT0 N0 Z0 V0 C0` — and the decoder's "and there is

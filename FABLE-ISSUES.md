@@ -1,0 +1,730 @@
+# FABLE-ISSUES — review findings
+
+Review of the full `java11gui` tree (pdp11-core, pdp11-ui, pdp11-app; ~28k lines of main
+source) for bugs, code quality, internal inconsistency, and the user-interaction model,
+measured against the project's own rules in CLAUDE.md and PLAN.md. The build and the full
+test suite pass; everything below is latent. Findings are ordered by severity. All
+Critical/High findings and the load-bearing Medium ones were verified directly against the
+source; items marked *(needs confirmation)* are plausible from reading but not reproduced.
+
+## Status
+
+Each finding carries a status line under its heading as it is dealt with:
+
+- **FIXED** — changed, with a test that fails without the change where one is possible.
+- **WON'T FIX** — deliberately left, with the reason.
+- **SUPERSEDED** — no longer applies after another fix.
+
+No status line means not yet looked at.
+
+---
+
+## Critical
+
+### 1. Connect/disconnect is unserialized — a racing attempt can tear down the live connection and strand the UI in a stale state
+`pdp11-core/.../conn/ConnectionManager.java:193`, `pdp11-ui/.../MainWindow.java:247`
+
+**FIXED.** `ConnectionManager` now serialises connect/disconnect with a generation counter taken
+under a lock the blocking part deliberately does not hold, so a disconnect never waits on an
+attempt that is waiting on a machine. An attempt builds transport, drain thread, console and
+connection into locals and publishes all of them in one guarded step at the end; one that has
+been overtaken by then closes only what it built and changes no state at all, because both
+`setState` and the unpublish step check the generation (and the MMU register group is now removed
+by identity rather than by usage tag, which was the other way a stale attempt reached into the
+live connection). Being overtaken is reported as `ConnectionSupersededException`, which the main
+window logs rather than showing as a failure. `MainWindow` disables Connect, "Connect to
+simulated" and Disconnect while a connection is being made, with a flag covering the gap between
+the click and CONNECTING arriving back on the EDT. Regression test:
+`ConnectionManagerTest.anOvertakenAttemptDoesNotTakeTheLiveConnectionWithIt` — it reproduces the
+reported symptom exactly against the old code (`expected: <CONNECTED> but was: <FAILED>`) — plus
+`disconnectingDuringAnAttemptEndsDisconnectedRatherThanFailed`. A side effect worth knowing about
+for the findings below: `getConsole()` no longer returns a console that has not completed its
+handshake, so the window state during CONNECTING is now simply "not connected".
+
+The finding as reported: `MainWindow.connect()` spawns a fresh, unguarded worker thread per
+menu click, and nothing disables Connect while state is CONNECTING. `ConnectionManager.connect()` is not
+synchronized: its fields are individually `volatile` but the close → CONNECTING → build →
+CONNECTED sequence is not atomic. If a second connect (or a Disconnect) runs while the
+first is still blocked launching SimH or handshaking, the second's `close()` destroys the
+first's half-built transport; the first attempt's catch block then calls `close()` again —
+now reading and closing the *second* connection's transport and console — and fires
+`setState(FAILED)` **after** the second attempt's `setState(CONNECTED)`. The result is a
+working command thread with the manager stuck in FAILED: MmuPanel's
+`updateDisplay()` sees `isConnected() == false` and shows "Not connected to a machine",
+MainPanel shows "Connection failed", until some later transition. This is the most likely
+root cause of the observed "MMU window stays Not connected after a successful reconnect" —
+the panel's own listener pairing was checked and is correct; the staleness is in the state
+machine. Fix: serialize connect/disconnect (single connection-management executor, or a
+generation counter so a stale attempt's failure path can neither close nor set state over
+a newer attempt), and disable Connect while CONNECTING.
+
+### 2. A dropped connection never changes ConnectionManager state — the UI stays "Connected" after SimH dies or the line drops
+`pdp11-core/.../console/AbstractConsole.java:167` (no path to ConnectionManager)
+
+When the reader thread ends, `ConsoleConnection.readerLoop` calls
+`m_receiver.onDisconnected(cause)`, and `AbstractConsole.onDisconnected` only closes the
+answer queue. Nothing notifies `ConnectionManager`, so `m_state` stays CONNECTED,
+`isConnected()` stays true, the status bar keeps saying "Connected", terminal input stays
+live, and every panel's connected-check passes against a dead wire; each subsequent
+operation then fails one at a time with write/timeout errors. The inverse stale-state twin
+of issue 1. Fix: route the reader-death callback to ConnectionManager and transition to
+FAILED with the cause.
+
+### 3. I/O page scan on a 16/18-bit machine runs to completion, then throws away all its results
+`pdp11-core/.../machine/IoPageScanner.java:99,130-136`, `pdp11-ui/.../scan/IoPageScannerPanel.java:63`
+
+`scan()` examines 4096 addresses typed `console.physicalAddressType()` (ODT_16/ODT_18 on a
+real ODT machine — verified: `OdtConsole.physicalAddressType()` returns the profile width,
+and ODT advertises `NON_FATAL_UNIBUS_TIMEOUT` so the scan is allowed to run), then stores
+them back with `target.clear()` + `target.add(addr)`. The panel creates the target group
+hard-coded at `PHYSICAL22`, and `MemoryCellGroup.add(Address)` throws
+`IllegalArgumentException` on a type mismatch — so on real hardware the scan performs all
+4096 serial examines (minutes over a serial line) and then crashes while storing, losing
+everything. The panel comment "The group's type follows the machine, and the scan just
+rebuilt it" states the intent; `clear()` never retypes a group, so `clear()+add()` cannot
+deliver it. The app-level test hides this by creating its group at the protocol's own
+type. Fix: retype/rebuild the target at the console's width inside `scan()` before adding.
+
+### 4. The shared grid's dynamic overwrite policy silently overrides the loader/dumper/assembler groups' permanent `pdpOverwritesEdit(false)` — a loaded file can be clobbered before deposit
+`pdp11-ui/.../mem/MemoryCellGroupTable.java:261-264`; victims: `load/MemoryLoaderPanel.java:89`, `dump/MemoryDumperPanel.java:85`, `macro11/AssemblerModel.java:111`
+
+MemoryLoaderPanel, MemoryDumperPanel and AssemblerModel each set
+`pdpOverwritesEdit(false)` permanently in their constructors (with comments saying so).
+But all three display through `MemoryCellGroupTable`, whose `refresh()`/`setValueAt()`
+call `updateOverwritePolicy()`, which unconditionally sets
+`m_group.setPdpOverwritesEdit(getEditedCells().isEmpty())`. After "Deposit all" (edits now
+equal machine values), `refresh()` flips the flag to true, and a subsequent "Load file"
+does not flip it back (`rebuild()` never calls `updateOverwritePolicy()`). Concrete
+failure: load file A, deposit it, load file B, then let any other window examine
+overlapping addresses — propagation now writes machine values into the loader group and
+the grid's listener copies pdp→edit, silently replacing the freshly loaded file B before
+it is deposited; Verify then compares machine against machine and reports agreement. This
+is exactly the failure the flag exists to prevent per the class's own Javadoc. Fix: make
+the dynamic policy an opt-in (constructor flag used by MemoryPanel only) and leave groups
+that declared a permanent `false` alone.
+
+---
+
+## High
+
+### 5. Assembly worker mutates the live, bus-registered code group off both sanctioned threads
+`pdp11-ui/.../macro11/AssemblerModel.java:274-311`; `pdp11-core/.../macro11/Macro11ListingParser.java:112-150`
+
+`assemble()` runs `Macro11ListingParser.parse(result.listing(), group)` on an ad-hoc
+`macro11-assemble` thread. `parse` does `group.clear()` and repopulates it — mutating the
+group's plain `ArrayList` and the `MemoryCellGroups` propagation index from a third thread
+while the EDT can be painting the Code-tab grid connected to that same group and the
+command thread can be walking the index in `syncMemoryCells`. None of
+MemoryCell/MemoryCellGroup/MemoryCellGroups is synchronized. Nothing prevents two
+concurrent assemblies either (AssemblerPanel Compile + ExecutionPanel "New program").
+Failure: ConcurrentModificationException in a renderer or mid-examine console job, or a
+half-cleared index that mis-routes propagation. Fix: parse into a detached list on the
+worker and install it into the group inside the existing `AppContext.onUi` block; guard
+against overlapping assemblies.
+
+### 6. The assembler's "Verify" destroys the comparison it claims to make
+`pdp11-ui/.../macro11/AssemblerPanel.java:118,256-257`; mechanism at `mem/MemoryCellGroupTable.java:279-291`
+
+The Memory Loader's Verify deliberately examines raw so that disagreements colour
+themselves (the documented `pdpOverwritesEdit` design). The assembler Code tab's button is
+also labelled "Verify", tooltip "Read the same addresses back off the machine and
+compare" — but it calls `m_grid.examineAll(false, …)`, and `examineAll` unconditionally
+loops `mc.setEditValue(mc.getPdpValue())` after the examine, overwriting the assembled
+program in the grid with the machine's contents. Nothing can ever show as differing, and
+the assembled words are silently discarded from the grid. Same label as the Loader,
+opposite semantics; the memory window's popup "Verify against the machine" matches the
+Loader. Fix: give the assembler a real verify path (examine without the edit-copy), or
+relabel.
+
+### 7. Unsaved assembler source is discarded without confirmation — by New, Open, and Quit
+`pdp11-ui/.../macro11/AssemblerModel.java:181-187`, `AssemblerPanel.java:198-199,273-282`, `MainWindow.java:337-345`
+
+The panel tracks dirty state (`isChanged()`, "*" in the status line, Save enablement), yet
+"New" wipes the editor, file association and assembled code with no prompt; "Open ..."
+replaces unsaved text the same way; and `MainWindow.quit()` exits without checking
+`AssemblerModel.isChanged()`. A window that visibly models "changed since saved" but never
+asks before destroying those changes is internally inconsistent — and a regression against
+the rewrite's own goal that editor content survive window close. Fix: confirm on New/Open
+when dirty, and check on quit.
+
+### 8. Disconnect (and Quit) runs transport teardown on the EDT — up to 2 s+ freeze, deadlock-adjacent
+`pdp11-ui/.../MainWindow.java:99-103,337-345`; `pdp11-core/.../console/ConsoleConnection.java:290-301`
+
+`connect()` is carefully run on a worker (its own comment explains the freeze/deadlock);
+the Disconnect menu action calls `ConnectionManager.disconnect()` directly from the EDT.
+`close()` does `reader.join(2000)`, closes the SimH console channel and the transport
+(process teardown / serial port close, both potentially slow). A wedged transport freezes
+the whole UI for seconds on Disconnect; same on quit, where it is more tolerable. Fix:
+run disconnect on a worker exactly like connect.
+
+### 9. NumberFormatException escapes the fake ODT and kills the command thread
+`pdp11-core/.../fake/FakePdp11Odt.java:363` (parse sites `:234,:299,:329`)
+
+`serialWriteByte` catches only `FakePdp11Exception` and answers "?", but the parse paths
+call `Octal.parse`, which throws `NumberFormatException` — reachable from typed input like
+`1R2/` or `R3G`. The exception propagates through `FakeTransport.write` and
+`ConsoleConnection.write` (which wraps only `IOException`); for terminal keystrokes routed
+via `sendUserInput` (which catches only `ConsoleException`) it kills the command-executor
+worker with an unlogged stack trace, leaving the fake mid-state instead of printing "?"
+like the real 11/23. Fix: catch `NumberFormatException` in `serialWriteByte` (or make the
+fake's parsers throw `FakePdp11Exception`).
+
+### 10. A closed multi-instance memory window is unreachable forever — but still alive on the propagation bus
+`pdp11-ui/.../window/WindowManager.java:95-101`, `window/ToolWindow.java:44-53`, `MainWindow.java:178-198`
+
+Closing a tool window only hides it. Singletons come back via their Windows-menu entry,
+contents intact. But for MEMORY (any multi-instance type) the menu offers only "New memory
+window" plus a list of *visible* windows. Close "Memory - 1" and no gesture ever shows it
+again: `openNew` skips id 1 because the hidden window still occupies the key, so the user
+gets a fresh "Memory - 2" while the hidden "Memory - 1" — with its range, its edits, and
+its `MemoryCellGroup` still registered on the propagation bus — persists invisibly until
+shutdown. Close therefore means "reopenable" for singletons and "lost, but not gone" for
+memory views. Related: PLAN.md §3 specifies "Show All / Hide All"; only "Hide all" is
+implemented (`MainWindow.java:199-203`) — Show All is precisely the gesture that would
+have recovered them. Fix: list hidden windows in the menu (or implement Show All), or
+truly dispose+unregister multi-instance windows on close.
+
+### 11. Two incompatible disconnected-state models: half the windows grey out, the other half raise a modal error dialog
+Grey-out: `load/MemoryLoaderPanel.java:297-303`, `dump/MemoryDumperPanel.java:281-286`, `memtest/MemoryTestPanel.java:357-364`, `scan/IoPageScannerPanel.java:156-165`, `mmu/MmuPanel.java:224-225`, `simh/SimhConsolePanel.java:187-190`, `macro11/AssemblerPanel.java:426-438`, exec. Never disabled: `mem/MemoryPanel.java:107-123`, `mem/RegisterGroupPanel.java:40-52`, `bits/BitfieldsPanel.java:176-181`
+
+Loader, Dumper, Memory Test, Scanner, MMU, SimH Console, Assembler and Execution disable
+their machine-touching buttons when disconnected. The plain Memory window, every Register
+Group window and Bitfields never call `setEnabled` at all: clicking Examine/Deposit while
+offline falls through `AppContext.onConsole` into `reportFailure("Not connected to a
+machine")`, rendered as a **modal error dialog** plus a terminal line
+(`MainWindow.java:318-324`). The same gesture greys out in one window and raises a modal
+dialog in its sibling. RegisterGroupPanel additionally has no attach/detach and never
+reacts to connection changes at all. Fix: give the three holdouts the same
+connection-listener-driven `updateButtons` the others have.
+
+### 12. ProgressDialog is single-use but is reused — phase 2 of every two-phase memory test runs with no dialog and cannot be cancelled
+`pdp11-ui/.../ProgressDialog.java:52,61-74,92-95,107`; bitten at `memtest/MemoryTestPanel.java:269-296`
+
+Each `MemoryTester.testDataLines/testAddressLines/testDataBits` phase calls `pm.begin(…)`
+… `finally pm.done()`, and MemoryTestPanel passes **one** ProgressDialog through two
+chained phases. `done()` sets `m_finished = true`; `begin()` never resets it (verified),
+so the second phase's `showNow()` bails at the `if(m_finished …)` guard. Over a slow
+serial line the second — typically longer — phase runs with no progress display and no
+Cancel; the UI just sits at "Testing ...". Independently found by two reviewers. Fix:
+reset `m_finished` (and decide `m_cancelled` semantics) in `begin()`, or use one dialog
+per phase.
+
+### 13. Execution controls set MachineState to RUNNING optimistically with no rollback on failure
+`pdp11-ui/.../exec/ExecutionPanel.java:247-260`
+
+`doResetAndStart`/`doContinue` call `machineState.running()` on the EDT *before* queueing
+the console job. If `resetAndStart`/`continueCpu` throws (serial timeout, console
+refusal), `onConsole` reports the failure but MachineState stays RUNNING forever: Reset,
+Continue, Single step and Set/show all disable (`!running`), the disassembler stops
+following, and the only way out is pressing Halt against a machine that never started.
+Fix: flip to RUNNING from inside the job after the console call returns, or restore the
+previous state on the failure path.
+
+---
+
+## Medium
+
+### 14. `onConsole` can silently drop a job during a disconnect race, leaving panels stuck "working"
+`pdp11-ui/.../AppContext.java:227-232`; `pdp11-core/.../console/ConsoleConnection.java:242-247`
+
+`onConsole` null-checks the connection, then calls `connection.execute(…)` — which
+swallows `RejectedExecutionException` after close. If a disconnect lands between check and
+submit, the job vanishes and `onConsole` returns true; callers that flipped state up front
+never hear back (e.g. MemoryTestPanel sets `m_running = true`/"Testing ..." and clears
+them only from the job's own callbacks — its buttons stay disabled forever). Fix: have
+`execute` report rejection and `onConsole` route it through `reportFailure`.
+
+### 15. Disassembler "catch up on open" never examines: `isShowing()` is always false during `onShowing`
+`pdp11-ui/.../disas/DisassemblerPanel.java:231-241,257-268`; `window/ToolWindow.java:91-101`
+
+`attach()` (from `DisassemblerWindow.onShowing`) calls `showPc(pc)`, which passes
+`isShowing()` as the examine flag — but `ToolWindow.showWindow()` runs `onShowing()`
+*before* `setVisible(true)`, so the flag is false on every open. Opening the disassembler
+while connected and stopped shows "Nothing has been read from this range yet" (or a stale
+listing) instead of reading around the PC; the comment "catch up rather than waiting for
+the next stop" describes behaviour the code cannot deliver. Fix: pass an explicit
+`examine = isConnected()` from `attach()`, or set visibility before `onShowing()`.
+
+### 16. Pdp11Mmu's listener list is a plain ArrayList mutated on the EDT while iterated on the command thread
+`pdp11-core/.../mmu/Pdp11Mmu.java:137,184-195`; used from `pdp11-ui/.../mmu/MmuPanel.java:144-171`
+
+MmuPanel's `attach()/detach()/rebind()` call add/removeChangeListener on the EDT; the MMU
+fires the list on the command thread during every register examine. Hiding/showing/
+reconnecting the MMU window while an examine runs can throw
+ConcurrentModificationException on the command thread (surfacing as "Reading the MMU
+registers failed"). Every comparable bus in the project (MachineState, CellSelection,
+MemoryCellGroup, ConnectionManager) uses `CopyOnWriteArrayList`; this one was missed.
+
+### 17. MmuPanel's `m_updatePending` coalescing flag has no happens-before edge — the MMU map can stop refreshing
+`pdp11-ui/.../mmu/MmuPanel.java:69,189-197`
+
+`scheduleUpdate()` tests/sets the plain boolean on the command thread (it is the Pdp11Mmu
+change listener); the queued EDT runnable clears it. Per the JMM the command thread may
+keep seeing a stale `true` and never post another redraw — the panel silently stops
+following register changes. Independently found by two reviewers. Fix: `AtomicBoolean`.
+
+### 18. Bitfields never opts out of `pdpOverwritesEdit`, so any other window's examine wipes the user's in-progress bit edits
+`pdp11-ui/.../bits/BitfieldsPanel.java:115-120,496-499`
+
+The panel's one-cell group keeps the default `pdpOverwritesEdit = true`, and its cell
+listener does `cell.setEditValue(cell.getPdpValue())`. While the user composes a register
+value bit by bit (the window's whole purpose), an examine of the same address from any
+other window propagates the machine value in and the listener silently overwrites the
+composition. Every other edit-holding view protects itself. Fix: opt out while
+`m_cell.isEdited()` (mirroring `updateOverwritePolicy`), or permanently.
+
+### 19. The dumper's connection listener discards a captured dump on width change — including plain disconnect from a 16/18-bit machine
+`pdp11-ui/.../dump/MemoryDumperPanel.java:302-311`; contrast `load/MemoryLoaderPanel.java:313-322`
+
+The listener does `getGroup().shiftRange(…)` whenever the address type differs, with no
+`isEmpty()` guard. `addressType()` falls back to PHYSICAL22 with no console, so
+disconnecting from a 16-bit ODT machine destroys the words just read — the very data
+`updateButtons()` promises survives ("a dump read earlier can be written after the machine
+has gone away"). The sibling MemoryLoaderPanel guards the same operation with
+`&& getGroup().isEmpty()` and a comment explaining why. Fix: copy the loader's guard.
+
+### 20. DisassemblyListing: PC in range with an unread word silently discards every line before the PC
+`pdp11-core/.../disas/DisassemblyListing.java:112-123`
+
+The realignment loop advances `from` by 2 until `pcLine >= 0` or `from >= pc`. If the PC
+lies inside the range but its own word was never examined, `atPc` can never be set, so the
+loop walks `from` up to `pc` and returns the listing built from `pc` onward — every valid
+line between `start` and `pc` vanishes and `startAddress()` reports `pc`. Contradicts the
+class Javadoc ("Then pcLine() is -1 and the listing starts where it was asked to").
+Scenario: sparsely examined 001000-001777, PC=001400 unread → window shows only 001400+
+with no PC mark. Fix: when the loop ends without finding the PC, return the *first*
+listing. The test covers PC-outside-range but not this case.
+
+### 21. MemoryFileLoader: an out-of-width address aborts the whole "forgiving" load with an uncaught IllegalArgumentException
+`pdp11-core/.../memfile/MemoryFileLoader.java:170-180,331-337`
+
+`loadText` catches only `NumberFormatException` around the address parse; `addCell` then
+calls `Address.of(type, value)`, which throws `IllegalArgumentException` for a value wider
+than the group (e.g. a pasted `7777777:` line against a 16-bit start address). A format
+documented as forgiving (skips junk, collects warnings) instead aborts with a raw runtime
+exception, losing all warnings and everything loaded so far. Same class of failure in
+`loadByteStream`/`loadSplitBytes` when `startAddr + 2*words` runs off the top of the
+address space (IAE mid-rebuild, group left partially filled). Also inconsistent: an
+over-wide *value* is silently masked `& 0xFFFF` (line 177) while a non-octal value gets a
+warning. Fix: bounds-check and convert to warnings/IOException.
+
+### 22. Default-locale case conversion breaks machine descriptions and mnemonics under a Turkish locale
+`pdp11-core/.../machine/MachineDescription.java:119-121`; also `disas/DecodedInstruction.java:27`, `bits/BitfieldsDefs.java:46,55`, `machine/IniFile.java:81-85`
+
+`isBitsSection` does `name().toUpperCase().startsWith("BITS.")`; under `tr-TR`,
+`"Bits.…".toUpperCase()` yields `BİTS.…` (dotted İ) and every `[Bits.*]` section loads as
+a bogus device group while no register gets named bits. `DecodedInstruction.text()`'s
+`toLowerCase()` turns `"INC"` into `"ınc"`, breaking display and the byte-identical diff
+against the Pascal. Fix: `Locale.ROOT` on every case conversion in the core (the codebase
+already does this correctly in `Macro11.isWindows()`).
+
+### 23. Pdp1144Console.makePrompt: non-atomic `size()`/`get(size-2)` can throw on the reader thread and tear down the connection
+`pdp11-core/.../console/Pdp1144Console.java:268-275`
+
+Both calls are individually synchronized, but a command thread calling `clearAnswers()`
+(every command does, without `m_decodeLock`) between them shrinks the list and `get`
+throws `IndexOutOfBoundsException` on the reader thread; `readerLoop` treats any throwable
+as transport failure and reports "Console connection lost", killing a live connection.
+`OdtConsole`/`SimhConsole` use the null-safe `getLast()` and cannot crash this way. Fix:
+add a synchronized `getFromEnd(int)` to AnswerCollector.
+
+### 24. Scanner buffer read without the decode lock while the reader thread appends
+`pdp11-core/.../console/OdtConsole.java:506`, `SimhConsole.java:644`
+
+`OdtConsole.deposit` and `SimhConsole.enterMultipleCommandMode` build a
+`NoConsolePromptException` from `m_scanner.getInput()` directly; the buffer is a plain
+StringBuilder appended under `m_decodeLock` by the reader thread, and
+`AbstractConsole.checkPromptAfter` takes that lock for exactly this read — these two sites
+do not. A concurrent append during `toString()` can yield corrupt diagnostics or an
+ArrayIndexOutOfBoundsException on the command thread. Fix: a locked accessor.
+
+### 25. `haltCpu` on an already-halted V3.40C 11/44 throws "no answer" after a ~1 s stall
+`pdp11-core/.../console/Pdp1144Console.java:699-717`
+
+The `Console.haltCpu` contract says return null for "a machine that had already stopped",
+and SimhConsole does. On V3.40C firmware `H` when halted draws `?Already halted` and no
+stop report, so `waitFor(Halt, …)` times out and the code throws "Stopping the CPU failed:
+no answer". The execution window calls halt unconditionally, so every redundant Halt click
+surfaces a spurious error. Fix: recognise the no-Halt-but-prompt outcome and return null.
+
+### 26. SimhConsole.continueCpu clears neither the execution-stop state nor a pending silent halt
+`pdp11-core/.../console/SimhConsole.java:1083-1089`
+
+`resetAndStart` does `m_silentHaltPending = false; clearExecutionStop();` and both other
+consoles' `continueCpu` call `clearExecutionStop()`; SimhConsole's does neither. Stale
+stop state survives into RUNNING, and a silent-halt resolution scheduled just before
+Continue still fires — running `E PC` against a running machine, stalling the command
+thread up to the 8 s timeout and logging a bogus failure. Fix: mirror `resetAndStart`.
+
+### 27. Pdp1144Console commits `m_lastDepositAddr` before the deposit is confirmed — a failed deposit poisons the next `D +`
+`pdp11-core/.../console/Pdp1144Console.java:415-432`
+
+Line 427 sets `m_lastDepositAddr = physical` before `checkPrompt` confirms the command was
+processed. If the prompt never comes and the caller carries on after catching the
+exception, the next sequential deposit goes out as `D + value` — but the machine's own
+last-address was never advanced, so the value lands at the wrong location silently. Fix:
+set the field only after `checkPrompt` succeeds (or clear it on the failure path).
+
+### 28. SimH launch-failure path leaks the remote-channel socket and discards the one diagnostic that explains the failure
+`pdp11-core/.../io/SimhProcessTransport.java:389-405`
+
+If the remote channel connects but the console channel's `connectWithRetry` fails, the
+catch destroys the process but never closes the already-open telnet transport (socket
+leaks until GC). Worse, `startOutputDrain()` runs only after both connects succeed, so on
+any launch failure SimH's stdout — which the field comment calls "the only diagnosis
+available when a launch goes wrong" — is never read and never reaches the thrown
+TransportException. Fix: close the telnet in the catch, start the drain right after
+`pb.start()`, and append `getProcessOutput()` to the failure message.
+
+### 29. ~180 lines of bulk-examine machinery duplicated near-verbatim between SimhConsole and Pdp1144Console
+`pdp11-core/.../console/SimhConsole.java:805-1010` vs `Pdp1144Console.java:438-652`
+
+`ExamineItem`, `runExamineList` (character-for-character identical), `anyUnanswered`,
+`collectBlock` and the two-list `examine(MemoryCellGroup…)` bodies are copies; the
+"no progress this pass" hardening has already been applied twice. Extract a shared helper
+in AbstractConsole parameterised by the block-command builder. Smaller duplicates:
+`toPhysical` (OdtConsole:443 / Pdp1144Console:144) and the R0/R7/PSW offset constants
+repeated across OdtConsole, SimhConsole, FakePdp11 and FakeSimh.
+
+### 30. Command-thread iteration of the live cell list races EDT `shiftRange` *(needs confirmation of a practical window)*
+`pdp11-ui/.../mem/MemoryCellGroupTable.java:279-291` (same pattern `MemoryCellGroupList.java:242-254`)
+
+`examineAll`'s job iterates `group.getCells()` — an unmodifiable *view* over a plain
+ArrayList — on the command thread, while the EDT can call `shiftRange`/`clear` (Show,
+`<`/`>`, connection events) → ConcurrentModificationException surfacing as "Examining
+memory failed". The core consoles defensively `List.copyOf`; the UI-side post-loop does
+not. The modal ProgressDialog narrows but does not close the window (it appears only
+after 1 s, and jobs can queue behind others while the UI is free). Fix: snapshot with
+`List.copyOf` in the job and treat a group whose range changed mid-job as stale. Related:
+the post-loop `setEditValue(getPdpValue())` also runs on cancel and for never-examined
+cells, wiping typed edits the examine never touched.
+
+### 31. WindowManager's dispose path skips `onHiding()` — a window disposed while visible leaks its subscriptions
+`pdp11-ui/.../window/WindowManager.java:154,168`
+
+`closeAll()`/`closeAll(WindowType)` call `w.dispose()` directly; `onHiding()` — the
+documented unsubscribe point — runs only from `hideWindow()`. Today the damage is limited
+(shutdown exits anyway; REGISTER_GROUP windows disposed on machine-description reload
+happen to subscribe only to the group being discarded), but the framework invariant
+"onShowing/onHiding pair up" is broken on this path, and the first listener-carrying
+window added to a dispose flow will stay subscribed to ConnectionManager/MachineState as a
+dead frame forever. Fix: run `onHiding` from an overridden `dispose()` when attached.
+
+### 32. Five hard-coded colours in the terminal violate "Only UiColors names a colour"
+`pdp11-ui/.../terminal/GlassTerminalView.java:60,61,84,85,86`
+
+Background (0x121214), caret (0xE0E0E0) and the three semantic stream colours (PDP
+0xD8D8D8, USER 0x7FC7FF, SYSTEM 0xB09050) are named inline — the stream colours are
+exactly the "means something" kind CLAUDE.md says must live in UiColors, and `Pdp11Gui`'s
+javadoc even asserts "nothing else in the UI names a colour". Verified the only violation
+in pdp11-ui/pdp11-app. Fix: move all five to UiColors.
+
+### 33. Window visibility is saved on every hide/quit and never restored — the tool-window layout does not survive a restart
+`pdp11-ui/.../window/WindowManager.java:202-213`, `settings/WindowGeometry.java:19`, `window/ToolWindow.java:103-108`
+
+`rememberGeometry` persists `isVisible()` into `WindowGeometry.visible`, but nothing ever
+reads `.visible()` — every launch opens only the main window, while the settings file
+records exactly what the layout was (the Delphi original restores it). Also `hideWindow`
+saves *before* `setVisible(false)`, so a user-closed window is recorded `visible=true`
+(corrected only by the quit-path resave), the main window itself has no geometry
+persistence at all, and `WindowType.TERMINAL` is registered nowhere (dead constant).
+Either restore visibility on startup or stop recording it.
+
+### 34. Vocabulary drift for the two core actions: four names for "read from the machine", and the assembler renames/reorders deposit
+"Examine all"/"Examine cell" (`mem/MemoryPanel.java:106-110`, scan, register groups), "Read from machine" (`dump/MemoryDumperPanel.java:71`), "Read the MMU registers" (`mmu/MmuPanel.java:56`), "Examine" (`bits/BitfieldsPanel.java:176`)
+
+Deposit is likewise split: "Deposit all"/"Deposit changed" everywhere except the Assembler
+code tab, where deposit-all is renamed "Load into machine" (`AssemblerPanel.java:114`) and
+sits *before* "Deposit changed", while every other window orders
+examine → deposit-changed → deposit-all. "Examine cell" vs "Examine register" is a smaller
+instance. One vocabulary and one ordering should win.
+
+### 35. Enter in an address field acts in five windows and does nothing in two
+Works: `mem/MemoryPanel.java:126-127`, `disas/DisassemblerPanel.java:128-129`, `dump/MemoryDumperPanel.java:124-125`, `memtest/MemoryTestPanel.java:151-152`, `bits/BitfieldsPanel.java:163-166`. Dead: `exec/ExecutionPanel.java` (Start PC / Current PC fields), `load/MemoryLoaderPanel.java` ("Load at:")
+
+Same widget shape, different Enter contract: in the Dumper, Enter even immediately reads
+the machine; in Execution the user must find the "Set/show" button. Add ActionListeners to
+the two holdouts.
+
+### 36. Execution window: "Reset" and "Set/show" labels do not describe what the buttons do
+`pdp11-ui/.../exec/ExecutionPanel.java:61,71,235-245,339-347`
+
+"Reset" also deposits the Start PC field into R7 (`doResetAndSetPc` — the docstring admits
+the deposit happens "whether or not" the console needs it), i.e. it silently writes a
+register. "Set/show" only ever *sets* the PC; the "show" half refers to the disassembler
+jumping via MachineState, invisible from this window. Beside "Reset and start",
+"Continue", "Single step" — all accurate verbs — these two are the odd ones out.
+
+### 37. The Memory window shows its word count as octal in the field and decimal in the status line
+`pdp11-ui/.../mem/MemoryPanel.java:81,103-104,209` vs `:263-269`
+
+The "Words:" field is parsed and re-written as octal (default 64 displays as "100")
+with nothing labelling it octal, while `updateInfo()` two rows below prints the same
+quantity as decimal ("64 words from ..."). Every other count in the app (test results,
+loader status, scanner status) is decimal.
+
+### 38. Verify is a hidden right-click item in the Memory window and a first-class button in its siblings
+`pdp11-ui/.../mem/MemoryPanel.java:138-140,235-242` vs `load/MemoryLoaderPanel.java:75,131`
+
+"Verify against the machine" exists only in an undiscoverable grid context menu (with
+"Clear data", "Fill data with address", "Export as SimH DO script ..."); Loader and
+Assembler expose Verify as a toolbar button. No other window has a context menu at all, so
+the only right-click surface in the application hides functionality its neighbours put on
+buttons.
+
+### 39. Three policies for whether opening a data window reads the machine
+`mem/RegisterGroupWindow.java:37-41` (auto-examine on *first* show only), `mmu/MmuPanel.java` (never auto-reads), Memory windows (examine on Show/Enter only)
+
+A Register Group window examines the whole device as a side effect of first open — and
+never again on later shows or reconnects, so stale values display silently after
+reconnecting to a different machine. The MMU window opens showing a map built from
+unexamined registers and waits for its button. Pick one policy (and refresh register
+groups on reconnect).
+
+### 40. Typed-input errors have three different surfaces, and the default is a modal dialog per typo
+Modal: every octal `parse` failure in Memory/Disassembler/Execution/Dumper/Loader/MemTest/Bitfields routes through `reportFailure` → `JOptionPane` titled "PDP11GUI" (`MainWindow.java:318-324`). Inline status: `macro11/AssemblerPanel.java:66-69` (which explicitly argues against dialogs — "one keystroke of penance per typo"). Silent keystroke rejection: `numbers/NumberDocumentFilter.java`, `mem/OctalCellEditor.java:23-32`
+
+Field-level validation deserves one convention; the modal dialog is the most hostile of
+the three and is the default. The assembler's own comment is the design argument for
+fixing the rest.
+
+### 41. Settings dialog ignores dialog conventions, and Close ≠ titlebar X
+`pdp11-ui/.../settings/SettingsDialog.java:26-66`, `settings/ConnectionSettingsPanel.java:272-282`
+
+No default button (Enter does not Connect), no Escape binding (non-standard for a modal
+dialog), and asymmetric close paths: the "Close" button calls `saveSettings()` (persisting
+profile edits) while the title-bar X (`DISPOSE_ON_CLOSE`) skips the save — the same
+gesture-pair silently decides whether edits reach disk. "Delete" removes a saved profile
+with no confirmation. ProgressDialog likewise has no Escape→Cancel.
+
+### 42. Connect/Disconnect menu items ignore connection state; connecting has no busy affordance and no cancel
+`pdp11-ui/.../MainWindow.java:91-103,240-260`
+
+Both items are always enabled: Disconnect while disconnected silently appends
+"[disconnected]"; a second Connect during a slow connect spawns another worker (see issue
+1 for what that races). Feedback is a status-bar "Connecting…" and a terminal line — every
+*other* long operation gets a ProgressDialog with Cancel.
+
+### 43. Escape in the Number Converter silently zeroes the value
+`pdp11-ui/.../numbers/NumberConverterPanel.java:162-170`
+
+Window-wide Escape is bound to "clear to 0". Everywhere else Escape does nothing or is
+Swing's cancel-cell-edit; here the same key destroys the number being inspected with no
+feedback and no undo. A Pascal carry-over that now collides with normal Escape habits.
+
+### 44. Settings object is mutated from the connect worker while the EDT reads and saves it
+`pdp11-ui/.../MainWindow.java:250-252`
+
+The worker calls `getSettings().setLastProfileName(...)` after connect; the EDT mutates
+the same unsynchronized Settings (profiles, geometry) and Gson-serializes it in `save()`.
+A benign-looking data race today; marshal the post-connect write to the EDT.
+
+### 45. Listener exceptions during connect can convert a successful connection into FAILED
+`pdp11-core/.../conn/ConnectionManager.java:173-180`
+
+`setState` iterates listeners unguarded on the connecting worker; one RuntimeException
+from an arbitrary panel lambda propagates into `connect()`'s catch, closes the just-built
+connection, reports FAILED, and skips the remaining listeners. Also, `m_console`/
+`m_connection` are published before `init()` runs (`:223-224`), so observers can reach a
+console mid-handshake while state is CONNECTING; and `catch(ConsoleException |
+RuntimeException)` misses `Error`, leaking an open transport on that path. Fix: per-
+listener try/catch in `setState`; publish the fields only on success.
+
+---
+
+## Low
+
+### 46. Stop event can be lost when `clearAnswers()` races the halt-then-prompt decode pair
+`pdp11-core/.../console/OdtConsole.java:370-375`, `SimhConsole.java:466-482`, `Pdp1144Console.java:268-275`
+
+All three decoders detect a stop by finding the preceding `Halt` from the prompt;
+`clearAnswers()` synchronizes only on the collector, not `m_decodeLock`, so it can run
+between the Halt's publish and the prompt's decode — the prompt then finds no Halt and
+drops the stop (SimH partially recovers via the silent-halt path; ODT and 11/44 do not).
+Millisecond window requiring a command issued exactly as the machine stops. Fix: snapshot-
+and-clear under the decode lock.
+
+### 47. SimH echo-fallback can misreport a successful command as rejected *(needs confirmation)*
+`pdp11-core/.../console/SimhConsole.java:560-571`
+
+When `sendCommand` misses the echo (returns -1), `checkPromptNoOutput(-1, …)` scans from
+position 0 and treats any non-blank `OtherLine` — including the command's own late echo —
+as a rejection. Requires the echo to arrive after the full timeout but before the prompt
+check. Fix: exclude a line equal to the command, as `command()` (`:715`) already does.
+
+### 48. Halt can queue up to 8 s behind an in-flight sim> command
+`pdp11-ui/.../simh/SimhConsolePanel.java:236-244`; `SimhConsole.CMD_TIMEOUT_MS = 8000`
+
+A user command like `go` holds the command thread waiting for a prompt that will not come
+while the simulation runs; Halt — the control whose purpose is interrupting exactly that —
+waits behind it. The Pascal writes ^E out-of-band for this reason. Consider writing the ^E
+byte directly to the transport and letting the queued `haltCpu` do the bookkeeping.
+
+### 49. TOCTOU on the live console across the EDT→command-thread boundary
+`pdp11-ui/.../simh/SimhConsolePanel.java:216-228`, `mmu/MmuPanel.java:296-310`
+
+`SimhConsolePanel.submit` checks `simh() != null` on the EDT but the job casts
+`((SimhConsole) console)` on the command thread — a reconnect to a non-SimH machine in
+between yields a ClassCastException surfaced as a confusing failure dialog. MmuPanel's
+refresh captures the old Pdp11Mmu/register group on the EDT; after a reconnect the job
+examines an evicted group against the new console and the results go nowhere. Both self-
+heal on the next click; both are cured by re-resolving from the console argument inside
+the job.
+
+### 50. Bitfields examine/deposit jobs read `m_cell` at execution time, not capture time
+`pdp11-ui/.../bits/BitfieldsPanel.java:445-476`
+
+The queued job captures the local `addr` but writes results through the `m_cell` field; if
+the user re-points the panel between queueing and execution, the old address's value is
+written into the new cell. Every other panel captures the cell object. Fix: capture
+`m_cell` into a local before `onConsole`.
+
+### 51. Log window attach has a snapshot-to-subscribe gap; UiLogger delivers outside its lock
+`pdp11-ui/.../log/LogPanel.java:93-97`, `log/UiLogger.java:63-75`
+
+A line logged between `snapshot()` and `setListener(…)` is buffered but never shown until
+reopen; and `UiLogger.log` invokes the listener after releasing the monitor, so concurrent
+loggers can deliver out of buffer order. `TextChannel` solved exactly this (replay and
+subscribe under one lock — its javadoc names the gap); UiLogger should do the same.
+
+### 52. `FakePdp11.m_runMode` is written without the fake's monitor
+`pdp11-core/.../fake/FakePdp11.java:96,172-174`; `conn/ConnectionManager.java:295-301`
+
+`setSimulatedRunMode` writes the plain boolean from an arbitrary thread while keystroke
+handlers read it under the fake's monitor — no happens-before edge, so the fake may
+lawfully keep seeing the old RUN/HALT switch position. Make it synchronized (the class
+convention) or volatile.
+
+### 53. FakeTransport.delay() sleeps while holding the fake's monitor
+`pdp11-core/.../io/FakeTransport.java:141-189`
+
+With `byteDelayMillis` set, both directions and the scheduler's run-to-halt callback block
+behind one direction's delay — a real serial line delays only its own direction. Off by
+default; move the sleep outside the lock if the feature is ever used interactively.
+
+### 54. Command-timeout setter is honoured by only half of each exchange
+`pdp11-core/.../console/AbstractConsole.java` (`setCommandTimeoutMillis`) vs hard-coded `CMD_TIMEOUT_MS` at `SimhConsole.java:767`, `OdtConsole.java:470,503`, `Pdp1144Console.java:392,588`
+
+`checkPromptAfter` and SimhConsole's `sendCommand`/`command()` use the getter; the
+examine/deposit/step waits in all three consoles hard-code the static constant. Changing
+the timeout via the setter therefore half-works. Use the getter throughout.
+
+### 55. Dead code and dead plumbing (core)
+- `AbstractConsole.waitForAnswer` (`:208`): no callers; the position-free form invites the
+  stale-prompt bug the design fixed. Delete or annotate.
+- `ConsoleScanner.take()/peek()` (`:278-293`): used by no decoder.
+- `MemoryCellGroups.changeAddressWidth` chain (`:187-207`, `MemoryCellGroup.java:303-330`):
+  fully ported, zero callers; `Pdp11Mmu`'s constructor doc relies on the call that never
+  happens (`getPhysicalAddressType()` is therefore always PHYSICAL22 — numerically
+  consistent with the Pascal, but the doc is wrong). CLAUDE.md itself says the routine "is
+  not ported and is not needed". Delete or fix the docs; also note `isMapping22Bit()` is
+  parsed but never affects `translate()` (same as the Pascal — worth a comment).
+- `MemoryCell.assignFrom` (`:130-142`): public, dead, and rewrites the address without
+  reindexing — a standing invariant violation awaiting its first caller.
+- `Macro11.Run.timedOut` (`:66-70,246`): always false — a timeout throws before any Run is
+  built. Remove or record the timed-out run.
+
+### 56. OdtScanner honours `raiseIncompleteOnEof=false` for only one of its three incomplete-input throws
+`pdp11-core/.../console/OdtScanner.java:442-470`
+
+Octal digits running to buffer end (`:465`) and a trailing `R`/`$` (`:470`) still throw
+unconditionally, against the `ConsoleScanner.nextSymbol` javadoc. Currently harmless (the
+only `false` caller is `clear()` on an empty buffer); tighten the javadoc or honour the
+flag.
+
+### 57. M4 layer: doc/behaviour mismatches
+- `M4Evaluator.java:14-18`: Javadoc claims bitwise and comparison operators are
+  implemented; the grammar has only `+ - * / %`, unary `+ - ~`, parentheses. The failure
+  is loud, but the comment misleads the next machine-description author.
+- `M4Preprocessor.java:222-231`: `eval(expr, radix, width)` accepts the width argument and
+  silently ignores it (GNU m4 zero-pads) — the "silently wrong I/O page" failure mode the
+  class's own doc says it exists to prevent; the radix parse can also throw a bare
+  NumberFormatException instead of M4Exception. Minor: `m_expansions` is cumulative across
+  runs of a reused instance.
+
+### 58. Paper-tape loader: the entry block's checksum byte is never verified and is re-scanned as data
+`pdp11-core/.../memfile/MemoryFileLoader.java:270-283`
+
+A zero-data entry block jumps straight back to state 0, so its checksum byte is re-parsed
+as a potential header; when that byte happens to be 01 (entry addresses whose bytes sum to
+248 mod 256, e.g. 000370) the following bytes are misparsed and a spurious "Skipped a
+block ..." warning appears on a good tape. Data still loads correctly. Add a state that
+consumes and verifies the entry-block checksum.
+
+### 59. `Macro11Listing.listingLineOfAddress` can throw instead of returning its documented -1 *(needs confirmation)*
+`pdp11-core/.../macro11/Macro11Listing.java:169-177`
+
+For an address of a different type it re-types by raw value with `Address.of`, which
+throws when the value exceeds the group width (e.g. an I/O-page physical PC against the
+VIRTUAL code group); it would also silently match the wrong virtual cell rather than
+rebasing. Guard and return -1.
+
+### 60. FakePdp1144V340c global-register bound disagrees with its own comment *(needs confirmation)*
+`pdp11-core/.../fake/FakePdp1144V340c.java:189-193`
+
+Comment says "Sixteen global registers exist; a higher number is a firmware complaint",
+but the guard fires only above 32, so registers 16..32 skip `?Too big` and draw a bus-
+timeout instead. If that is faithful to the real firmware, say which in the comment; if
+not, the bound is wrong (or octal/decimal got confused).
+
+### 61. JTable minimum-width rule and window minimum sizes applied inconsistently
+- `mem/MemoryCellGroupTable.java:182-189` and `log/LogPanel.java:63-66` set only preferred
+  column widths, against CLAUDE.md's unconditional "set both" (mitigated today by
+  AUTO_RESIZE_OFF; a resize-mode change regresses silently). Every other table sets both.
+- MMU, Microcode, Log, SimH Console, Number Converter and Execution windows set no
+  `setMinimumSize` while the other eight windows do, so those six can be squashed into
+  unusable slivers (`MmuWindow.java:19-25`, `MicrocodeWindow.java:16-23`,
+  `NumberConverterWindow.java:21-26`, `ExecutionWindow.java:17-22`, `LogWindow.java:24`,
+  `SimhConsoleWindow.java:25`).
+
+### 62. File I/O runs on the EDT for load/save/export
+`dump/MemoryDumperPanel.java:252-265`, `load/MemoryLoaderPanel.java:230-256`, `mem/MemoryPanel.java:244-257`, `macro11/AssemblerModel.java:198-220,320-328`
+
+Fine on local disks; on hung media (NFS, USB) the whole UI freezes with no progress or
+cancel — in contrast to every console operation. MicrocodePanel documents its EDT read as
+deliberate; the others don't. Related: `Macro11.isAvailable()` walks the PATH doing
+filesystem checks on every `updateDisplay()`/`updateButtons()` call
+(`exec/ExecutionPanel.java:174-175`, `macro11/AssemblerPanel.java:429`) — cache it. Also
+`ConnectionSettingsPanel` enumerates serial ports (jSerialComm) on the EDT in the dialog's
+constructor and on every `setProfile`.
+
+### 63. Label, casing and layout polish (grouped)
+- Browse button is "..." in `settings/ConnectionSettingsPanel.java:133` and "Browse ..."
+  everywhere else; ellipsis spelling drifts ("Load listing..." at
+  `microcode/MicrocodePanel.java:94` vs "Open ...", "Save as ..." with a space).
+- "Load listing..." (Microcode) vs "Open listing ..." (Assembler) for the identical act;
+  the Microcode chooser silently allows multi-selection for split-page listings (`:207`)
+  with nothing saying so.
+- Table-header casing: the memory grid's corner header is lowercase "start \ offset"
+  (`mem/MemoryCellGroupTable.java:391`) while every other table uses Title case;
+  "Addr" (`mem/MemoryCellGroupList.java:298-305`) vs spelled-out headers elsewhere.
+- Field-label colons present in most windows, absent in MMU and Microcode
+  (`mmu/MmuPanel.java:112`, `microcode/MicrocodePanel.java:136,140`).
+- "Clear log" (`memtest/MemoryTestPanel.java:162`) vs "Clear" (`log/LogPanel.java:54`,
+  `simh/SimhConsolePanel.java:67`).
+- The Number Converter is the only place in the app with button mnemonics and shortcut
+  bindings (`numbers/NumberConverterPanel.java:124-127`); no menu *item* elsewhere has a
+  mnemonic. "Connection settings ..." is bound to Ctrl/Cmd+Comma (`MainWindow.java:96`) —
+  the macOS preferences convention, surprising on Linux.
+- Dumper: the entry-address field sits in the range bar but its visibility is toggled by
+  the format selector in the file bar below (`dump/MemoryDumperPanel.java:113-127,176-177`);
+  the Loader groups the equivalent field with the load controls.
+
+---
+
+## Verified clean (for calibration)
+
+Checked and found sound: the core Console/EDT rule (no console call or future-join
+reachable from the EDT anywhere; all machine work via `AppContext.onConsole`, all
+worker→UI mutation marshalled); no Swing/AWT in pdp11-core; charset discipline
+(ISO-8859-1/7-bit throughout the protocol layer, no default-charset use); interrupted
+flags restored at every catch; `ConsoleConnection.call()` refuses the command thread;
+TelnetTransport's IAC state machine bounds; settings robustness ("nothing in settings may
+stop the application starting" holds: load errors, empty/newer files, atomic writes all
+handled); no static state, no window-to-window references, windows are thin frames over
+testable panels; octal formatting centralized and uniform (zero-padded, "?" for unknown);
+`ProgressMonitor.done()` in `finally` at all 8 core call sites; listener add/remove pairs
+symmetric across all panels (`attach()` defensively detaches first); algorithms live in
+core with tests as the rules require; and the memory-test/microcode/listing-parser
+oddities checked against the Pascal reference turned out to be faithful ports of intended
+behaviour.

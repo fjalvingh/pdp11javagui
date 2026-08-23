@@ -2,21 +2,27 @@ package to.etc.pdp11.core.conn;
 
 import org.junit.jupiter.api.Test;
 import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.core.console.ConsoleConnection;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.mem.CellValue;
 import to.etc.pdp11.core.mem.MemoryCellGroups;
 import to.etc.pdp11.core.util.Logger;
 import to.etc.pdp11.core.util.Scheduler;
 
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -288,6 +294,107 @@ class ConnectionManagerTest {
 		return groups.getGroups().stream()
 			.filter(g -> to.etc.pdp11.core.mmu.Pdp11Mmu.USAGE_TAG.equals(g.getUsageTag()))
 			.count();
+	}
+
+	// ---------------------------------------------------------------------------------------
+	// Two attempts at once
+	// ---------------------------------------------------------------------------------------
+
+	/**
+	 * A connection attempt that is overtaken while it is waiting on a machine must take nothing
+	 * with it when it gives up.
+	 *
+	 * <p>The sequence this pins down is the one that stranded the UI: connect A blocks in its
+	 * handshake, connect B replaces it and reports CONNECTED, A then fails - and used to close
+	 * B's transport, remove B's MMU group and fire FAILED over B's CONNECTED, leaving a live
+	 * command thread behind a manager that said it was not connected.</p>
+	 */
+	@Test
+	void anOvertakenAttemptDoesNotTakeTheLiveConnectionWithIt() throws Exception {
+		MemoryCellGroups groups = new MemoryCellGroups();
+		try(ServerSocket silent = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+			ConnectionManager m = new ConnectionManager(groups, Logger.NULL, new Scheduler.Manual(),
+				Path.of(System.getProperty("java.io.tmpdir")))) {
+			//-- Accepts, and then says nothing at all: the handshake waits, which is what a real
+			//-- machine that is powered on but not listening does.
+			List<ConnectionManager.State> seen = new CopyOnWriteArrayList<>();
+			m.addListener((mgr, state) -> seen.add(state));
+
+			AtomicReference<Exception> failure = new AtomicReference<>();
+			Thread slow = new Thread(() -> {
+				try {
+					m.connect(new ConnectionProfile("slow", ConsoleProtocol.ODT_18,
+						TransportConfig.telnet("localhost", silent.getLocalPort())));
+				} catch(Exception x) {
+					failure.set(x);
+				}
+			}, "slow-connect");
+			slow.setDaemon(true);
+			slow.start();
+			waitFor(() -> m.getState() == ConnectionManager.State.CONNECTING, "the slow attempt to start");
+
+			//-- Overtake it. This one has a machine behind it and finishes at once.
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.PDP1144));
+			assertTrue(m.isConnected());
+			ConsoleConnection live = m.getConnection();
+
+			//-- Now let the slow one fail, and wait until it has finished failing.
+			silent.close();
+			slow.join(10_000);
+			assertFalse(slow.isAlive(), "the overtaken attempt should have given up");
+			assertNotNull(failure.get(), "and should have said so to its own caller");
+
+			assertEquals(ConnectionManager.State.CONNECTED, m.getState(),
+				"the overtaken attempt must not report its failure over a newer connection");
+			assertTrue(m.isConnected());
+			assertSame(live, m.getConnection(), "nor replace it");
+			assertEquals(1, mmuGroups(groups), "nor remove its MMU group");
+			assertFalse(seen.contains(ConnectionManager.State.FAILED), "and nothing saw a failure");
+
+			//-- And the connection it left alone is still a working one.
+			Address a = Address.of(m.getConsole().physicalAddressType(), 01000);
+			m.getConnection().run(() -> m.getConsole().deposit(a, 0123456));
+			assertEquals(0123456, m.getConnection().call(() -> m.getConsole().examine(a)).word());
+		}
+	}
+
+	/** The same race the other way round: disconnect while an attempt is still waiting. */
+	@Test
+	void disconnectingDuringAnAttemptEndsDisconnectedRatherThanFailed() throws Exception {
+		try(ServerSocket silent = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+			ConnectionManager m = manager()) {
+			AtomicReference<Exception> failure = new AtomicReference<>();
+			Thread slow = new Thread(() -> {
+				try {
+					m.connect(new ConnectionProfile("slow", ConsoleProtocol.ODT_18,
+						TransportConfig.telnet("localhost", silent.getLocalPort())));
+				} catch(Exception x) {
+					failure.set(x);
+				}
+			}, "slow-connect");
+			slow.setDaemon(true);
+			slow.start();
+			waitFor(() -> m.getState() == ConnectionManager.State.CONNECTING, "the slow attempt to start");
+
+			m.disconnect();
+			silent.close();
+			slow.join(10_000);
+			assertFalse(slow.isAlive());
+			assertNotNull(failure.get());
+			assertEquals(ConnectionManager.State.DISCONNECTED, m.getState(),
+				"the abandoned attempt must not turn a deliberate disconnect into a failure");
+			assertNull(m.getConnection());
+			assertNull(m.getConsole());
+		}
+	}
+
+	private static void waitFor(java.util.function.BooleanSupplier condition, String what) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + 10_000;
+		while(!condition.getAsBoolean()) {
+			if(System.currentTimeMillis() > deadline)
+				throw new AssertionError("Timed out waiting for " + what);
+			Thread.sleep(5);
+		}
 	}
 
 	@Test

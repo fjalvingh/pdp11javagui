@@ -3,6 +3,7 @@ package to.etc.pdp11.ui.mmu;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TransportConfig;
@@ -234,13 +235,17 @@ class MmuPanelTest {
 	}
 
 	/**
-	 * A console exists from the moment {@code connect} builds it, which is before its handshake
-	 * has said whether there is a machine on the other end.
+	 * A connection that is still being made is not a machine to show.
 	 *
-	 * <p>Opening this window in that gap used to show a full memory map - of an MMU whose
-	 * registers nothing had ever answered about - with the Refresh button greyed out beside it,
-	 * because the tables asked "is there an MMU" and the button asked "are we connected". It is
-	 * one question now.</p>
+	 * <p>Opening this window while one is being made used to show a full memory map - of an MMU
+	 * whose registers nothing had ever answered about - with the Refresh button greyed out beside
+	 * it, because the tables asked "is there an MMU" and the button asked "are we connected". It
+	 * is one question now.</p>
+	 *
+	 * <p>The gap that made that visible has since been closed at the other end too: an attempt
+	 * builds its console into locals and publishes it only once the handshake has succeeded, so
+	 * {@code getConsole()} no longer answers with a console that has never spoken to anything.
+	 * The window is opened here while the state is CONNECTING, which is that same moment.</p>
 	 */
 	@Test
 	void aConnectionStillBeingMadeIsNotAMachineToShow(@TempDir Path dir) throws Exception {
@@ -260,7 +265,8 @@ class MmuPanelTest {
 			worker.setDaemon(true);
 			worker.start();
 			try {
-				until("the console to be built", () -> ctx.getConnectionManager().getConsole() != null);
+				until("the attempt to start", () -> ctx.getConnectionManager().getState()
+					== ConnectionManager.State.CONNECTING);
 				//-- The window is opened right then.
 				Edt.run(panel::attach);
 				assertEquals("Not connected to a machine", Edt.call(panel::getStatusText));
