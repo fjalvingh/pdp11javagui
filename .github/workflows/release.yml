@@ -1,0 +1,141 @@
+name: release
+
+# Two ways in, both ending in the same place:
+#
+#   git tag -a v1.2.0 -m 'PDP11GUI 1.2.0' && git push origin v1.2.0
+#   gh workflow run release.yml -f version=1.2.0
+#
+# The second creates the tag itself, on the commit the run was started from, so nothing has to
+# be tagged by hand to get a release out.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without the leading v (e.g. 1.2.0). The tag is created.'
+        required: true
+        type: string
+
+# Only what creating a release needs.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # --generate-notes lists what changed since the previous tag, so it needs the history
+          # and the other tags, not the single commit a tag push checks out by default.
+          fetch-depth: 0
+
+      # Deliberately not interpolated into the shell: an input becomes a shell command if it is,
+      # and this is the one place in the build with a token that can write to the repository.
+      - name: Work out the version and the tag
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = 'workflow_dispatch' ]; then
+            version="${INPUT_VERSION}"
+            tag="v${version}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+          fi
+          # Anything else would end up as part of a jar filename and a Maven version.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z][0-9A-Za-z.]*)?$'; then
+            echo "::error::'$version' is not a version: expected 1.2, 1.2.0 or 1.2.0-rc1" >&2
+            exit 1
+          fi
+          # A suffix means it is not finished: v1.2.0-rc1 goes out as a pre-release.
+          case "$version" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $version as $tag (prerelease=$prerelease)"
+
+      - name: Refuse to release a tag that already has one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A release for $TAG already exists. Delete it, or pick another version." >&2
+            exit 1
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      # Same reason as in build.yml: a couple of tests build a real JFrame and the runner has no
+      # display. A release is not shipped without the tests having run.
+      - name: Install xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      # The checked-in poms stay at -SNAPSHOT; the release version comes from the tag and is
+      # stamped on for this build only. Nothing is committed and nothing is pushed, so a release
+      # can never leave the branch pointing at a version that was never built.
+      - name: Stamp the version onto the poms
+        run: >
+          ./mvnw -B --no-transfer-progress versions:set
+          -DnewVersion=${{ steps.version.outputs.version }}
+          -DprocessAllModules=true
+          -DgenerateBackupPoms=false
+
+      - name: Build and test
+        run: ./mvnw -B --no-transfer-progress clean verify
+
+      # A jar whose manifest disagrees with its filename is worse than no release at all, and it
+      # is exactly what a mis-set version would produce. Check before anything is published.
+      - name: Check the jar says which release it is
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          jar="pdp11-app/target/pdp11gui.jar"
+          stamped="$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' \
+            | sed -n 's/^Implementation-Version: //p')"
+          if [ "$stamped" != "$VERSION" ]; then
+            echo "::error::$jar says Implementation-Version '$stamped', expected '$VERSION'" >&2
+            exit 1
+          fi
+          # The asset carries its version in the name; the build's own finalName does not, because
+          # the README and everything else that runs it locally names target/pdp11gui.jar.
+          cp "$jar" "pdp11gui-${VERSION}.jar"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(--title "PDP11GUI $VERSION" --generate-notes --target "$GITHUB_SHA")
+          if [ "$PRERELEASE" = 'true' ]; then args+=(--prerelease); fi
+          # On a dispatch run the tag does not exist yet; gh creates it at --target.
+          gh release create "$TAG" "pdp11gui-${VERSION}.jar" "${args[@]}"
+          echo "### PDP11GUI $VERSION released" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

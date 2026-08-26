@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Releases
+
+- **A tag makes a release.** `.github/workflows/release.yml` runs on a pushed `v*` tag - or on
+  `gh workflow run release.yml -f version=1.2.0`, which creates the tag itself - stamps that
+  version onto the poms for the build only, runs the full `verify` under xvfb, and publishes a
+  GitHub release with `pdp11gui-<version>.jar` attached and notes generated from the commits since
+  the previous tag. A version with a suffix (`v1.2.0-rc1`) goes out as a pre-release. The
+  checked-in poms stay at `1.0-SNAPSHOT` and nothing is committed or pushed, so a release cannot
+  leave the branch pointing at a version that was never built.
+- **The jar says which release it is.** The shaded manifest carries `Implementation-Version`,
+  `AppVersion` reads it back, and **Help → About** and the startup log line show it. A build from
+  a working copy answers "development build" rather than claiming a version it does not have. The
+  workflow refuses to publish a jar whose manifest disagrees with the tag, because an asset that
+  is wrong about its own version is worse than no release at all.
+
 ### The PDP-11/05's microcode
 
 - **The Microcode window shows the PDP-11/05 as well as the PDP-11/44, and opens on it.** The

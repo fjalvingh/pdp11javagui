@@ -95,6 +95,39 @@ ordinary files: edit one to describe your own machine, and it will not be overwr
 version. The I/O page scanner writes the sections for hardware the description does not know
 about.
 
+## Releasing
+
+A release is one file: the shaded `pdp11gui-<version>.jar`, which needs nothing but a JDK 21
+runtime. Downloads are on the [releases page](https://github.com/fjalvingh/pdp11javagui/releases);
+run one with `java -jar pdp11gui-1.2.0.jar`.
+
+To make one, tag it:
+
+```
+git tag -a v1.2.0 -m 'PDP11GUI 1.2.0'
+git push origin v1.2.0
+```
+
+or, to have the tag created for you on whatever `main` is at:
+
+```
+gh workflow run release.yml -f version=1.2.0
+```
+
+Either way `.github/workflows/release.yml` stamps the version from the tag onto the poms, runs
+the full `verify` (with xvfb, exactly as CI does — a release is never published from an untested
+build), checks that the jar's manifest agrees with the tag, and creates the GitHub release with
+notes generated from the commits since the previous one.
+
+Note what does *not* happen: the checked-in poms stay at `1.0-SNAPSHOT` and nothing is committed
+or pushed by the workflow, so a release cannot leave the branch pointing at a version that was
+never built. The version reaches the running program through the jar manifest, which
+`AppVersion` reads and **Help → About** and the startup log line show; a build from a working
+copy says "development build" rather than claiming to be a release.
+
+A tag with a suffix — `v1.2.0-rc1` — goes out as a pre-release. Move the `## Unreleased` section
+of `CHANGES.md` under a version heading before tagging.
+
 ## Modules
 
 | Module | Contains |

@@ -7,6 +7,7 @@ import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TextChannel;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.TerminalProfile;
+import to.etc.pdp11.core.util.AppVersion;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
@@ -513,7 +514,7 @@ public final class MainWindow extends JFrame {
 
 	private void showAbout() {
 		JOptionPane.showMessageDialog(this,
-			"PDP11GUI\n\n"
+			"PDP11GUI " + AppVersion.get() + "\n\n"
 				+ "An IDE for real and simulated PDP-11 computers.\n"
 				+ "Java/Swing rewrite of Joerg Hoppe's original.\n\n"
 				+ "Settings: " + m_context.getSettingsStore().getFile() + "\n"

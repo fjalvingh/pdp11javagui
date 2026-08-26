@@ -40,6 +40,20 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>${main.class}</mainClass>
+                                    <!--
+                                        So the jar can say which release it is: AppVersion reads
+                                        this back, the About box and the log show it, and the
+                                        release workflow asserts it matches the tag before it
+                                        uploads anything. Set here rather than left to the jar
+                                        plugin's default entries, which reach the shaded manifest
+                                        only because the project's own jar happens to be the first
+                                        one shade reads.
+                                    -->
+                                    <manifestEntries>
+                                        <Implementation-Title>PDP11GUI</Implementation-Title>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                        <Implementation-Vendor>etc.to</Implementation-Vendor>
+                                    </manifestEntries>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

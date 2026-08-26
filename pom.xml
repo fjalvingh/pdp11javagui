@@ -78,6 +78,13 @@
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+        <!--
+            Not bound to a phase: the release workflow calls versions:set from the command
+            line to stamp the tag's version onto the poms before it builds. It is declared
+            in pluginManagement below so that call resolves to a pinned version rather than
+            to whatever is newest on Central that morning.
+        -->
+        <versions-maven-plugin.version>2.18.0</versions-maven-plugin.version>
 
         <!--
             Pinned only because requirePluginVersions insists every plugin have an explicit
@@ -216,6 +223,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven-jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <version>${versions-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

@@ -1,6 +1,7 @@
 package to.etc.pdp11.app;
 
 import com.formdev.flatlaf.FlatDarculaLaf;
+import to.etc.pdp11.core.util.AppVersion;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MainWindow;
@@ -59,7 +60,8 @@ public final class Pdp11Gui {
 			//-- Before the main window, so its Windows menu has the device groups in it the
 			//-- first time it is opened.
 			MachineDescriptionStore.installAndLoad(context);
-			logger.log(LogChannel.OTHER, "PDP11GUI starting on Java " + Runtime.version());
+			logger.log(LogChannel.OTHER, "PDP11GUI " + AppVersion.get()
+				+ " starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
 			new MainWindow(context).setVisible(true);
 			//-- After the main window, so the layout comes back stacked above it rather than
