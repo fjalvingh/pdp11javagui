@@ -450,7 +450,11 @@ class MicrocodePanelTest {
 	 * written on, which is not a margin, and CI - a few percent wider - went over.</p>
 	 *
 	 * <p>So what is asserted is the minimum rather than the preferred width, with enough room left
-	 * over that a different font cannot eat it.</p>
+	 * over that a different font cannot eat it. "Enough" was got wrong once: the first version of
+	 * this test allowed 800, which was this machine's 783 plus a margin that felt generous, and CI
+	 * measured 841. A budget set from one machine's fonts is the same mistake one layer up. The
+	 * row now has a real floor rather than a shaved one - 568 here, 595 at the widest font tried -
+	 * so 800 is a bound the fonts have to clear by a long way rather than by a few pixels.</p>
 	 */
 	@Test
 	void theControlsFitWithRoomForAWiderFont(@TempDir Path dir) {

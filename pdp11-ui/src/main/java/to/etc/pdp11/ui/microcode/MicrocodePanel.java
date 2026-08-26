@@ -188,6 +188,14 @@ public final class MicrocodePanel extends JPanel {
 		//-- was CI's fonts rather than anything about the code that first went over the edge.
 		//-- min:preferred: lets the two widest items give way first while everything stays put on
 		//-- a display that has the room.
+		//
+		//-- The width ranges are not on their own enough, and what was actually holding the row
+		//-- wide is worth writing down: the second row's three buttons are a split group in
+		//-- column 2, so that column was as wide as they are - 333 pixels where the combo above it
+		//-- asked for 110 - and no width range on the combo could reach it. "span" puts the group
+		//-- across the rest of the row instead, where it is measured against the whole width, and
+		//-- the buttons come out in the same places. That is the difference between a minimum of
+		//-- 783 and one of 568.
 		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]8[]", "[]4[]"));
 		bar.add(new JLabel("Microcode:"));
 		m_source.setSelectedItem(m_selected);
@@ -219,7 +227,7 @@ public final class MicrocodePanel extends JPanel {
 
 		m_back.setToolTipText("Back to the microword you came from");
 		m_back.addActionListener(e -> back());
-		bar.add(m_back, "skip 1, split 3");
+		bar.add(m_back, "skip 1, split 3, span");
 		m_next.setToolTipText("Follow this microword's next-address field, which is where it goes"
 			+ " when nothing branches");
 		m_next.addActionListener(e -> next());

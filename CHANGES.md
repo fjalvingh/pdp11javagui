@@ -17,8 +17,10 @@
   V3.40C is a reset PC of 0165714 rather than the expected 01002; the rig now drains that before a
   test can install a listener. And the microcode window's toolbar asked for 886 pixels of the 888
   it had, so it fitted on the machine it was written on and overflowed on CI, pushing the table
-  off the side. The two combo boxes now have a width range rather than a width, which takes the
-  minimum to 783, and a test asserts that headroom rather than waiting to trip over its absence.
+  off the side. The two combo boxes now have a width range rather than a width, and the second
+  row's buttons span the row rather than sitting in one column and holding it as wide as they are -
+  which is what was really setting the floor - taking the minimum from 783 to 568. A test asserts
+  that headroom rather than waiting to trip over its absence.
 
 ### Releases
 
