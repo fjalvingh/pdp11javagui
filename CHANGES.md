@@ -33,6 +33,17 @@
 
 ### Fixes
 
+- **The same stale stop event, in a second test rig.** `OdtConsoleTest`'s reset test failed on the
+  Windows runner - `expected: <2048> but was: <62976>`, which is `04000` against `0173000`, the
+  boot ROM an 11/73 powers up at. It is exactly the fault fixed in `Pdp1144ConsoleTest` last time:
+  the fake is powered on before anything connects to it, so the halt it printed then is decoded as
+  a stop during `init` and queued on the command thread, and the test that installs a stop listener
+  a moment later races the delivery of an event it did not cause. Two machines out of three do it -
+  SimH's fake prints a banner and not a halt - and the ODT rig never got the drain the 11/44 rig
+  got. It has one now, and the drain and the whole explanation are in one place, `ConsoleRigs`,
+  because the next console to be given a fake will be written by somebody who has never heard of
+  this. `OdtConsoleTest` also gained a tripwire that asserts a fresh rig is holding no stop.
+
 - **Halting a machine that was just started reported it as already halted.** The classic 11/44
   firmware prompts after every command, `S` and `C` included, even though the machine is running
   by then and nothing was asked. Nobody consumed that prompt, so it was still on the wire when the

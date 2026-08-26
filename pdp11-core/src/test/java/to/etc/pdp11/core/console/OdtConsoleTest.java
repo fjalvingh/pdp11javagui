@@ -59,6 +59,9 @@ class OdtConsoleTest {
 			console = new OdtConsole(groups, MAT, consoleDialect, Logger.NULL);
 			connection.attach(console);
 			connection.run(() -> console.init(connection));
+			//-- The fake powered up at its boot ROM and reported that halt; it is not any test's
+			//-- stop. See ConsoleRigs.
+			ConsoleRigs.drainPowerOnStop(connection);
 		}
 
 		@Override
@@ -328,6 +331,23 @@ class OdtConsoleTest {
 				() -> rig.connection.call(() -> rig.console.haltCpu()));
 			assertTrue(x.getMessage().contains("HALT switch"), x.getMessage());
 			assertFalse(rig.console.features().contains(ConsoleFeature.ACTION_HALT_CPU));
+		}
+	}
+
+	/**
+	 * The rig hands on no stop of its own.
+	 *
+	 * <p>A tripwire rather than a proof: the power-on halt is drained by running an empty command,
+	 * and the queue being FIFO and one thread deep means that by the time it returns the stale
+	 * event has been delivered to nobody - so this is deterministic while the drain is there. Take
+	 * the drain out and it is a race again, which is the whole trouble: this then fails only
+	 * sometimes, and the CI machine is where it does it.</p>
+	 */
+	@Test
+	void theRigKeepsNoStopLeftOverFromPowerOn() throws Exception {
+		try(Rig rig = new Rig()) {
+			assertFalse(rig.console.isExecutionStopDetected(),
+				"the halt this machine printed at power-on has already been delivered to nobody");
 		}
 	}
 
