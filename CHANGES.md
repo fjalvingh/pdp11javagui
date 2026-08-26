@@ -8,8 +8,18 @@
   opens the tree at the `v1.2.0` tag rather than whatever `main` has become since, so a copy
   somebody downloaded a year ago cannot be shown a page describing windows it does not have. That
   is the same rule the version stamping already follows, and a test holds it down, since nothing at
-  run time can catch it - the wrong URL either 404s or, worse, quietly opens the wrong document. A
-  machine with no browser is not an error: the address goes into a dialog and onto the clipboard.
+  run time can catch it - the wrong URL either 404s or, worse, quietly opens the wrong document.
+
+  **Opening it is not one call to `Desktop.browse`**, because on Linux that call is frequently
+  unavailable and says so before it is even tried: `Desktop.isSupported(BROWSE)` answers false on
+  an ordinary KDE desktop that has `xdg-open`, `gio` and a default browser all present and working,
+  because the JDK's X11 peer reports BROWSE only when it can bind GNOME's URL-showing entry point.
+  The "no browser could be opened here" that followed was simply wrong on the first machine it was
+  tried on. So `Desktop` is the first thing tried and not the only one: after it comes the
+  platform's own launcher - `xdg-open` then `gio` on Linux, `open` on macOS, `url.dll` on Windows -
+  and every attempt goes to the log. Only when all of them have failed is the address put into a
+  dialog and onto the clipboard, which is now a statement about the machine rather than about the
+  JDK.
 - **A user manual, in `manual/`.** Twenty Markdown files served straight from the repository -
   `manual/README.md` is the index, and every link between them is a relative link that works in
   GitHub's own file browser. It covers getting started against a simulated machine, the connection

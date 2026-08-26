@@ -27,14 +27,12 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import java.awt.Color;
 import java.awt.Cursor;
-import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.net.URI;
 
 /**
  * The application's main window: the terminal, the connection status, and the menu bar.
@@ -534,26 +532,21 @@ public final class MainWindow extends JFrame {
 	/**
 	 * Open the manual in the user's browser.
 	 *
-	 * <p>On a worker, because {@code Desktop.browse} launches a program - {@code xdg-open} and
-	 * whatever it decides on, which on a cold browser is seconds - and every other thing in this
-	 * window that starts a process does it off the event thread for the same reason.</p>
+	 * <p>On a worker, because opening a browser means launching a program and waiting to see
+	 * whether it took - which on a cold browser is seconds - and every other thing in this window
+	 * that starts a process does it off the event thread for the same reason. {@link Browser} is
+	 * where the several ways of doing it live.</p>
 	 *
-	 * <p>A machine with no browser, or no {@code Desktop} at all, is not a failure worth an error
-	 * dialog: the manual is a web page and the address is short. It goes on the clipboard and into
-	 * a dialog that says so.</p>
+	 * <p>A machine where none of them work is not a failure worth an error dialog: the manual is a
+	 * web page and the address is short. It goes on the clipboard and into a dialog that says
+	 * so.</p>
 	 */
 	private void openManual() {
 		String url = manualUrl(AppVersion.get());
 		m_context.getLogger().log(LogChannel.OTHER, "Opening the manual at %s", url);
 		Thread worker = new Thread(() -> {
-			try {
-				if(!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
-					throw new UnsupportedOperationException("this desktop cannot open a browser");
-				Desktop.getDesktop().browse(URI.create(url));
-			} catch(Exception x) {
-				m_context.getLogger().log(LogChannel.OTHER, "Cannot open a browser: %s", x);
+			if(!Browser.open(url, m_context.getLogger()))
 				SwingUtilities.invokeLater(() -> showManualAddress(url));
-			}
 		}, "pdp11-manual");
 		worker.setDaemon(true);
 		worker.start();
