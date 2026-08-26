@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Halting a machine that was just started reported it as already halted.** The classic 11/44
+  firmware prompts after every command, `S` and `C` included, even though the machine is running
+  by then and nothing was asked. Nobody consumed that prompt, so it was still on the wire when the
+  next command started: `Halt` cleared the answers, found it one line later, and read it as the
+  prompt-with-no-stop-report that means "there was nothing to stop" - returning null for a machine
+  it had just halted and writing "already halted" into the log. Run then Halt was enough to see
+  it. `S` and `C` now take their own prompt, and V3.40C - which prints nothing while a program has
+  the terminal - is not waited for.
+- **Two tests that passed by luck.** `Pdp1144ConsoleTest`'s single-step test asked for the stop
+  event it had caused and sometimes got the one the machine's power-on left lying about, which on
+  V3.40C is a reset PC of 0165714 rather than the expected 01002; the rig now drains that before a
+  test can install a listener. And the microcode window's toolbar asked for 886 pixels of the 888
+  it had, so it fitted on the machine it was written on and overflowed on CI, pushing the table
+  off the side. The two combo boxes now have a width range rather than a width, which takes the
+  minimum to 783, and a test asserts that headroom rather than waiting to trip over its absence.
+
 ### Releases
 
 - **A tag makes a release.** `.github/workflows/release.yml` runs on a pushed `v*` tag - or on

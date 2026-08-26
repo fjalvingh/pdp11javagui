@@ -107,6 +107,33 @@ class Pdp1144ConsoleTest {
 			console = new Pdp1144Console(groups, firmware, Logger.NULL);
 			connection.attach(console);
 			connection.run(() -> console.init(connection));
+			drainPowerOnStop();
+		}
+
+		/**
+		 * Swallow the stop event the machine's own power-on left lying about.
+		 *
+		 * <p>The fake is powered on before anything connects to it, so the first thing the console
+		 * reads is the halt report the reset printed - and it is right to decode that as a stop:
+		 * a real 11/44 sitting at its prompt has genuinely stopped, and PDP11GUI says where the
+		 * moment it connects. But it happened before the test did anything, and a test that
+		 * installs a stop listener afterwards must not be handed it as though it were the stop
+		 * <i>it</i> caused.</p>
+		 *
+		 * <p>The event is decoded on the reader thread and queued on the command thread by
+		 * {@code signalExecutionStop} <i>before</i> the prompt that ends {@code init} is published,
+		 * so by the time {@code init} returns it is already in the queue - and the queue is FIFO
+		 * and one thread deep. Running an empty command therefore cannot return until the stop
+		 * task has run, with no listener installed yet, which is where it should go.</p>
+		 *
+		 * <p>Without this the two threads race: the command thread delivering the stale event
+		 * against the test thread installing its listener. It is not theoretical - on one core
+		 * the test thread wins every time, and the V3.40C fake's reset PC (0165714) arrives as
+		 * the answer to a single step that was expecting 01002.</p>
+		 */
+		private void drainPowerOnStop() throws ConsoleException {
+			connection.run(() -> {
+			});
 		}
 
 		@Override

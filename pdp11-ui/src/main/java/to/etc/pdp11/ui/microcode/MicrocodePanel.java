@@ -149,11 +149,14 @@ public final class MicrocodePanel extends JPanel {
 	/** Set while the search box is being refilled, so its own events do not navigate. */
 	private boolean m_updating;
 
+	private final JPanel m_controls;
+
 	public MicrocodePanel(AppContext context) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
 
-		add(buildControls(), "growx, wrap");
+		m_controls = buildControls();
+		add(m_controls, "growx, wrap");
 		m_table.setAutoCreateRowSorter(false);
 		m_table.getTableHeader().setReorderingAllowed(false);
 		m_table.setDefaultRenderer(Object.class, new RowRenderer());
@@ -175,6 +178,16 @@ public final class MicrocodePanel extends JPanel {
 		//-- Two rows. One would need about 1100 pixels now that there are three microcodes to
 		//-- choose between, and a window that has to be that wide before its toolbar fits is a
 		//-- window that opens wrong on a laptop.
+		//
+		//-- Both combo boxes are given a width range rather than a width. A combo asks for as much
+		//-- room as its longest item needs in the current font, and a JComboBox reports that as
+		//-- its minimum as well as its preferred size - so the row cannot shrink at all, and on a
+		//-- machine whose fonts are a few percent wider than the one it was laid out on the row
+		//-- simply overflows and pushes the table off the side of the window. That is not
+		//-- hypothetical: at the default font this row wanted 886 pixels of the 888 it had, and it
+		//-- was CI's fonts rather than anything about the code that first went over the edge.
+		//-- min:preferred: lets the two widest items give way first while everything stays put on
+		//-- a display that has the room.
 		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]8[]", "[]4[]"));
 		bar.add(new JLabel("Microcode:"));
 		m_source.setSelectedItem(m_selected);
@@ -185,11 +198,11 @@ public final class MicrocodePanel extends JPanel {
 			if(!m_updating)
 				chooseSource((MicrocodeSource) m_source.getSelectedItem());
 		});
-		bar.add(m_source);
+		bar.add(m_source, "w 110:pref:");
 
 		bar.add(new JLabel("Search by:"));
 		m_searchBy.addActionListener(e -> refillSearch());
-		bar.add(m_searchBy);
+		bar.add(m_searchBy, "w 80:pref:");
 
 		bar.add(new JLabel("µInstruction:"));
 		//-- Editable, because 1018 microwords is too many to find by scrolling and everybody
@@ -202,7 +215,7 @@ public final class MicrocodePanel extends JPanel {
 		Component editor = m_search.getEditor().getEditorComponent();
 		if(editor instanceof JTextField tf)
 			tf.setFont(new Font(Font.MONOSPACED, Font.PLAIN, tf.getFont().getSize()));
-		bar.add(m_search, "w 200!, wrap");
+		bar.add(m_search, "w 130:180:, wrap");
 
 		m_back.setToolTipText("Back to the microword you came from");
 		m_back.addActionListener(e -> back());
@@ -614,6 +627,17 @@ public final class MicrocodePanel extends JPanel {
 
 	public JTable getTable() {
 		return m_table;
+	}
+
+	/**
+	 * The two rows of controls above the table.
+	 *
+	 * <p>Here so a test can ask what width they insist on. What they insist on is the whole
+	 * question: it is a font-dependent number, and the machine the layout was written on is not
+	 * the machine it has to fit on.</p>
+	 */
+	public JComponent getControls() {
+		return m_controls;
 	}
 
 	public MicrocodeTableModel getModel() {

@@ -522,14 +522,41 @@ public final class Pdp1144Console extends AbstractConsole {
 		clearAnswers();
 		clearExecutionStop();
 		writeToPdp("S " + Octal.format(newPc.val(), 6) + CR);
+		takeTheStartPrompt("S");
 	}
 
-	/** {@code C} - continue from where it stopped, with no initialise. No prompt either. */
+	/** {@code C} - continue from where it stopped, with no initialise. */
 	@Override
 	public void continueCpu() throws ConsoleException {
 		clearAnswers();
 		clearExecutionStop();
 		writeToPdp("C" + CR);
+		takeTheStartPrompt("C");
+	}
+
+	/**
+	 * Wait out the prompt a start draws, so it cannot be mistaken for the next command's answer.
+	 *
+	 * <p>{@code S} and {@code C} are the only commands here that ask for nothing: the machine is
+	 * running afterwards and there is no result to collect. But the classic firmware prompts
+	 * anyway - it prompts after every command - and a prompt nobody consumes is still coming down
+	 * the wire when the next command starts. {@link #haltCpu()} then finds it, one line after its
+	 * own {@code clearAnswers()}, and reads it as the prompt-with-no-stop-report that means "there
+	 * was nothing to stop": Halt returns null for a machine it just halted, and says in the log
+	 * that it was already halted. Clicking Run and then Halt is all it takes.</p>
+	 *
+	 * <p>So the answer is taken here, by the command that caused it. The wait is bounded and its
+	 * absence is <b>not</b> an error: this is the only place that would learn a real 11/44 does
+	 * not prompt after a start, and a start that has already been sent must not be reported as
+	 * failed. V3.40C is not waited for at all - it prints nothing while a program has the
+	 * terminal.</p>
+	 */
+	private void takeTheStartPrompt(String command) throws ConsoleException {
+		if(!m_firmware.promptsAfterStart())
+			return;
+		if(getAnswers().waitFor(AnswerPhrase.Prompt.class, getCommandTimeoutMillis()) == null)
+			getLogger().log(LogChannel.EXECUTION,
+				command + ": the machine is running, but no prompt followed the command");
 	}
 
 	/**

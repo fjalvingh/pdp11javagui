@@ -18,7 +18,7 @@ public enum Pdp1144Firmware {
 	 * <p>Reports a stop by examining R7 at you - {@code 17777707 000114} - and a nonexistent
 	 * address as {@code ?20 TRAN ERR}. An examine answer is bare: {@code <addr> <value>}.</p>
 	 */
-	CLASSIC("?20 TRAN ERR"),
+	CLASSIC("?20 TRAN ERR", true),
 
 	/**
 	 * The undocumented V3.40C firmware.
@@ -28,16 +28,34 @@ public enum Pdp1144Firmware {
 	 * {@code G} for a global register - and under {@code G} the address it prints is the
 	 * register <i>number</i>, so the base has to be added back on.</p>
 	 */
-	V340C("?Bus timeout error?");
+	V340C("?Bus timeout error?", false);
 
 	private final String m_busTimeoutMarker;
 
-	Pdp1144Firmware(String busTimeoutMarker) {
+	private final boolean m_promptsAfterStart;
+
+	Pdp1144Firmware(String busTimeoutMarker, boolean promptsAfterStart) {
 		m_busTimeoutMarker = busTimeoutMarker;
+		m_promptsAfterStart = promptsAfterStart;
 	}
 
 	/** What this firmware prints instead of a value when the address does not answer. */
 	public String getBusTimeoutMarker() {
 		return m_busTimeoutMarker;
+	}
+
+	/**
+	 * Whether a prompt follows {@code S} and {@code C}, with the machine now running.
+	 *
+	 * <p>The classic console draws its prompt after every command, this one included
+	 * ({@code FakePDP1144U.pas:228} prompts unconditionally at the end of the command handler),
+	 * so a start is answered even though nothing was asked. V3.40C has handed the terminal to the
+	 * program by then and says nothing until {@code ^P} takes it back.</p>
+	 *
+	 * <p>It matters because the answer has to go somewhere. See
+	 * {@code Pdp1144Console.takeTheStartPrompt}.</p>
+	 */
+	public boolean promptsAfterStart() {
+		return m_promptsAfterStart;
 	}
 }

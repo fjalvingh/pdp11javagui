@@ -436,7 +436,30 @@ class MicrocodePanelTest {
 		//-- Two rows of controls: with three microcodes to choose between, one row needs a window
 		//-- about 1100 pixels wide before it fits.
 		assertTrue(table.y > 0 && table.y < 110, "the controls are two compact rows: " + table);
-		assertTrue(table.x + table.width <= WIDTH, "and it stays inside the panel");
+		assertTrue(table.x + table.width <= WIDTH, "and it stays inside the panel: " + table);
+	}
+
+	/**
+	 * And it has to still fit on somebody else's fonts.
+	 *
+	 * <p>The assertion above is the symptom; this is the cause, and it is worth testing
+	 * separately because the symptom only appears on the machine with the wider fonts. A combo box
+	 * asks for what its longest item needs and reports that as its <i>minimum</i> too, so a row of
+	 * them cannot give way: it overflows instead, and takes the table off the side of the window
+	 * with it. This row wanted 886 pixels of the 888 it had at the font of the machine it was
+	 * written on, which is not a margin, and CI - a few percent wider - went over.</p>
+	 *
+	 * <p>So what is asserted is the minimum rather than the preferred width, with enough room left
+	 * over that a different font cannot eat it.</p>
+	 */
+	@Test
+	void theControlsFitWithRoomForAWiderFont(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir);
+		Edt.run(() -> UiRenderer.layOut(panel, WIDTH, HEIGHT));
+
+		int min = Edt.call(() -> panel.getControls().getMinimumSize().width);
+		assertTrue(min <= WIDTH - 100,
+			"the controls must squeeze into " + (WIDTH - 100) + " so a wider font still fits: " + min);
 	}
 
 	@Test
