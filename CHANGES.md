@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Documentation
+
+- **Help → User manual opens it, on F1.** And it opens the manual for *this* release: a 1.2.0 jar
+  opens the tree at the `v1.2.0` tag rather than whatever `main` has become since, so a copy
+  somebody downloaded a year ago cannot be shown a page describing windows it does not have. That
+  is the same rule the version stamping already follows, and a test holds it down, since nothing at
+  run time can catch it - the wrong URL either 404s or, worse, quietly opens the wrong document. A
+  machine with no browser is not an error: the address goes into a dialog and onto the clipboard.
+- **A user manual, in `manual/`.** Twenty Markdown files served straight from the repository -
+  `manual/README.md` is the index, and every link between them is a relative link that works in
+  GitHub's own file browser. It covers getting started against a simulated machine, the connection
+  model, and one chapter per window; the three ideas that are not discoverable from the UI get
+  said once and linked to from everywhere they matter - that a cell carries both what the machine
+  said and what should be there instead, that a greyed-out button is the console reporting what it
+  cannot do, and that everything is octal. There is also a troubleshooting chapter that starts
+  where debugging actually starts - connect to a simulated machine, and turn on the log's Read and
+  Write columns - and a glossary, since ODT, the I/O page and "deposit" are all things a reader may
+  be meeting for the first time.
+
 ### Fixes
 
 - **Halting a machine that was just started reported it as already halted.** The classic 11/44

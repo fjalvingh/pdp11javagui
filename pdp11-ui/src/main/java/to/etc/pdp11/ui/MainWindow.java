@@ -27,11 +27,14 @@ import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.net.URI;
 
 /**
  * The application's main window: the terminal, the connection status, and the menu bar.
@@ -61,6 +64,9 @@ public final class MainWindow extends JFrame {
 	private JMenu m_connectToMenu;
 
 	private JMenuItem m_disconnectItem;
+
+	/** The Help menu's manual entry, so a test can press what the user presses. */
+	private JMenuItem m_manualItem;
 
 	/**
 	 * Whether a connect <i>or a disconnect</i> worker is running. Read and written on the event
@@ -136,6 +142,11 @@ public final class MainWindow extends JFrame {
 		return m_disconnectItem;
 	}
 
+	/** The Help menu's User manual item. */
+	public JMenuItem getManualItem() {
+		return m_manualItem;
+	}
+
 	public MainPanel getPanel() {
 		return m_panel;
 	}
@@ -194,10 +205,18 @@ public final class MainWindow extends JFrame {
 			}
 		});
 
+		JMenuItem manual = new JMenuItem("User manual");
+		//-- F1, which is what every application on every platform this runs on binds help to.
+		manual.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0));
+		manual.addActionListener(e -> openManual());
+		m_manualItem = manual;
+
 		JMenuItem about = new JMenuItem("About PDP11GUI");
 		about.addActionListener(e -> showAbout());
 		JMenu help = new JMenu("Help");
 		help.setMnemonic(KeyEvent.VK_H);
+		help.add(manual);
+		help.addSeparator();
 		help.add(about);
 
 		JMenuBar bar = new JMenuBar();
@@ -510,6 +529,68 @@ public final class MainWindow extends JFrame {
 		JOptionPane.showMessageDialog(this,
 			message + (cause == null ? "" : "\n\n" + cause.getMessage()),
 			"PDP11GUI", JOptionPane.ERROR_MESSAGE);
+	}
+
+	/**
+	 * Open the manual in the user's browser.
+	 *
+	 * <p>On a worker, because {@code Desktop.browse} launches a program - {@code xdg-open} and
+	 * whatever it decides on, which on a cold browser is seconds - and every other thing in this
+	 * window that starts a process does it off the event thread for the same reason.</p>
+	 *
+	 * <p>A machine with no browser, or no {@code Desktop} at all, is not a failure worth an error
+	 * dialog: the manual is a web page and the address is short. It goes on the clipboard and into
+	 * a dialog that says so.</p>
+	 */
+	private void openManual() {
+		String url = manualUrl(AppVersion.get());
+		m_context.getLogger().log(LogChannel.OTHER, "Opening the manual at %s", url);
+		Thread worker = new Thread(() -> {
+			try {
+				if(!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
+					throw new UnsupportedOperationException("this desktop cannot open a browser");
+				Desktop.getDesktop().browse(URI.create(url));
+			} catch(Exception x) {
+				m_context.getLogger().log(LogChannel.OTHER, "Cannot open a browser: %s", x);
+				SwingUtilities.invokeLater(() -> showManualAddress(url));
+			}
+		}, "pdp11-manual");
+		worker.setDaemon(true);
+		worker.start();
+	}
+
+	/** Say where the manual is, and put it somewhere it can be pasted from. */
+	private void showManualAddress(String url) {
+		String copied = "";
+		try {
+			Toolkit.getDefaultToolkit().getSystemClipboard()
+				.setContents(new StringSelection(url), null);
+			copied = "\n\nThe address has been copied to the clipboard.";
+		} catch(RuntimeException x) {
+			//-- A clipboard can be unavailable or held by something else. The address is in the
+			//-- dialog either way, which is the part that matters.
+			m_context.getLogger().log(LogChannel.OTHER, "Cannot reach the clipboard: %s", x);
+		}
+		JOptionPane.showMessageDialog(this,
+			"No browser could be opened here. The manual is at:\n\n" + url + copied,
+			"PDP11GUI", JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	/**
+	 * The manual for a given version of this application, on GitHub.
+	 *
+	 * <p>A release points at <i>its own tag</i> rather than at {@code main}, so a jar somebody
+	 * downloaded a year ago opens the manual that was written for it instead of one describing
+	 * windows it does not have. That is the same rule the version stamping follows: a build says
+	 * what it is, and never what the branch has become since. A development build has no tag to
+	 * point at and gets {@code main}.</p>
+	 *
+	 * <p>Package-visible for a test - the manifest is absent in a test run, so
+	 * {@link AppVersion#get()} can only ever be seen to answer {@code development build} there.</p>
+	 */
+	static String manualUrl(String version) {
+		String ref = AppVersion.DEVELOPMENT.equals(version) ? "main" : "v" + version;
+		return "https://github.com/fjalvingh/pdp11javagui/blob/" + ref + "/manual/README.md";
 	}
 
 	private void showAbout() {

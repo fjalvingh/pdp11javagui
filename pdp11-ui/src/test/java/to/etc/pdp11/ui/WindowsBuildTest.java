@@ -87,6 +87,10 @@ class WindowsBuildTest {
 			assertEquals("PDP11GUI", w.getTitle());
 			assertNotNull(w.getJMenuBar());
 			assertEquals(3, w.getJMenuBar().getMenuCount(), "File, Windows, Help");
+			//-- Help has the manual in it, on F1. A menu entry nobody can find is a manual nobody
+			//-- reads, and F1 is the one key every platform this runs on already means help by.
+			assertNotNull(w.getManualItem(), "Help has a User manual entry");
+			assertEquals(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), w.getManualItem().getAccelerator());
 			assertFalse(w.isVisible(), "built, not shown");
 		} finally {
 			onEdt(() -> {

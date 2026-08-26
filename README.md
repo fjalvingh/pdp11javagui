@@ -12,6 +12,9 @@ The rewrite is not a transliteration. It drops MDI for free-floating top-level w
 replaces the single-threaded `Application.ProcessMessages` I/O model with real threads, and
 rebuilds the UI with layout managers instead of ~69k lines of absolute-positioned `.dfm`.
 
+**[The user manual](manual/README.md) is in `manual/`** - what every window does, how to connect
+to a machine, and how to get a program into one.
+
 **`PLAN.md` is the authoritative design and phasing document.** Read it before starting work.
 
 ## Status
