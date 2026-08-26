@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+### The PDP-11/05's microcode
+
+- **The Microcode window shows the PDP-11/05 as well as the PDP-11/44, and opens on it.** The
+  KD11-B's control store is 214 printed microwords of 40 bits, transcribed from the engineering
+  drawings' microcode listing pages and packaged with the application - both revisions of it, and
+  a combo says which. **On this machine the window is a debugger rather than a reference.** An
+  11/44's console cannot say which microword it is executing; the 11/05's KM11 puts `MPC0`
+  through `MPC7` on the lights, so eight bits read off the panel and typed into the µPC box say
+  exactly which microword the machine is sitting in and this says what that microword asserts.
+- **Both M7261 board revisions ship, because either can be in the rack.** Rev E (the October 1973
+  drawing set) and rev F (July 1976) are different microcode - 20 bits across 14 microwords, all
+  of them in `AUX` or `CKO` - and that difference has no symptom: the addresses, the
+  next-addresses and the control graph are identical, so a wrongly chosen revision looks entirely
+  right while being wrong about what two control lines do. So the selection is in the **window
+  title**, and the fields the other revision disagrees on are **coloured** in the table. Which
+  board is in a machine can be read off it without powering it up: two of the ten control store
+  PROMs change part number, and they are exactly the two holding `AUX` and `CKO`.
+- **Three fields are not what the listing's headings suggest, and all three fail silently when
+  they are got wrong.** The scratchpad address is printed as four non-adjacent, out-of-order
+  single-bit columns; the `BUT` microtest nibble is bit-scrambled, and all sixteen microtests are
+  defined so a wrong bit order gives a *plausible* wrong branch for every microword; `BRG` is
+  reversed the same way. A field is now a list of bit positions rather than a range, so the table
+  says what each field is made of instead of the decode having to be repaired downstream.
+- **The next-address bits are stored complemented** - the signals are `MPC-7-L` down to
+  `MPC-0-L` - and the window shows the decoded successor on its own row above the fields, because
+  a `NXT` of 215 beside a microword that goes to 162 is exactly the sort of thing that gets
+  "corrected". `Kd11bMicrocodeTest` holds it down by coverage: uncomplemented, 83% of
+  next-addresses land on a listed location, which is chance level when 214 of 256 are listed;
+  complemented, 213 of 214 do.
+- **A branch base is not presented as the successor.** 73 of the 214 microwords select a
+  microtest, and there the hardware ORs the result into the next-address bits, so the printed
+  value is where the microword goes only if the test comes out zero. The window says so, on both
+  machines - the 11/44's `BUT ENABLE` is the same thing.
+- **A field whose printed value is not what the machine does says so.** The KD11-B's `AUX` line
+  selects whether the ALU control comes from the microword or is decoded from instruction register
+  bits 15..12 or 10..6, which is how one microword executes `MOV`, `CMP`, `BIT`, `BIC`, `BIS`,
+  `ADD` and `SUB` alike. In those microwords the printed `ALU` field is a don't-care and the
+  window shows it as one rather than as an operation.
+- **The µPC box explains an address it cannot find.** 42 of the 256 control store locations are
+  not printed, so an address read off the KM11 can be perfectly real and absent from the listing;
+  "no microword at 377" on its own reads like a typo when it is not.
+- The window remembers which microcode was chosen and the file each entry had open last, and a
+  selection this version does not know falls back to the default and says so. The search modes
+  follow the document: the KD11-B transcription carries no line numbers of its own, so it offers
+  two ways of searching rather than three with one that never helps.
+
+### Internal - the microcode core is no longer about one machine
+
+- `MicrocodeField` held the 11/44's table as static state. The table is now a
+  `MicrocodeArchitecture` object - fields, the next-address field, the microtest field, the
+  cross-checks that document supports, and which fields are don't-cares in which microwords - and
+  a `MicroInstruction` carries the one it was decoded against, so asking it for another machine's
+  field throws rather than quietly reading somebody else's bits. `Pdp1144Microcode` splits into
+  the generic `Microcode` container and the loader for that listing; `Pdp1144Fields` and
+  `Kd11bFields` are the two tables. **A revision is not an architecture**: both KD11-B revisions
+  share one field table and the revision is a label on the loaded `Microcode`.
+- The cross-checks are per architecture because they are properties of the source document. The
+  11/44's listing prints each microword's jump target as bits and again as text, so nothing
+  decoded through a wrong bit map survives the comparison; a transcribed bit table has no such
+  redundancy and is checked on what it does have.
+- The transcription ships with its provenance: `kd11b-README.md`, the revision diff and the list
+  of nine bits settled by eye are packaged beside the data. `Kd11bMicrocodeTest` decodes all 40
+  bits of all 214 microwords of both revisions and compares every field against the
+  transcription pipeline's own independent decode of the same bits, which is what holds the field
+  table down; the E-to-F difference is asserted as exactly 20 bits in 14 named microwords.
+
 ### Fixes
 
 - **The tool-window layout survives a restart.** The settings file has recorded which windows

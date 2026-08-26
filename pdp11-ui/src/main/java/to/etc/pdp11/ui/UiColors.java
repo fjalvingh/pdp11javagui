@@ -50,6 +50,17 @@ public final class UiColors {
 	 */
 	public static final Color ERROR_BACKGROUND = new Color(0x7A, 0x28, 0x28);
 
+	/**
+	 * A field the other revision of the same board has something else in.
+	 *
+	 * <p>The same act as {@link #EDITED_BACKGROUND} - two things that should agree and do not -
+	 * so a different hue rather than a different idea: teal, because a disagreement between two
+	 * printed documents is not a value the user typed and not an error either.</p>
+	 */
+	public static final Color REVISION_DIFFERENCE_BACKGROUND = new Color(0x1E, 0x4E, 0x54);
+
+	public static final Color REVISION_DIFFERENCE_TEXT = new Color(0xA8, 0xE4, 0xEC);
+
 	/** A value the machine has never been asked for. */
 	public static final Color UNKNOWN_TEXT = new Color(0x80, 0x80, 0x82);
 

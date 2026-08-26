@@ -5,16 +5,20 @@ import to.etc.pdp11.core.util.Octal;
 import java.util.List;
 
 /**
- * One microword out of the PDP-11/44's microcode listing: where it lives, what it does, and the
- * line of the listing it was read from.
+ * One microword: where it lives, what it does, and where in its source document it was read from.
  *
  * <p>Ported from {@code TPDP1144MicroInstruction} ({@code Pdp1144MicroCodeU.pas:288-320}).
  * Immutable here, where the Pascal parses into itself in two steps - {@code Parse} then
  * {@code BuildFields} - and leaves a half-built object behind when the first of them throws.</p>
  *
- * <h2>Where the bits are</h2>
+ * <p>A microword is only meaningful against the field table it was decoded through, so it
+ * carries the {@link MicrocodeArchitecture} it was decoded against rather than trusting whoever
+ * looks at it to have the right one. Asking for a field belonging to another machine's table
+ * throws instead of quietly reading somebody else's bits.</p>
  *
- * <p>The listing prints nine octal numbers per microword, which are not the fields: they are the
+ * <h2>Where the bits are, on the 11/44</h2>
+ *
+ * <p>Its listing prints nine octal numbers per microword, which are not the fields: they are the
  * 104-bit word chopped into the twelve-bit chunks a line printer could line up. The chunks are
  * printed most significant first and held here least significant first, index 0 to 8, which is
  * the Pascal's {@code raw_code} order and the order the reassembly comment in
@@ -34,6 +38,8 @@ import java.util.List;
  * </pre>
  */
 public final class MicroInstruction {
+	private final MicrocodeArchitecture m_architecture;
+
 	private final int m_address;
 
 	private final int m_nextAddress;
@@ -56,8 +62,13 @@ public final class MicroInstruction {
 
 	private final List<String> m_operations;
 
-	MicroInstruction(int address, int nextAddress, String symbolicTag, String sortableTag, int lineNumber,
-		String sourceName, int fileLine, String text, int[] rawWords, int[] fieldValues, List<String> operations) {
+	MicroInstruction(MicrocodeArchitecture architecture, int address, int nextAddress, String symbolicTag,
+		String sortableTag, int lineNumber, String sourceName, int fileLine, String text, int[] rawWords,
+		int[] fieldValues, List<String> operations) {
+		if(fieldValues.length != architecture.size())
+			throw new IllegalArgumentException(architecture.getName() + " has " + architecture.size()
+				+ " fields, decoded " + fieldValues.length);
+		m_architecture = architecture;
 		m_address = address;
 		m_nextAddress = nextAddress;
 		m_symbolicTag = symbolicTag;
@@ -71,7 +82,17 @@ public final class MicroInstruction {
 		m_operations = List.copyOf(operations);
 	}
 
-	/** Where this microword sits in the control store, 0..1777 octal. */
+	/** Which processor's field table this microword was decoded against. */
+	public MicrocodeArchitecture getArchitecture() {
+		return m_architecture;
+	}
+
+	/** That architecture's fields, in the order a window lists them. */
+	public List<MicrocodeField> getFields() {
+		return m_architecture.getFields();
+	}
+
+	/** Where this microword sits in the control store. */
 	public int getAddress() {
 		return m_address;
 	}
@@ -149,7 +170,7 @@ public final class MicroInstruction {
 
 	/** What this microword has in that field. */
 	public int getValue(MicrocodeField field) {
-		return m_fieldValues[field.index()];
+		return m_fieldValues[m_architecture.indexOf(field)];
 	}
 
 	/** What that value means, or {@code null} when the print set does not name it. */
@@ -158,23 +179,59 @@ public final class MicroInstruction {
 	}
 
 	/**
+	 * Whether the hardware replaces part of this microword's next address with a test result.
+	 *
+	 * <p>When it does, {@link #getNextAddress()} is where the microword goes only if the test
+	 * comes out zero: it is a branch base rather than the successor. Nothing in a listing says
+	 * where the other targets are, because they depend on the state of the machine.</p>
+	 */
+	public boolean isBranching() {
+		MicrocodeField test = m_architecture.getMicrotestField();
+		return test != null && !isDefault(test);
+	}
+
+	/** What is being tested, or {@code null} when nothing is. */
+	public String getMicrotestName() {
+		MicrocodeField test = m_architecture.getMicrotestField();
+		return test == null || !isBranching() ? null : getText(test);
+	}
+
+	/**
+	 * Why this field's printed value is not what the machine does, or {@code null} when it is.
+	 *
+	 * <p>The KD11-B has microwords where the ALU control comes from the instruction register
+	 * rather than from the {@code ALU} field beside it. Showing that field as an operation would
+	 * be showing something the machine is not doing.</p>
+	 */
+	public String getDontCareReason(MicrocodeField field) {
+		return m_architecture.dontCareReason(this, field);
+	}
+
+	/**
 	 * Whether this field is doing nothing this cycle.
 	 *
-	 * <p>The question the window is really asking when it highlights: of 37 fields, the two or
-	 * three that are <i>not</i> at their default are what this microword is about.</p>
+	 * <p>The question the window is really asking when it highlights: of all the fields, the two
+	 * or three that are <i>not</i> at their default are what this microword is about.</p>
 	 */
 	public boolean isDefault(MicrocodeField field) {
 		return field.hasDefault() && getValue(field) == field.defaultValue();
 	}
 
-	/** The address as the listing writes it: four octal digits. */
+	/**
+	 * The address as the source document writes it: as many octal digits as the control store
+	 * is wide - four on the 11/44, three on a machine with a 256 word store.
+	 */
 	public String getAddressOctal() {
-		return Octal.format(m_address, 4);
+		return Octal.format(m_address, addressDigits());
 	}
 
-	/** The next address as four octal digits. */
+	/** The next address, in the same width. */
 	public String getNextAddressOctal() {
-		return Octal.format(m_nextAddress, 4);
+		return Octal.format(m_nextAddress, addressDigits());
+	}
+
+	private int addressDigits() {
+		return Octal.digitsForBits(m_architecture.getAddressBits());
 	}
 
 	@Override

@@ -7,14 +7,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Turns one line of the microcode listing into a {@link MicroInstruction}.
+ * Turns one line of the PDP-11/44's microcode listing into a {@link MicroInstruction}.
  *
  * <p>{@code TPDP1144MicroInstruction.Parse} and {@code BuildFields} together
  * ({@code Pdp1144MicroCodeU.pas:387-546}), as one step: a microword that cannot be decoded is
  * not a microword, and the Pascal's two-step version can leave a parsed-but-not-decoded object
  * in the list when the second step throws.</p>
  */
-final class MicrocodeLineParser {
+final class Pdp1144LineParser {
 	/** A line that begins like a microword but is not one. Carries a sentence, not a stack. */
 	static final class BadLineException extends RuntimeException {
 		BadLineException(String message) {
@@ -22,7 +22,7 @@ final class MicrocodeLineParser {
 		}
 	}
 
-	private MicrocodeLineParser() {
+	private Pdp1144LineParser() {
 	}
 
 	/**
@@ -104,8 +104,10 @@ final class MicrocodeLineParser {
 		for(String op : words(source.toString(), ","))
 			operations.add(op.replace("_", ":="));
 
-		int[] values = decode(raw);
-		return new MicroInstruction(address, values[MicrocodeField.NEXT_ADDRESS.index()], tag, sortableTag(tag),
+		MicrocodeArchitecture arch = Pdp1144Fields.ARCHITECTURE;
+		int[] values = decode(arch, raw);
+		int next = values[arch.indexOf(arch.getNextAddressField())];
+		return new MicroInstruction(arch, address, next, tag, sortableTag(tag),
 			lineNumber, sourceName, fileLine, line, raw, values, operations);
 	}
 
@@ -116,9 +118,9 @@ final class MicrocodeLineParser {
 	 * than two listing words - the widest is ten bits and the words are twelve - so joining the
 	 * word a field starts in with the one above it is always enough.</p>
 	 */
-	private static int[] decode(int[] raw) {
-		int[] values = new int[MicrocodeField.ALL.size()];
-		for(MicrocodeField f : MicrocodeField.ALL) {
+	private static int[] decode(MicrocodeArchitecture arch, int[] raw) {
+		int[] values = new int[arch.size()];
+		for(MicrocodeField f : arch.getFields()) {
 			int w = 0;
 			while(f.lsb() >= WORD_BIT_POS[w] + WORD_BIT_LEN[w])
 				w++;
@@ -126,7 +128,7 @@ final class MicrocodeLineParser {
 			if(w < WORD_COUNT - 1)
 				vector |= ((long) (raw[w + 1] & mask(WORD_BIT_LEN[w + 1]))) << WORD_BIT_LEN[w];
 			vector >>>= f.lsb() - WORD_BIT_POS[w];
-			values[f.index()] = (int) (vector & f.mask());
+			values[arch.indexOf(f)] = (int) (vector & f.mask());
 		}
 		return values;
 	}

@@ -27,7 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * that.</p>
  */
 class Pdp1144MicrocodeTest {
-	private static final Pdp1144Microcode CODE = Pdp1144Microcode.builtin();
+	private static final Microcode CODE = Pdp1144Microcode.builtin();
+
+	private static final MicrocodeArchitecture ARCH = Pdp1144Fields.ARCHITECTURE;
 
 	// -----------------------------------------------------------------------------------------
 	// The real listing
@@ -100,7 +102,7 @@ class Pdp1144MicrocodeTest {
 	@Test
 	void mostFieldsAreAtTheirDefaultInAnyOneMicroword() {
 		MicroInstruction mi = CODE.atAddress(0461);
-		long changed = MicrocodeField.ALL.stream().filter(f -> f.hasDefault() && !mi.isDefault(f)).count();
+		long changed = ARCH.getFields().stream().filter(f -> f.hasDefault() && !mi.isDefault(f)).count();
 		assertEquals(3, changed, "the ALU function, the scratch pad destination and the register");
 	}
 
@@ -186,7 +188,7 @@ class Pdp1144MicrocodeTest {
 	 */
 	@Test
 	void aSourceLineThatRunsOnIsJoinedBackOn() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0010,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    R15_UDATA,BUT SERVICE,J/1-B,SR1 Z",
 			"                                                                                ,ONE MORE THING",
 			"U 0010, 0000,6345,0300,0146,1740,3033,4000,0000,017     ;1042   010:    1-B:    J/1-A"));
@@ -207,7 +209,7 @@ class Pdp1144MicrocodeTest {
 	@Test
 	void aCommentWhoseSemicolonWasMisreadIsNotJoinedOn() {
 		String mangled = " ".repeat(56) + ":1950";
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0010,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/1-B",
 			mangled,
 			"U 0010, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1042   010:    1-B:    J/1-A"));
@@ -219,7 +221,7 @@ class Pdp1144MicrocodeTest {
 	/** Page headers and free-standing comments are not microwords and are not complaints. */
 	@Test
 	void headersAndCommentsAreSkipped() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"; 44OUTU.MCR [160,1311] Micro-2.1 1B(41)        14:3:34 14-Sep-1979    Page 21",
 			"",
 			"                                                        ;1039   ; A COMMENT",
@@ -234,14 +236,14 @@ class Pdp1144MicrocodeTest {
 	 */
 	@Test
 	void aBrokenLineIsReportedAndTheRestStillLoads() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/1-A",
 			"U 0010, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1041   777:    1-B:    J/1-A",
 			"U 0020, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1042   020:    1-C:    J/1-A"));
 		assertEquals(2, code.size(), "the one with the mismatched address is dropped");
 		assertEquals(1, code.getProblems().size());
-		Pdp1144Microcode.Problem p = code.getProblems().get(0);
-		assertEquals(Pdp1144Microcode.ProblemKind.MALFORMED_LINE, p.kind());
+		Microcode.Problem p = code.getProblems().get(0);
+		assertEquals(Microcode.ProblemKind.MALFORMED_LINE, p.kind());
 		assertEquals(2, p.fileLine());
 		assertTrue(p.describe().contains("0777"), p.describe());
 	}
@@ -249,45 +251,45 @@ class Pdp1144MicrocodeTest {
 	/** The check that catches a misread digit: bits say one thing, the text beside them another. */
 	@Test
 	void aJumpThatContradictsTheSourceTextIsReported() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0010,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/1-A",
 			"U 0010, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1041   010:    1-B:    J/1-A"));
 		assertEquals(2, code.size(), "both microwords are readable");
 		assertEquals(1, code.getProblems().size());
 		//-- 1-A's bits point at 010, which is 1-B, but its source says it jumps to itself.
-		assertEquals(Pdp1144Microcode.ProblemKind.JUMP_NOT_IN_SOURCE, code.getProblems().get(0).kind());
+		assertEquals(Microcode.ProblemKind.JUMP_NOT_IN_SOURCE, code.getProblems().get(0).kind());
 	}
 
 	@Test
 	void aNextAddressWithNoMicrowordIsReported() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0777,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/9-Z"));
 		assertEquals(1, code.size());
-		assertEquals(Pdp1144Microcode.ProblemKind.MISSING_NEXT, code.getProblems().get(0).kind());
+		assertEquals(Microcode.ProblemKind.MISSING_NEXT, code.getProblems().get(0).kind());
 	}
 
 	@Test
 	void twoMicrowordsAtOneAddressAreReported() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/1-A",
 			"U 0000, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1041   000:    1-B:    J/1-A"));
 		assertTrue(code.getProblems().stream()
-			.anyMatch(p -> p.kind() == Pdp1144Microcode.ProblemKind.DUPLICATE_ADDRESS), code.getProblems().toString());
+			.anyMatch(p -> p.kind() == Microcode.ProblemKind.DUPLICATE_ADDRESS), code.getProblems().toString());
 	}
 
 	/** A byte no line printer ever produced means the transcription is damaged. */
 	@Test
 	void aCharacterThatCannotBeInAListingIsReported() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("test", List.of(
+		Microcode code = Pdp1144Microcode.parse("test", List.of(
 			"U 0000, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1040   000:    1-A:    J/1-A",
 			"U 0010, 0000,6045,0001,4166,3340,3033,4000,0422,017     ;1041   010:    1-b:    J/1-A"));
 		assertEquals(1, code.size(), "the lower case line is skipped, the other one loads");
-		assertEquals(Pdp1144Microcode.ProblemKind.ILLEGAL_CHARACTER, code.getProblems().get(0).kind());
+		assertEquals(Microcode.ProblemKind.ILLEGAL_CHARACTER, code.getProblems().get(0).kind());
 	}
 
 	@Test
 	void anEmptyListingSaysSoRatherThanFailing() {
-		Pdp1144Microcode code = Pdp1144Microcode.parse("nothing.txt", List.of("; a header and no code"));
+		Microcode code = Pdp1144Microcode.parse("nothing.txt", List.of("; a header and no code"));
 		assertTrue(code.isEmpty());
 		assertTrue(code.isOk());
 		assertTrue(code.describe().contains("no microcode"), code.describe());
@@ -303,30 +305,25 @@ class Pdp1144MicrocodeTest {
 	 */
 	@Test
 	void theFieldsDoNotOverlap() {
-		boolean[] used = new boolean[104];
-		for(MicrocodeField f : MicrocodeField.ALL) {
-			for(int b = f.lsb(); b <= f.msb(); b++) {
-				assertFalse(used[b], "bit " + b + " is in two fields, the second being " + f);
-				used[b] = true;
-			}
-		}
-		//-- Two bits are in no field: 56, which the print set marks unused, and 103, which is
-		//-- the eleventh bit of the top listing word - the next-address field below it is ten
-		//-- bits wide, so the word has one bit more than the microword needs.
-		for(int b = 0; b < 104; b++)
-			assertEquals(b != 56 && b != 103, used[b], "bit " + b);
+		//-- unusedBits() throws on an overlap, so this asserts both halves at once: two bits are
+		//-- in no field - 56, which the print set marks unused, and 103, which is the eleventh
+		//-- bit of the top listing word, the next-address field below it being ten bits wide.
+		assertEquals(List.of(56, 103), ARCH.unusedBits(Pdp1144Fields.WORD_BITS));
+		assertEquals(37, ARCH.size());
 	}
 
 	@Test
 	void aFieldNamesItsBitsTheWayAPrintSetDoes() {
-		assertEquals("102:93", MicrocodeField.NEXT_ADDRESS.bitRange());
-		assertEquals("87", MicrocodeField.byName("LOAD BA").bitRange());
-		assertNull(MicrocodeField.byName("LOAD BA").text(2), "a value outside the field has no name");
-		assertEquals("", MicrocodeField.byName("LOAD BA").text(0), "and 0 is named, as nothing at all");
+		assertEquals("102:93", ARCH.getNextAddressField().bitRange());
+		assertEquals("NEXT MICROWORD ADDRESS", ARCH.getNextAddressField().name());
+		assertEquals(10, ARCH.getAddressBits(), "and the control store is as wide as it is");
+		assertEquals("87", ARCH.byName("LOAD BA").bitRange());
+		assertNull(ARCH.byName("LOAD BA").text(2), "a value outside the field has no name");
+		assertEquals("", ARCH.byName("LOAD BA").text(0), "and 0 is named, as nothing at all");
 	}
 
 	private static String text(MicroInstruction mi, String fieldName) {
-		MicrocodeField f = MicrocodeField.byName(fieldName);
+		MicrocodeField f = ARCH.byName(fieldName);
 		assertNotNull(f, fieldName);
 		return mi.getText(f);
 	}

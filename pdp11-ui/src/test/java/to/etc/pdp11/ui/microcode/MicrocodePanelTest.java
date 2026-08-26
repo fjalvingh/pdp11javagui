@@ -3,7 +3,8 @@ package to.etc.pdp11.ui.microcode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.microcode.MicrocodeField;
+import to.etc.pdp11.core.microcode.Kd11bFields;
+import to.etc.pdp11.core.microcode.Pdp1144Fields;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -35,16 +36,28 @@ class MicrocodePanelTest {
 
 	private static final int HEIGHT = 700;
 
-	/** Rows before the fields start: the symbolic tag and the address. */
-	private static final int FIELDS_START = 2;
+	/** Rows before the fields start: the symbolic tag, the address and the decoded successor. */
+	private static final int FIELDS_START = 3;
 
 	@BeforeAll
 	static void lookAndFeel() {
 		UiRenderer.installLookAndFeel();
 	}
 
+	/**
+	 * A window showing the 11/44, which is what most of this file is about.
+	 *
+	 * <p>It has to be asked for. The window opens on the PDP-11/05 by default - that is the
+	 * machine this application is being written beside - so a test about the 11/44's listing says
+	 * so rather than relying on which entry happens to come first.</p>
+	 */
 	private static MicrocodePanel panel(Path dir) {
+		return panel(dir, MicrocodeSource.PDP1144);
+	}
+
+	private static MicrocodePanel panel(Path dir, MicrocodeSource source) {
 		AppContext ctx = TestContext.create(dir);
+		ctx.getSettings().setMicrocodeSelection(source.getLabel());
 		MicrocodePanel panel = Edt.call(() -> new MicrocodePanel(ctx));
 		Edt.run(panel::attach);
 		return panel;
@@ -75,7 +88,7 @@ class MicrocodePanelTest {
 		MicrocodePanel panel = panel(dir);
 		Edt.run(() -> panel.searchFor("0461"));
 
-		assertEquals(FIELDS_START + MicrocodeField.ALL.size() + 4, Edt.call(panel.getTable()::getRowCount));
+		assertEquals(FIELDS_START + Pdp1144Fields.ARCHITECTURE.size() + 4, Edt.call(panel.getTable()::getRowCount));
 		assertEquals("Symbolic tag", cell(panel.getTable(), 0, 0));
 		assertEquals("2-I", cell(panel.getTable(), 0, 2));
 		assertEquals("Address", cell(panel.getTable(), 1, 0));
@@ -93,6 +106,7 @@ class MicrocodePanelTest {
 		MicrocodePanel panel = panel(dir);
 		Edt.run(() -> panel.searchFor("0732"));
 
+		assertEquals("0043", infoOf(panel, "Next microword"));
 		assertEquals("2 = DATO", infoOf(panel, "UNIBUS CONTROL"));
 		assertEquals("3 = UBUS", infoOf(panel, "AMUX CONTROL"));
 		//-- An FP11 field: the print set names none of their values, so a number is all there is.
@@ -205,6 +219,7 @@ class MicrocodePanelTest {
 	@Test
 	void anotherListingCanBeLoadedAndIsRemembered(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);
+		ctx.getSettings().setMicrocodeSelection(MicrocodeSource.PDP1144.getLabel());
 		MicrocodePanel panel = Edt.call(() -> new MicrocodePanel(ctx));
 		Edt.run(panel::attach);
 
@@ -216,7 +231,8 @@ class MicrocodePanelTest {
 
 		assertEquals(2, panel.getMicrocode().size());
 		assertEquals("mine.txt", panel.getMicrocode().getSourceName());
-		assertEquals(own.toAbsolutePath().toString(), ctx.getSettings().getLastMicrocodeFile());
+		assertEquals(own.toAbsolutePath().toString(),
+			ctx.getSettings().getMicrocodeListing(MicrocodeSource.PDP1144.getLabel()));
 		//-- And a window opened again with that setting comes back to it rather than to the
 		//-- packaged listing.
 		MicrocodePanel second = Edt.call(() -> new MicrocodePanel(ctx));
@@ -228,11 +244,186 @@ class MicrocodePanelTest {
 	@Test
 	void aRememberedListingThatHasGoneFallsBackToThePackagedOne(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);
-		ctx.getSettings().setLastMicrocodeFile(dir.resolve("not-there.txt").toString());
+		ctx.getSettings().setMicrocodeSelection(MicrocodeSource.PDP1144.getLabel());
+		ctx.getSettings().setMicrocodeListing(MicrocodeSource.PDP1144.getLabel(),
+			dir.resolve("not-there.txt").toString());
 		MicrocodePanel panel = Edt.call(() -> new MicrocodePanel(ctx));
 		Edt.run(panel::attach);
 
 		assertEquals(1018, panel.getMicrocode().size());
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The PDP-11/05
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * The window opens on the 11/05, which is the machine it is being written beside, and on the
+	 * later of that machine's two board revisions.
+	 */
+	@Test
+	void itOpensOnThePdp1105(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		MicrocodePanel panel = Edt.call(() -> new MicrocodePanel(ctx));
+		Edt.run(panel::attach);
+
+		assertEquals(MicrocodeSource.PDP1105_F, panel.getSource());
+		assertEquals(214, panel.getMicrocode().size());
+		assertEquals("M7261 rev F", panel.getMicrocode().getRevision());
+		assertEquals("RS-1", panel.getCurrent().getSymbolicTag(), "starting at 000");
+	}
+
+	/**
+	 * Switching machines changes the table, because the field tables are different sizes.
+	 * Switching <i>revision</i> does not, because a revision is not an architecture: the same 18
+	 * fields, different bits in fourteen of the microwords.
+	 */
+	@Test
+	void switchingMachineChangesTheTableAndSwitchingRevisionDoesNot(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1144);
+		int elevenFortyFour = Edt.call(panel.getTable()::getRowCount);
+		assertEquals(FIELDS_START + Pdp1144Fields.ARCHITECTURE.size() + 4, elevenFortyFour);
+
+		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_F));
+		//-- Three rows of provenance rather than four: this document carries no microassembler
+		//-- source, so there is no "Source code" row rather than an empty one.
+		int revF = Edt.call(panel.getTable()::getRowCount);
+		assertEquals(FIELDS_START + Kd11bFields.ARCHITECTURE.size() + 3, revF);
+
+		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_E));
+		assertEquals(revF, Edt.call(panel.getTable()::getRowCount), "same field table, other bits");
+		assertEquals("M7261 rev E", panel.getMicrocode().getRevision());
+	}
+
+	/** Which way of searching is offered follows what the document actually carries. */
+	@Test
+	void theSearchModesFollowTheDocument(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1144);
+		assertEquals(3, Edt.call(() -> panel.getSearchBySelector().getItemCount()),
+			"the 11/44's listing prints its own line numbers");
+
+		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_F));
+		assertEquals(2, Edt.call(() -> panel.getSearchBySelector().getItemCount()),
+			"the KD11-B transcription has no line numbers, so it does not offer to search by one");
+		assertEquals(214, Edt.call(() -> panel.getSearchBox().getItemCount()));
+	}
+
+	/** The chosen revision has to be readable without opening the combo. */
+	@Test
+	void theWindowTitleNamesTheChosenRevision(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		List<String> titles = new java.util.ArrayList<>();
+		Edt.run(() -> panel.setTitleListener(titles::add));
+		assertEquals(List.of("Microcode - PDP-11/05 (M7261 rev F)"), titles);
+
+		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_E));
+		assertEquals("Microcode - PDP-11/05 (M7261 rev E)", titles.get(titles.size() - 1));
+	}
+
+	/**
+	 * The payoff for shipping both revisions: the fourteen microwords that differ say so, in the
+	 * two fields they differ in. A wrongly chosen revision has no other symptom at all - every
+	 * address resolves and every chain walks.
+	 */
+	@Test
+	void theFieldsTheOtherRevisionDisagreesOnAreMarked(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+
+		//-- U1-1 is one of the five where rev E has AUX=1, CKO=0 and rev F has AUX=0, CKO=1.
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("U1-1"));
+		assertEquals(List.of(Kd11bFields.AUX, Kd11bFields.CKO), markedRows(panel));
+
+		//-- And a microword the two sets agree on is not marked, which is 200 of the 214.
+		Edt.run(() -> panel.searchFor("B-1"));
+		assertEquals(List.of(), markedRows(panel));
+	}
+
+	/** The 11/44 has no other revision to disagree with it, so nothing is ever marked. */
+	@Test
+	void thereIsNothingToCompareThePdp1144Against(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1144);
+		Edt.run(() -> panel.searchFor("0461"));
+		assertEquals(List.of(), markedRows(panel));
+	}
+
+	/**
+	 * Where the ALU control is decoded from the instruction the printed ALU field is a don't-care,
+	 * and saying it is {@code BL} would be saying the machine does something it does not.
+	 */
+	@Test
+	void aFieldThatIsNotWhatTheMachineDoesSaysSo(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("U1-1"));
+
+		String alu = infoOf(panel, Kd11bFields.ALU);
+		assertTrue(alu.contains("don\'t care"), alu);
+		assertTrue(alu.contains("instruction register"), alu);
+	}
+
+	/**
+	 * A µPC typed off the KM11's lights can be a real control store location that the listing
+	 * does not print, and "no microword at 377" on its own reads like a typo when it is not.
+	 */
+	@Test
+	void anAddressTheListingDoesNotPrintSaysWhyItIsMissing(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> panel.searchFor("377"));
+
+		String status = Edt.call(panel::getStatusText);
+		assertTrue(status.contains("42 control store locations"), status);
+		//-- And an address that does not exist at all is a different sentence.
+		Edt.run(() -> panel.searchFor("7000"));
+		assertTrue(Edt.call(panel::getStatusText).contains("8 bit control store"),
+			Edt.call(panel::getStatusText));
+	}
+
+	/**
+	 * 73 of the 214 microwords select a microtest, and there the hardware ORs the result into the
+	 * next address - so the printed value is a branch base and presenting it as the successor is
+	 * stating as fact something that depends on the state of the machine.
+	 */
+	@Test
+	void aBranchingMicrowordsNextAddressIsShownAsABase(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+
+		Edt.run(() -> panel.searchFor("RST-1"));
+		String branching = Edt.call(panel::getStatusText);
+		assertTrue(branching.contains("IR-DECODE"), branching);
+		assertTrue(branching.contains("branch base"), branching);
+		assertTrue(infoOf(panel, "Next microword").contains("branch base"),
+			infoOf(panel, "Next microword"));
+
+		Edt.run(() -> panel.searchFor("B-1"));
+		assertFalse(Edt.call(panel::getStatusText).contains("branch base"), "B-1 does not branch");
+		//-- And the row shows the decoded address, not the complemented bits the field holds.
+		assertEquals("147", infoOf(panel, "Next microword"));
+	}
+
+	/** And the 11/05, on one of the fourteen microwords the two board revisions disagree on. */
+	@Test
+	void renderThePdp1105ForLookingAt(@TempDir Path dir) throws Exception {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("U1-1"));
+		Path file = Edt.call(() -> UiRenderer.renderToFile(panel, WIDTH, HEIGHT,
+			Path.of("target", "ui-render", "microcode-panel-1105.png")));
+		assertTrue(Files.size(file) > 0);
+	}
+
+	/** The labels of the rows the other revision disagrees on. */
+	private static List<String> markedRows(MicrocodePanel panel) {
+		return Edt.call(() -> {
+			List<String> l = new java.util.ArrayList<>();
+			for(int i = 0; i < panel.getModel().getRowCount(); i++) {
+				MicrocodeTableModel.Row r = panel.getModel().getRow(i);
+				if(r.differs())
+					l.add(r.label());
+			}
+			return l;
+		});
 	}
 
 	@Test
@@ -242,7 +433,9 @@ class MicrocodePanelTest {
 
 		Rectangle table = Edt.call(() -> panel.getTable().getParent().getParent().getBounds());
 		assertTrue(table.height > HEIGHT / 2, "the table gets the room: " + table);
-		assertTrue(table.y > 0 && table.y < 80, "the controls are one row: " + table);
+		//-- Two rows of controls: with three microcodes to choose between, one row needs a window
+		//-- about 1100 pixels wide before it fits.
+		assertTrue(table.y > 0 && table.y < 110, "the controls are two compact rows: " + table);
 		assertTrue(table.x + table.width <= WIDTH, "and it stays inside the panel");
 	}
 

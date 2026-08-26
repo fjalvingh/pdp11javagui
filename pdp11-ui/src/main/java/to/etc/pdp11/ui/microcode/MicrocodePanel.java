@@ -2,7 +2,8 @@ package to.etc.pdp11.ui.microcode;
 
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.microcode.MicroInstruction;
-import to.etc.pdp11.core.microcode.Pdp1144Microcode;
+import to.etc.pdp11.core.microcode.Microcode;
+import to.etc.pdp11.core.microcode.MicrocodeField;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Octal;
 import to.etc.pdp11.ui.AppContext;
@@ -28,24 +29,42 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 /**
- * The PDP-11/44's microcode, one microword at a time: what its 104 bits are set to, what that
- * means, and the line of DEC's listing it was read from.
+ * A processor's microcode, one microword at a time: what its bits are set to, what that means,
+ * and where in the document it was read from.
  *
- * <p>Ported from {@code TFormMicroCode} ({@code FormMicroCodeU.pas}). Reading the listing and
- * cutting the microwords into fields is {@link Pdp1144Microcode} in the core, where it is
- * tested against the whole of EY-C3012-RB-001; what is here is the search, the walk and the
- * table.</p>
+ * <p>Ported from {@code TFormMicroCode} ({@code FormMicroCodeU.pas}). Reading the document and
+ * cutting the microwords into fields is {@link Microcode} and the loaders beside it in the core,
+ * where each is tested against the whole of its source; what is here is the search, the walk and
+ * the table.</p>
  *
- * <h2>It is a reference, not a debugger</h2>
+ * <h2>On the 11/05 it is a debugger</h2>
  *
- * <p>Nothing here touches a machine, and there is no {@code µPC} to read from one: an 11/44's
- * console cannot say which microword it is executing. This is the microcode as printed, beside
- * the processor it belongs to - what a {@code BUT} field selects, what a scratch pad address
- * means, which microword a state falls through to. The Pascal is the same and the naming here
- * says so.</p>
+ * <p>The Pascal's window is a reference and says so, because an 11/44's console cannot tell you
+ * which microword it is executing. <b>That stops being true on the PDP-11/05.</b> With a KM11 in
+ * slot 8 the KD11-B's microprogram counter is on the lights - {@code MPC0} through {@code MPC7} -
+ * so eight bits read off the panel and typed into the µPC box say exactly which microword the
+ * machine is sitting in, and this window says what that microword asserts. That is the reason it
+ * shows the 11/05 at all.</p>
+ *
+ * <p>For the 11/44 it remains what it was: the microcode as printed, beside the processor it
+ * belongs to.</p>
+ *
+ * <h2>Which microcode, and why the title says so</h2>
+ *
+ * <p>Three documents, in one combo: the 11/44's listing and the KD11-B's two board revisions. The
+ * revisions matter more than they look. They have <i>identical</i> addresses and next-addresses
+ * and differ in 20 bits across 14 microwords, so having the wrong one selected does not look
+ * wrong - every address resolves, every chain walks, and the microword on screen is simply
+ * incorrect in {@code AUX} or {@code CKO} with nothing at all to show for it. So the selection is
+ * in the window title, and the fields the other revision disagrees on are coloured.</p>
  *
  * <h2>What this does that the Pascal does not</h2>
  *
@@ -69,6 +88,11 @@ public final class MicrocodePanel extends JPanel {
 		TAG("Symbolic tag"),
 		LINE("Listing line");
 
+		/** The ways the loaded document can actually be searched, which is not always all three. */
+		public static SearchBy[] availableFor(MicrocodeSource source) {
+			return source.hasListingLineNumbers() ? values() : new SearchBy[]{ADDRESS, TAG};
+		}
+
 		private final String m_label;
 
 		SearchBy(String label) {
@@ -82,6 +106,9 @@ public final class MicrocodePanel extends JPanel {
 	}
 
 	private final AppContext m_context;
+
+	/** Which microcode is being looked at. Three entries, not a machine combo and a revision one. */
+	private final JComboBox<MicrocodeSource> m_source = new JComboBox<>(MicrocodeSource.values());
 
 	private final JComboBox<SearchBy> m_searchBy = new JComboBox<>(SearchBy.values());
 
@@ -103,7 +130,19 @@ public final class MicrocodePanel extends JPanel {
 	/** Where the user has been, most recent first, so Back walks it. */
 	private final Deque<Integer> m_history = new ArrayDeque<>();
 
-	private Pdp1144Microcode m_code;
+	/** What has been read so far, so that switching back and forth does not re-read anything. */
+	private final Map<MicrocodeSource, Microcode> m_loaded = new EnumMap<>(MicrocodeSource.class);
+
+	/** Told the window what to put in its title bar. A panel does not reach for its frame. */
+	private Consumer<String> m_titleListener = t -> {
+	};
+
+	private MicrocodeSource m_selected = MicrocodeSource.DEFAULT;
+
+	private Microcode m_code;
+
+	/** The same microwords off the other revision of the same board, or null when there is none. */
+	private Microcode m_otherRevision;
 
 	private MicroInstruction m_current;
 
@@ -133,7 +172,21 @@ public final class MicrocodePanel extends JPanel {
 	}
 
 	private JPanel buildControls() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]12[][]8[]8[]12[]", "[]"));
+		//-- Two rows. One would need about 1100 pixels now that there are three microcodes to
+		//-- choose between, and a window that has to be that wide before its toolbar fits is a
+		//-- window that opens wrong on a laptop.
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]8[]", "[]4[]"));
+		bar.add(new JLabel("Microcode:"));
+		m_source.setSelectedItem(m_selected);
+		m_source.setToolTipText("Which processor's microcode to show."
+			+ " The two PDP-11/05 entries are the two M7261 board revisions: read the part numbers"
+			+ " off the two control store PROMs to tell which board is in the machine.");
+		m_source.addActionListener(e -> {
+			if(!m_updating)
+				chooseSource((MicrocodeSource) m_source.getSelectedItem());
+		});
+		bar.add(m_source);
+
 		bar.add(new JLabel("Search by:"));
 		m_searchBy.addActionListener(e -> refillSearch());
 		bar.add(m_searchBy);
@@ -149,16 +202,16 @@ public final class MicrocodePanel extends JPanel {
 		Component editor = m_search.getEditor().getEditorComponent();
 		if(editor instanceof JTextField tf)
 			tf.setFont(new Font(Font.MONOSPACED, Font.PLAIN, tf.getFont().getSize()));
-		bar.add(m_search, "w 200!");
+		bar.add(m_search, "w 200!, wrap");
 
 		m_back.setToolTipText("Back to the microword you came from");
 		m_back.addActionListener(e -> back());
-		bar.add(m_back);
+		bar.add(m_back, "skip 1, split 3");
 		m_next.setToolTipText("Follow this microword's next-address field, which is where it goes"
 			+ " when nothing branches");
 		m_next.addActionListener(e -> next());
 		bar.add(m_next);
-		m_load.setToolTipText("Read another copy of the microcode listing."
+		m_load.setToolTipText("Read another copy of the selected microcode."
 			+ " A listing split into one file per page can be chosen all at once.");
 		m_load.addActionListener(e -> chooseListing());
 		bar.add(m_load);
@@ -180,14 +233,44 @@ public final class MicrocodePanel extends JPanel {
 	public void attach() {
 		if(m_code != null)
 			return;
-		String remembered = m_context.getSettings().getLastMicrocodeFile();
-		if(remembered != null && Files.isReadable(Path.of(remembered))) {
-			if(loadFrom(Path.of(remembered)))
-				return;
-			//-- The file has been moved or damaged since it was chosen. Say so, and fall back to
-			//-- the packaged listing rather than opening an empty window.
+		//-- A selection this version does not know - written by a newer one, or edited by hand -
+		//-- is not a reason to fail to open. Nothing in settings may stop the application.
+		String remembered = m_context.getSettings().getMicrocodeSelection();
+		MicrocodeSource source = remembered == null ? null : MicrocodeSource.byLabel(remembered);
+		if(remembered != null && source == null)
+			m_context.getLogger().log(LogChannel.OTHER,
+				"Microcode: the settings ask for \"%s\", which this version does not have; showing %s",
+				remembered, MicrocodeSource.DEFAULT.getLabel());
+		chooseSource(source == null ? MicrocodeSource.DEFAULT : source);
+	}
+
+	/**
+	 * Show one of the three, reading it if it has not been read yet.
+	 *
+	 * <p>On the event thread, and deliberately: reading and decoding a whole document takes some
+	 * tens of milliseconds once, and doing it on a worker would buy a flash of an empty table in
+	 * exchange for a thread and its marshalling.</p>
+	 */
+	public void chooseSource(MicrocodeSource source) {
+		m_selected = source;
+		m_updating = true;
+		try {
+			m_source.setSelectedItem(source);
+			m_searchBy.setModel(new DefaultComboBoxModel<>(SearchBy.availableFor(source)));
+		} finally {
+			m_updating = false;
 		}
-		show(Pdp1144Microcode.builtin());
+		m_context.getSettings().setMicrocodeSelection(source.getLabel());
+		m_context.saveSettings();
+		m_titleListener.accept("Microcode - " + source.getLabel());
+
+		String remembered = m_context.getSettings().getMicrocodeListing(source.getLabel());
+		if(remembered != null && Files.isReadable(Path.of(remembered)) && loadFrom(Path.of(remembered)))
+			return;
+		//-- Either nothing was remembered, or the file has been moved or damaged since it was
+		//-- chosen. Fall back to the packaged document rather than opening an empty window.
+		Microcode code = m_loaded.get(source);
+		show(code == null ? source.load() : code);
 	}
 
 	public void detach() {
@@ -202,14 +285,14 @@ public final class MicrocodePanel extends JPanel {
 		//-- The multi-selection is for a listing split into one file per page, and a chooser
 		//-- that quietly accepts several files without saying why is a feature nobody finds
 		//-- (FABLE-ISSUES #63). The title is where a file chooser can say it.
-		chooser.setDialogTitle("Open a PDP-11/44 microcode listing (or every page of one)");
-		String remembered = m_context.getSettings().getLastMicrocodeFile();
+		chooser.setDialogTitle(m_selected.getOpenPrompt());
+		String remembered = m_context.getSettings().getMicrocodeListing(m_selected.getLabel());
 		if(remembered != null)
 			chooser.setSelectedFile(new java.io.File(remembered));
 		//-- One file, not a wildcard over its neighbours: the Pascal strips the digits off the
 		//-- name it was given and loads whatever matches ({@code FormMicroCodeU.pas:126-136}),
 		//-- which quietly picks up files nobody chose.
-		chooser.setMultiSelectionEnabled(true);
+		chooser.setMultiSelectionEnabled(m_selected.isSplitAcrossFiles());
 		if(chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
 			return;
 		java.io.File[] chosen = chooser.getSelectedFiles();
@@ -226,46 +309,81 @@ public final class MicrocodePanel extends JPanel {
 		loadPages(paths);
 	}
 
-	/** Read one listing file, keeping the microword being looked at if the new listing has it. */
+	/** Read one file, keeping the microword being looked at if the new document has it. */
 	public boolean loadFrom(Path file) {
-		try {
-			replace(Pdp1144Microcode.load(file), file);
-			return true;
-		} catch(IOException | RuntimeException x) {
-			m_context.reportFailure("Cannot read the microcode listing " + file.getFileName(), x);
-			return false;
-		}
+		return loadPages(List.of(file));
 	}
 
-	/** Read a listing that is split across per-page files. */
+	/** Read a document, which for the 11/44 may be split across per-page files. */
 	public boolean loadPages(List<Path> files) {
 		try {
-			replace(Pdp1144Microcode.load(files), files.get(0));
+			replace(m_selected.load(files), files.get(0));
 			return true;
 		} catch(IOException | RuntimeException x) {
-			m_context.reportFailure("Cannot read the microcode listing", x);
+			m_context.reportFailure("Cannot read the microcode for " + m_selected.getLabel(), x);
 			return false;
 		}
 	}
 
-	private void replace(Pdp1144Microcode code, Path remember) {
+	private void replace(Microcode code, Path remember) {
 		int keep = m_current == null ? -1 : m_current.getAddress();
-		m_context.getSettings().setLastMicrocodeFile(remember.toAbsolutePath().toString());
+		m_context.getSettings().setMicrocodeListing(m_selected.getLabel(), remember.toAbsolutePath().toString());
 		m_context.saveSettings();
 		show(code);
 		if(keep >= 0 && code.atAddress(keep) != null)
 			select(code.atAddress(keep), false);
 	}
 
-	/** Take a freshly read listing, complain about it in the log if it has anything wrong. */
-	private void show(Pdp1144Microcode code) {
+	/** Take a freshly read document, complain about it in the log if it has anything wrong. */
+	private void show(Microcode code) {
 		m_code = code;
+		m_loaded.put(m_selected, code);
 		m_history.clear();
 		m_context.getLogger().log(LogChannel.OTHER, "Microcode: %s", code.describe());
-		for(Pdp1144Microcode.Problem p : code.getProblems())
+		for(Microcode.Problem p : code.getProblems())
 			m_context.getLogger().log(LogChannel.OTHER, "Microcode: %s", p.describe());
+		m_otherRevision = otherRevision();
 		refillSearch();
 		select(code.isEmpty() ? null : code.byAddress().get(0), false);
+	}
+
+	/**
+	 * The same board's other revision, read if it has not been already.
+	 *
+	 * <p>Worth the second read: it is what turns "you may have the wrong revision selected" into
+	 * fourteen microwords with two coloured rows in them. Failing to read it costs the colouring
+	 * and nothing else, so it is not allowed to stop the window working.</p>
+	 */
+	private Microcode otherRevision() {
+		MicrocodeSource other = m_selected.getOther();
+		if(other == null)
+			return null;
+		try {
+			return m_loaded.computeIfAbsent(other, MicrocodeSource::load);
+		} catch(RuntimeException x) {
+			m_context.getLogger().log(LogChannel.OTHER,
+				"Microcode: cannot read %s to compare against: %s", other.getLabel(), x);
+			return null;
+		}
+	}
+
+	/**
+	 * Which fields the other revision of this board has something else in, for the microword on
+	 * screen. Empty for a machine with one revision, and for the 200 microwords that are the same
+	 * in both.
+	 */
+	private Set<MicrocodeField> differingFields(MicroInstruction mi) {
+		if(mi == null || m_otherRevision == null)
+			return Set.of();
+		MicroInstruction other = m_otherRevision.atAddress(mi.getAddress());
+		if(other == null || other.getArchitecture() != mi.getArchitecture())
+			return Set.of();
+		Set<MicrocodeField> out = new LinkedHashSet<>();
+		for(MicrocodeField f : mi.getFields()) {
+			if(mi.getValue(f) != other.getValue(f))
+				out.add(f);
+		}
+		return out;
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -315,6 +433,17 @@ public final class MicrocodePanel extends JPanel {
 		return by == null ? SearchBy.ADDRESS : by;
 	}
 
+	/** Which microcode is on screen. */
+	public MicrocodeSource getSource() {
+		return m_selected;
+	}
+
+	/** How the window is to be titled, which is where the chosen revision is visible. */
+	public void setTitleListener(Consumer<String> listener) {
+		m_titleListener = listener;
+		listener.accept("Microcode - " + m_selected.getLabel());
+	}
+
 	/** Whatever was typed or picked, in whichever of the three ways it is being read. */
 	public void searchFor(String text) {
 		if(m_code == null || text == null)
@@ -337,11 +466,34 @@ public final class MicrocodePanel extends JPanel {
 			//-- Nothing is worse here than jumping somewhere else: say it was not found and leave
 			//-- what is on screen alone. The Pascal's address mode reads an unparseable address
 			//-- as 0 and silently shows the first microword instead.
-			m_status.setText("No microword " + (searchBy() == SearchBy.TAG ? "tagged " : "at ") + s);
+			m_status.setText(notFound(s));
 			m_status.setForeground(UiColors.ERROR_TEXT);
 			return;
 		}
 		select(found, true);
+	}
+
+	/**
+	 * Why what was asked for is not there.
+	 *
+	 * <p>The µPC case is the one that needs saying. A KD11-B address typed off the KM11's lights
+	 * can be a perfectly good control store location that the listing does not print - 42 of the
+	 * 256 are not - and "no microword at 377" on its own reads like a typo when it is not.</p>
+	 */
+	private String notFound(String s) {
+		if(searchBy() == SearchBy.TAG)
+			return "No microword tagged " + s;
+		if(searchBy() == SearchBy.LINE)
+			return "No microword on listing line " + s;
+		long address = Octal.parseOr(s, -1);
+		if(address < 0)
+			return "No microword: \"" + s + "\" is not an octal address";
+		int bits = m_code.getArchitecture().getAddressBits();
+		if(address >= (1L << bits))
+			return "No microword at " + s + ": there is no such address in a " + bits
+				+ " bit control store";
+		return "No microword at " + s + ": it is one of the "
+			+ ((1 << bits) - m_code.size()) + " control store locations this document does not print";
 	}
 
 	/** Follow the fall-through, which is what the microword's next-address field says. */
@@ -351,7 +503,7 @@ public final class MicrocodePanel extends JPanel {
 		MicroInstruction to = m_code.atAddress(m_current.getNextAddress());
 		if(to == null) {
 			m_status.setText("This microword goes to " + m_current.getNextAddressOctal()
-				+ ", which is not in this listing");
+				+ ", which this document does not print");
 			m_status.setForeground(UiColors.ERROR_TEXT);
 			return;
 		}
@@ -372,7 +524,8 @@ public final class MicrocodePanel extends JPanel {
 		if(remember && m_current != null && m_current != mi)
 			m_history.push(m_current.getAddress());
 		m_current = mi;
-		m_model.setInstruction(mi, mi == null || m_code == null ? List.of() : m_code.predecessorsOf(mi));
+		m_model.setInstruction(mi, mi == null || m_code == null ? List.of() : m_code.predecessorsOf(mi),
+			differingFields(mi));
 		m_updating = true;
 		try {
 			if(mi != null)
@@ -403,8 +556,13 @@ public final class MicrocodePanel extends JPanel {
 		if(m_current != null) {
 			sb.append("µPC = ").append(m_current.getAddressOctal())
 				.append("  ·  ").append(m_current.getSymbolicTag())
-				.append("  ·  next ").append(m_current.getNextAddressOctal())
-				.append("  ·  ");
+				.append("  ·  next ").append(m_current.getNextAddressOctal());
+			//-- Where a microtest is selected the hardware ORs its result into the next address,
+			//-- so what is printed is a branch base and not the successor. Saying "next 147" flat
+			//-- would be stating as fact something that depends on the state of the machine.
+			if(m_current.isBranching())
+				sb.append(" if ").append(m_current.getMicrotestName()).append(" is zero (a branch base)");
+			sb.append("  ·  ");
 		}
 		sb.append(m_code.describe());
 		m_status.setText(sb.toString());
@@ -414,7 +572,7 @@ public final class MicrocodePanel extends JPanel {
 
 	private String firstProblems() {
 		StringBuilder sb = new StringBuilder("<html>");
-		List<Pdp1144Microcode.Problem> problems = m_code.getProblems();
+		List<Microcode.Problem> problems = m_code.getProblems();
 		for(int i = 0; i < Math.min(5, problems.size()); i++)
 			sb.append(problems.get(i).describe()).append("<br>");
 		if(problems.size() > 5)
@@ -429,15 +587,23 @@ public final class MicrocodePanel extends JPanel {
 			boolean focused, int row, int column) {
 			Component c = super.getTableCellRendererComponent(table, value, selected, focused, row, column);
 			MicrocodeTableModel.Row r = m_model.getRow(row);
-			if(r.highlight() && !selected) {
+			if(r.differs() && !selected) {
+				//-- The only way a wrongly chosen board revision ever shows itself.
+				c.setBackground(UiColors.REVISION_DIFFERENCE_BACKGROUND);
+				c.setForeground(UiColors.REVISION_DIFFERENCE_TEXT);
+			} else if(r.highlight() && !selected) {
 				c.setBackground(UiColors.EDITED_BACKGROUND);
 				c.setForeground(UiColors.EDITED_TEXT);
 			} else {
 				c.setBackground(selected ? table.getSelectionBackground() : table.getBackground());
 				c.setForeground(selected ? table.getSelectionForeground() : table.getForeground());
 			}
-			if(c instanceof JComponent jc)
-				jc.setToolTipText(column == 2 && !r.info().isEmpty() ? r.info() : null);
+			if(c instanceof JComponent jc) {
+				String tip = r.differs() && m_selected.getOther() != null
+					? "This field is different in " + m_selected.getOther().getLabel()
+					: column == 2 && !r.info().isEmpty() ? r.info() : null;
+				jc.setToolTipText(tip);
+			}
 			return c;
 		}
 	}
@@ -452,6 +618,10 @@ public final class MicrocodePanel extends JPanel {
 
 	public MicrocodeTableModel getModel() {
 		return m_model;
+	}
+
+	public JComboBox<MicrocodeSource> getSourceSelector() {
+		return m_source;
 	}
 
 	public JComboBox<SearchBy> getSearchBySelector() {
@@ -478,7 +648,7 @@ public final class MicrocodePanel extends JPanel {
 		return m_current;
 	}
 
-	public Pdp1144Microcode getMicrocode() {
+	public Microcode getMicrocode() {
 		return m_code;
 	}
 

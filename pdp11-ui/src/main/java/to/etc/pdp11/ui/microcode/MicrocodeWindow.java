@@ -16,9 +16,12 @@ public final class MicrocodeWindow extends ToolWindow {
 	public MicrocodeWindow(WindowKey key, AppContext context) {
 		super(key, context);
 		m_panel = new MicrocodePanel(context);
+		//-- The chosen board revision has to be visible without opening the combo: two revisions
+		//-- of one KD11-B differ in 20 bits and in nothing else, so the wrong one looks right.
+		m_panel.setTitleListener(this::setTitle);
 		setContentPane(m_panel);
-		//-- Tall: there are 43 rows and they are all one microword, so scrolling between two of
-		//-- its fields to compare them is the thing to avoid.
+		//-- Tall: the rows are all one microword - 43 of them for the 11/44 - so scrolling between
+		//-- two of its fields to compare them is the thing to avoid.
 		setSize(new Dimension(900, 760));
 		setMinimumSize(new Dimension(640, 360));
 	}

@@ -60,21 +60,48 @@ public final class Settings {
 	private String lastSourceFile;
 
 	/**
-	 * The microcode listing the Microcode window had open last, or null for the packaged one.
+	 * Which microcode the Microcode window was showing last, by the name of the entry in its own
+	 * combo, or null for the default.
+	 *
+	 * <p>The window ships three: the PDP-11/44's listing and the PDP-11/05's two board revisions.
+	 * Which one is right is a fact about the machine on the bench, so it is asked once and
+	 * remembered. A name this version does not know - written by a newer one, or edited by hand -
+	 * falls back to the default and says so in the log; per the settings rule it never stops the
+	 * window opening.</p>
+	 */
+	private String microcodeSelection;
+
+	/**
+	 * The microcode document each of those entries had open last, by entry name.
 	 *
 	 * <p>Replaces {@code TheRegistry.Load('MicroCodeListingFilePattern')}
-	 * ({@code FormMicroCodeU.pas:104}), which holds a wildcard rather than a file. A path that no
-	 * longer exists is not an error: the window says so and falls back to the listing shipped
-	 * with the application.</p>
+	 * ({@code FormMicroCodeU.pas:104}), which holds one wildcard rather than a file per machine.
+	 * A path that no longer exists is not an error: the window says so and falls back to the
+	 * document shipped with the application.</p>
 	 */
-	private String lastMicrocodeFile;
+	private Map<String, String> microcodeListings;
 
-	public String getLastMicrocodeFile() {
-		return lastMicrocodeFile;
+	public String getMicrocodeSelection() {
+		return microcodeSelection;
 	}
 
-	public void setLastMicrocodeFile(String lastMicrocodeFile) {
-		this.lastMicrocodeFile = lastMicrocodeFile;
+	public void setMicrocodeSelection(String microcodeSelection) {
+		this.microcodeSelection = microcodeSelection;
+	}
+
+	/** The file that entry had open last, or null for the packaged document. */
+	public String getMicrocodeListing(String selection) {
+		return microcodeListings().get(selection);
+	}
+
+	public void setMicrocodeListing(String selection, String file) {
+		microcodeListings().put(selection, file);
+	}
+
+	private Map<String, String> microcodeListings() {
+		if(microcodeListings == null)
+			microcodeListings = new LinkedHashMap<>();
+		return microcodeListings;
 	}
 
 	public int getSchemaVersion() {
