@@ -64,6 +64,13 @@ class DisassemblerPanelTest {
 		}
 	}
 
+	/** {@code count} one-word instructions - {@code clr r0} - as an examine would have left them. */
+	private static void pokeClrR0(DisassemblerPanel panel, int start, int count) {
+		int[] words = new int[count];
+		java.util.Arrays.fill(words, 005000);
+		poke(panel, start, words);
+	}
+
 	@Test
 	void itShowsOneLinePerInstruction(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);
@@ -94,7 +101,6 @@ class DisassemblerPanelTest {
 		//-- Five words before the PC and eleven in all, which is what the Pascal's arithmetic
 		//-- comes to however its constant is named.
 		assertEquals("000766", panel.getStartField().getText());
-		assertEquals("001012", panel.getEndField().getText());
 		assertEquals(11, panel.getGroup().size());
 		assertEquals(0766, panel.getGroup().getRange().lo());
 	}
@@ -113,7 +119,6 @@ class DisassemblerPanelTest {
 		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
 		Edt.run(() -> {
 			panel.getStartField().setText("2000");
-			panel.getEndField().setText("2020");
 			panel.getStartField().postActionEvent();
 		});
 		poke(panel, 02000, 0, 0);
@@ -204,6 +209,150 @@ class DisassemblerPanelTest {
 		} finally {
 			ctx.getConnectionManager().close();
 		}
+	}
+
+	/**
+	 * A page is a hundred instructions, however many words that turns out to be.
+	 *
+	 * <p>The window used to be given a range - "from here to there" - and an end address is a
+	 * guess at how much of a program it covers, because an instruction is one, two or three
+	 * words. It is asked for a number of instructions now, and the range it reads follows from
+	 * that rather than the other way round.</p>
+	 */
+	@Test
+	void aPageIsAHundredInstructions(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		Edt.run(() -> {
+			panel.getStartField().setText("1000");
+			panel.getStartField().postActionEvent();
+		});
+		pokeClrR0(panel, 01000, 250);
+		Edt.run(panel::updateDisplay);
+
+		assertEquals(100, panel.getShownLines().size());
+		assertTrue(panel.getShownLines().get(0).startsWith("001000: 005000"), panel.getShownLines().get(0));
+		assertTrue(panel.getInfoText().startsWith("100 instructions from 001000"), panel.getInfoText());
+	}
+
+	/**
+	 * {@code >} adds the next hundred, beginning exactly where the last hundred stopped.
+	 *
+	 * <p>Not "start again a hundred lines further on": where an instruction begins cannot be
+	 * known from an address, so a page that restarted at a guessed boundary could decode the same
+	 * bytes into different instructions across the page break.</p>
+	 */
+	@Test
+	void theNextPageCarriesOnWhereTheLastLeftOff(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		Edt.run(() -> {
+			panel.getStartField().setText("1000");
+			panel.getStartField().postActionEvent();
+		});
+		pokeClrR0(panel, 01000, 250);
+		Edt.run(panel::updateDisplay);
+		String lastOfTheFirstPage = panel.getShownLines().get(99);
+
+		Edt.run(() -> panel.getForwardButton().doClick());
+		pokeClrR0(panel, 01000, 250);                       // the range grew; fill in what it added
+		Edt.run(panel::updateDisplay);
+
+		List<String> lines = panel.getShownLines();
+		assertEquals(200, lines.size(), "a second page, added to the first");
+		assertEquals(lastOfTheFirstPage, lines.get(99), "and the first page is still there, unchanged");
+		//-- One word per instruction here, so the hundred-and-first is a hundred words on.
+		assertTrue(lines.get(100).startsWith("001310: 005000"), lines.get(100));
+		assertEquals("001000", panel.getStartField().getText(), "the listing still starts where it did");
+	}
+
+	/**
+	 * Against a real machine it reads what the page needs, and not three words a line.
+	 *
+	 * <p>A hundred instructions is somewhere between a hundred and three hundred words and there
+	 * is no way to know which before they have been decoded. Reading the worst case outright
+	 * would double what a page costs, and over a serial line that is the difference between a
+	 * window that answers and one that does not - so it reads a page's worth of words, decodes,
+	 * and asks for as many more as it is still short of. The code here is three words for every
+	 * two instructions, so a hundred lines is a hundred and fifty words.</p>
+	 */
+	@Test
+	void itReadsOnlyAsManyWordsAsThePageNeeds(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+		try {
+			var m = ctx.getConnectionManager();
+			m.getConnection().run(() -> {
+				var type = m.getConsole().physicalAddressType();
+				//-- clr r0 / mov #000200,r1, over and over.
+				for(int i = 0; i < 100; i++) {
+					long a = 01000 + i * 6L;
+					m.getConsole().deposit(Address.of(type, a), 0005000);
+					m.getConsole().deposit(Address.of(type, a + 2), 0012701);
+					m.getConsole().deposit(Address.of(type, a + 4), 0000200);
+				}
+			});
+
+			DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+			Edt.run(() -> {
+				panel.getStartField().setText("1000");
+				panel.getStartField().postActionEvent();
+			});
+			until("the page to fill", () -> Edt.call(() -> panel.getShownLines().size()) >= 100);
+
+			List<String> lines = Edt.call(panel::getShownLines);
+			assertEquals(100, lines.size());
+			assertTrue(lines.get(0).startsWith("001000: 005000"), lines.get(0));
+			assertTrue(lines.get(1).startsWith("001002: 012701 000200"), lines.get(1));
+			//-- The hundredth line is a two-word instruction that the end of the page falls
+			//-- inside. It has to be whole: the decoder will not invent an operand it has not
+			//-- read, so a page that stopped a word short showed its last line as a bare
+			//-- ".word 012701" instead.
+			assertTrue(lines.get(99).endsWith("mov     #000200,r1"), lines.get(99));
+			int words = panel.getGroup().size();
+			assertTrue(words >= 150, "it read the whole page: " + words + " words");
+			assertTrue(words < 300, "and not three words a line: " + words + " words");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * {@code <} backs up 32 bytes and lists again from there.
+	 *
+	 * <p>It is the boundary-correction button: a listing that started on the wrong word decodes
+	 * everything after it wrongly too, and starting a little earlier is the only way to get a
+	 * different guess. So the listing is thrown away rather than extended backwards.</p>
+	 */
+	@Test
+	void steppingBackRestartsTheListingThirtyTwoBytesEarlier(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		Edt.run(() -> {
+			panel.getStartField().setText("1000");
+			panel.getStartField().postActionEvent();
+			panel.getForwardButton().doClick();             // two pages showing, to be thrown away
+			panel.getBackButton().doClick();
+		});
+		assertEquals("000740", panel.getStartField().getText(), "32 bytes is 040 octal");
+
+		pokeClrR0(panel, 0740, 250);
+		Edt.run(panel::updateDisplay);
+		assertEquals(100, panel.getShownLines().size(), "one page again, not the two that were showing");
+		assertTrue(panel.getShownLines().get(0).startsWith("000740: 005000"), panel.getShownLines().get(0));
+	}
+
+	/** And it stops at the bottom of memory rather than asking for a negative address. */
+	@Test
+	void steppingBackStopsAtAddressZero(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		Edt.run(() -> {
+			panel.getStartField().setText("20");
+			panel.getStartField().postActionEvent();
+			panel.getBackButton().doClick();
+		});
+		assertEquals("000000", panel.getStartField().getText());
 	}
 
 	@Test

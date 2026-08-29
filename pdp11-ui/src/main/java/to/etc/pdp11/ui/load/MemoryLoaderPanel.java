@@ -103,8 +103,8 @@ public final class MemoryLoaderPanel extends JPanel {
 		m_entryAddr.setEditable(false);
 		m_entryAddr.setForeground(UiColors.SECONDARY_TEXT);
 
-		add(buildTopBar(), "growx, wrap");
-		add(buildFileBar(), "growx, wrap");
+		add(buildInputs(), "growx, wrap");
+		add(buildButtonBar(), "growx, wrap");
 		add(m_grid, "grow, wrap");
 		add(m_statusLabel, "growx");
 
@@ -119,33 +119,20 @@ public final class MemoryLoaderPanel extends JPanel {
 		return console == null ? MemoryAddressType.PHYSICAL22 : console.physicalAddressType();
 	}
 
-	private JPanel buildTopBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]16[]16[][][]", "[]"));
+	/**
+	 * Everything that is typed or chosen, in one column.
+	 *
+	 * <p>One grid, so the labels line up and the fields start in the same place: the start
+	 * address used to sit on a line of its own above the format and the file name, in a layout
+	 * of its own, and lined up with neither. {@code hidemode 3} is what lets a row that does not
+	 * apply to the chosen format leave rather than sit there empty - see {@link #showFormat()}.</p>
+	 */
+	private JPanel buildInputs() {
+		JPanel bar = new JPanel(new MigLayout("insets 0, hidemode 3", "[][grow][]", ""));
 		bar.add(m_startLabel);
-		bar.add(m_startAddr);
+		bar.add(m_startAddr, "wrap");
 		bar.add(m_entryLabel);
-		bar.add(m_entryAddr);
-		bar.add(m_load);
-		bar.add(m_depositChanged);
-		bar.add(m_depositAll);
-		bar.add(m_verify);
-
-		m_startAddr.setToolTipText("Where to put the file's contents, for a format that does not say."
-			+ " Enter reads the file, same as Load file.");
-		//-- Enter acts, as it does in the Memory, Disassembler, Dumper, Memory Test and Bitfields
-		//-- windows. Same widget, same shape; this one used to swallow the key.
-		m_startAddr.addActionListener(e -> loadFile());
-		m_load.setToolTipText("Read the file into the grid below. Nothing is written to the machine yet.");
-		m_verify.setToolTipText("Read the same addresses back off the machine; anything that disagrees shows as changed");
-		m_load.addActionListener(e -> loadFile());
-		m_depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
-		m_depositAll.addActionListener(e -> m_grid.depositAll(false, owner()));
-		m_verify.addActionListener(e -> verify());
-		return bar;
-	}
-
-	private JPanel buildFileBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][grow][]", "[][][]"));
+		bar.add(m_entryAddr, "wrap");
 		bar.add(new JLabel("Format:"));
 		bar.add(m_format, "growx, wrap");
 		m_format.addActionListener(e -> showFormat());
@@ -163,6 +150,35 @@ public final class MemoryLoaderPanel extends JPanel {
 			bar.add(field, "growx");
 			bar.add(browse, "wrap");
 		}
+
+		m_startAddr.setToolTipText("Where to put the file's contents, for a format that does not say."
+			+ " Enter reads the file, same as Load file.");
+		//-- Enter acts, as it does in the Memory, Disassembler, Dumper, Memory Test and Bitfields
+		//-- windows. Same widget, same shape; this one used to swallow the key.
+		m_startAddr.addActionListener(e -> loadFile());
+		return bar;
+	}
+
+	/**
+	 * The four things you can do, under everything you fill in first.
+	 *
+	 * <p>They used to share the top line with the start address, which put the buttons before
+	 * the format and the file name they act on. A window is read downwards, and the last thing
+	 * on the way down should be the thing that does something.</p>
+	 */
+	private JPanel buildButtonBar() {
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][]", "[]"));
+		bar.add(m_load);
+		bar.add(m_depositChanged);
+		bar.add(m_depositAll);
+		bar.add(m_verify);
+
+		m_load.setToolTipText("Read the file into the grid below. Nothing is written to the machine yet.");
+		m_verify.setToolTipText("Read the same addresses back off the machine; anything that disagrees shows as changed");
+		m_load.addActionListener(e -> loadFile());
+		m_depositChanged.addActionListener(e -> m_grid.depositAll(true, owner()));
+		m_depositAll.addActionListener(e -> m_grid.depositAll(false, owner()));
+		m_verify.addActionListener(e -> verify());
 		return bar;
 	}
 
@@ -222,8 +238,14 @@ public final class MemoryLoaderPanel extends JPanel {
 		for(int i = 0; i < f.getFileCount(); i++) {
 			String name = m_fileFields.get(i).getText().trim();
 			if(name.isEmpty()) {
-				m_context.reportFailure("Choose a " + f.getFilePrompts().get(i).toLowerCase()
-					+ " first (use Browse)", null);
+				//-- An empty file name is a field that has not been filled in, not something that
+				//-- went wrong out in the world, so it belongs in the status line and not in a
+				//-- modal dialog - the rule FieldStatus states and every other window follows.
+				//-- As a dialog it was worse than merely inconsistent: the dialog belongs to the
+				//-- main window, so dismissing it raised the main window over this one and the
+				//-- Loader appeared to close itself the moment it complained.
+				m_status.error("Choose a " + f.getFilePrompts().get(i).toLowerCase()
+					+ " first (use Browse)");
 				return;
 			}
 			files.add(Path.of(name));

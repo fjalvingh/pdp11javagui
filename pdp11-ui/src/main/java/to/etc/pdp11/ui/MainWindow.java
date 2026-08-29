@@ -28,7 +28,9 @@ import javax.swing.event.MenuListener;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.KeyboardFocusManager;
 import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
@@ -486,7 +488,11 @@ public final class MainWindow extends JFrame {
 		} else {
 			setTitle("PDP11GUI");
 		}
-		if(state == ConnectionManager.State.CONNECTED) {
+		//-- Only on arrival, not on every report of the state. Two things call this for one
+		//-- connection - the ConnectionManager listener when the state changes, and the connect
+		//-- worker when it has finished - and both used to run everything below, so connecting
+		//-- printed "[connected: ...]" twice.
+		if(state == ConnectionManager.State.CONNECTED && was != ConnectionManager.State.CONNECTED) {
 			m_panel.getTerminal().append("[connected: " + manager.getProfile().describe() + "]\n", TerminalStyle.SYSTEM);
 			if(!manager.hasMachineConsole()) {
 				//-- SimH we did not launch: a sim> channel and nothing behind it. Saying so is
@@ -524,9 +530,23 @@ public final class MainWindow extends JFrame {
 	private void showFailure(String message, Throwable cause) {
 		m_panel.getTerminal().append("[" + message + (cause == null ? "" : ": " + cause.getMessage()) + "]\n",
 			TerminalStyle.SYSTEM);
-		JOptionPane.showMessageDialog(this,
+		JOptionPane.showMessageDialog(dialogOwner(),
 			message + (cause == null ? "" : "\n\n" + cause.getMessage()),
 			"PDP11GUI", JOptionPane.ERROR_MESSAGE);
+	}
+
+	/**
+	 * The window a message about a failure should belong to.
+	 *
+	 * <p>These messages come from anywhere - a tool window is a free-floating frame of its own -
+	 * but the handler lives here, and a dialog owned by the main window raises the main window
+	 * when it is dismissed. The tool window that asked then goes behind it and looks as if it
+	 * closed itself. So the dialog belongs to whatever window the user is actually looking at,
+	 * and only falls back to this one when that cannot be told.</p>
+	 */
+	private Window dialogOwner() {
+		Window active = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+		return active != null && active.isShowing() ? active : this;
 	}
 
 	/**

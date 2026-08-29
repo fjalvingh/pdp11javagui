@@ -55,10 +55,13 @@ public final class DisassemblyListing {
 
 	private final Address m_startAddress;
 
-	private DisassemblyListing(List<Line> lines, int pcLine, Address startAddress) {
+	private final Address m_nextAddress;
+
+	private DisassemblyListing(List<Line> lines, int pcLine, Address startAddress, Address nextAddress) {
 		m_lines = List.copyOf(lines);
 		m_pcLine = pcLine;
 		m_startAddress = startAddress;
+		m_nextAddress = nextAddress;
 	}
 
 	public List<Line> getLines() {
@@ -73,6 +76,18 @@ public final class DisassemblyListing {
 	/** Where the listing begins, which may be past where it was asked to. */
 	public Address startAddress() {
 		return m_startAddress;
+	}
+
+	/**
+	 * Where the listing left off: the address after the last instruction in it.
+	 *
+	 * <p>Which is where the next one has to begin. An instruction boundary is not knowable from
+	 * an address, so "the next hundred lines" can only mean "the hundred that follow the last
+	 * one decoded" - continuing from anywhere else re-guesses the boundaries and can decode the
+	 * same bytes into different instructions. An empty listing left off where it started.</p>
+	 */
+	public Address nextAddress() {
+		return m_nextAddress;
 	}
 
 	public boolean isEmpty() {
@@ -101,6 +116,20 @@ public final class DisassemblyListing {
 	 *           cannot say where the PC is.
 	 */
 	public static DisassemblyListing of(MemoryCellGroup group, Address start, Address end, Address pc) {
+		return of(group, start, end, pc, Integer.MAX_VALUE);
+	}
+
+	/**
+	 * The same, giving up after {@code maxLines} instructions.
+	 *
+	 * <p>The window asks for a page of a fixed number of lines rather than for a range of
+	 * addresses, and how many words that is cannot be known before the words have been decoded -
+	 * an instruction is one, two or three of them. So it reads a little more than it can need and
+	 * stops the listing at the line it was asked for; {@link #nextAddress()} is then where the
+	 * following page begins.</p>
+	 */
+	public static DisassemblyListing of(MemoryCellGroup group, Address start, Address end, Address pc,
+		int maxLines) {
 		requireVirtual(start, "start");
 		requireVirtual(end, "end");
 		if(pc != null)
@@ -115,7 +144,7 @@ public final class DisassemblyListing {
 		Address from = start;
 		DisassemblyListing asAsked = null;
 		for(;;) {
-			DisassemblyListing listing = build(image, from, end, pc);
+			DisassemblyListing listing = build(image, from, end, pc, maxLines);
 			if(listing.m_pcLine >= 0 || !pcInRange)
 				return listing;
 			if(asAsked == null)
@@ -151,12 +180,14 @@ public final class DisassemblyListing {
 		return image;
 	}
 
-	private static DisassemblyListing build(MemoryImage image, Address start, Address end, Address pc) {
+	private static DisassemblyListing build(MemoryImage image, Address start, Address end, Address pc,
+		int maxLines) {
 		List<Line> lines = new ArrayList<>();
 		int pcLine = -1;
 		int addr = (int) (start.val() & 0xFFFF);
 		int last = (int) (end.val() & 0xFFFF);
-		while(addr <= last) {
+		int next = addr;
+		while(addr <= last && lines.size() < maxLines) {
 			if(!image.isWordValid(addr)) {
 				addr += 2;
 				continue;
@@ -167,8 +198,12 @@ public final class DisassemblyListing {
 				pcLine = lines.size();
 			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc));
 			addr += di.words() * 2;
+			//-- Not simply addr: a run of unread words at the end is not part of the listing, and
+			//-- the next page must not begin past the last instruction it actually showed.
+			next = addr;
 		}
-		return new DisassemblyListing(lines, pcLine, start);
+		return new DisassemblyListing(lines, pcLine, start,
+			Address.of(MemoryAddressType.VIRTUAL, next & 0xFFFF));
 	}
 
 	/** Up to three raw words, blank-padded, exactly as {@code Disas11}'s listing has them. */

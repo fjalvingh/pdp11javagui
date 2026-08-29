@@ -19,7 +19,7 @@ Two consequences worth knowing:
 * **A window that is not on the screen does not read memory.** Every stop would otherwise cost
   eleven examines over a serial line for a window nobody is looking at. Open it and it catches up
   immediately rather than waiting for the next stop.
-* **Typing a range of your own stops it following.** A marker that moves the listing out from
+* **Listing an address of your own stops it following.** A marker that moves the listing out from
   under you while you are reading is worse than no marker. It starts following again the next
   time the machine stops.
 
@@ -27,16 +27,27 @@ Two consequences worth knowing:
 
 | Control | What it does |
 |---|---|
-| **From** / **to** | The address range, octal. Enter in either is the same as **Show** |
-| **<** and **>** | Move the whole range one *word* earlier or later |
-| **Show** | Read that range off the machine and decode it |
+| **From** | Where to start, octal. Enter here is the same as **Show** |
+| **Show** | List 100 instructions from there |
+| **>** | Another 100, added below, carrying on from where the listing left off |
+| **<** | Back up 32 bytes and list again from there |
 | **Use cached values** | When on (the default), words already read are not read again |
 
-**<** and **>** exist for a specific problem: **where an instruction starts is a guess.** A PDP-11
-instruction is one, two or three words, and nothing in memory says which words are opcodes. If you
-start decoding on the wrong word the whole listing is nonsense — plausible nonsense. Nudging the
-range by one word is how you correct it, and it is usually obvious within two lines which
-alignment is right.
+**A page is 100 instructions, not a range of addresses.** How many words that is cannot be known
+before they have been decoded — an instruction is one, two or three of them — so the window reads a
+page's worth of words, decodes, and asks for as many more as it is still short of. It does not read
+three words per line on the off-chance, which over a serial line would double what a page costs.
+
+**>** continues the same listing rather than starting a new one, and this matters: **where an
+instruction starts is a guess.** Nothing in memory says which words are opcodes, so a page that
+began again at a guessed boundary could decode the same bytes into different instructions across
+the page break. The next 100 begin exactly where the last 100 stopped.
+
+**<** is how you correct a listing that started on the wrong word — if you begin decoding on an
+operand the whole listing is nonsense, plausible nonsense. It backs the start up 32 bytes and
+builds the listing again from there; it is usually obvious within two lines which alignment is
+right. It throws the old listing away, because continuing one that was decoded wrongly would keep
+the boundaries that were wrong.
 
 **Use cached values** is the difference between a window that keeps up with single-stepping over a
 9600-baud line and one that does not. Turn it off when you are looking at memory that something
@@ -44,7 +55,8 @@ else is changing underneath you — self-modifying code, or a buffer a device is
 
 ## The status line
 
-* `NN instructions from 001000 to 001024` — the ordinary case.
+* `100 instructions from 001000 to 001450 - the next page starts at 001454` — the ordinary case.
+  The last address is where **>** will carry on from.
 * `PC at 001006` — the PC is in the listing and the line is marked.
 * `PC at 001006 - listing realigned to 001004, because the PC is inside an instruction that starts
   earlier` — the PC landed on the second or third word of a multi-word instruction. The listing

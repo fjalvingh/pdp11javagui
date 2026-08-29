@@ -31,7 +31,65 @@
   Write columns - and a glossary, since ODT, the I/O page and "deposit" are all things a reader may
   be meeting for the first time.
 
+### Changes
+
+- **The Disassembler lists a hundred instructions at a time, instead of an address range.** The
+  **to** field is gone. It was asking the wrong question: an instruction is one, two or three
+  words, so an end address is a guess at how much of a program it covers, and the answer to
+  "show me this routine" was arithmetic before it was a listing. **Show** now lists 100
+  instructions from **From**; **>** adds the next 100 below them, and **<** backs the start up 32
+  bytes and builds the listing again.
+
+  **> continues the listing rather than starting a new one**, and that is the point of it. Where
+  an instruction begins cannot be known from an address - nothing in memory says which words are
+  opcodes - so a page that began again at a guessed boundary could decode the same bytes into
+  different instructions across the page break. The next hundred begin exactly where the last
+  hundred stopped, which is what `DisassemblyListing.nextAddress()` now reports. **<** is the
+  other half of the same fact: a listing that started on the wrong word is plausible nonsense all
+  the way down, and starting a little earlier is the only way to get a different guess - so it
+  throws the listing away rather than extending it backwards.
+
+  **It reads what a page needs and not three words a line.** A hundred instructions is between
+  one and three hundred words and there is no way to know which before they are decoded. Reading
+  the worst case outright would double what a page costs, which over a 9600-baud line is the
+  difference between a window that answers and one that does not. So it reads a page's worth of
+  words, decodes, and asks for as many more as it is still short of - each turn reading only the
+  words it has just added. The one deliberate overshoot is two words at the end: the last
+  instruction of a page can be one the range cut in half, and the decoder will not invent an
+  operand it has not read - it shows the bare word instead, so without those two words the last
+  line of every page would be wrong whenever the break fell inside an instruction.
+
+  Following the PC is untouched: a stop still reads the eleven words around it and no more.
+
 ### Fixes
+
+- **Connecting says it once.** The terminal printed `[connected: SimH over SimH: pdp11]` twice for
+  one connection, and the note about a connection with no machine console twice with it. Two
+  things report the same connection to the main window - the `ConnectionManager` listener when the
+  state changes, and the connect worker when it has finished - and the handler announced the
+  arrival on both rather than on the change into `CONNECTED`. It is now gated on the state
+  actually having changed, which is also what stops the SimH Console window being opened a second
+  time on the way in. The test connects through the menu, as the user does: connecting through the
+  manager directly only ever raises the first of the two reports and cannot see this at all.
+
+- **The Memory Loader stopped hiding itself when you pressed Load with no file chosen.** It
+  reported the empty file name through `AppContext.reportFailure`, which is a modal dialog owned
+  by the *main* window: dismissing the dialog raised the main window, the Loader went behind it,
+  and the window looked as if it had closed itself at the exact moment it complained. An empty
+  field is also not what that dialog is for - `FieldStatus` says so, and every other window
+  follows it - so the message is now in the Loader's own status line, in red, next to the field
+  that is empty. The dialog that remains, for a file that genuinely could not be read, now belongs
+  to whichever window is active rather than always to the main window, so no tool window is buried
+  by dismissing a message it raised.
+
+- **The Memory Loader's fields line up, and its buttons are underneath them.** The start address
+  sat on a line of its own above the format and the file name, in a layout of its own and aligned
+  with neither, with the four action buttons on that same top line - so the buttons came *before*
+  the format and the file name they act on. Everything typed or chosen is now one grid, so the
+  labels and the fields each share a column, and Load / Deposit changed / Deposit all / Verify are
+  a row under all of it: the window is read downwards and the last thing on the way down is the
+  thing that does something. A row that does not apply to the chosen format now collapses instead
+  of leaving a gap where it used to be.
 
 - **The same stale stop event, in a second test rig.** `OdtConsoleTest`'s reset test failed on the
   Windows runner - `expected: <2048> but was: <62976>`, which is `04000` against `0173000`, the

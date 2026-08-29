@@ -276,14 +276,22 @@ class MemoryLoaderPanelTest {
 		}
 	}
 
+	/**
+	 * Pressing Load with nothing chosen says so in the status line, not in a dialog.
+	 *
+	 * <p>It was a dialog, and the dialog belongs to the main window: dismissing it raised the
+	 * main window over the Loader, so the window appeared to close itself the moment it
+	 * complained. An empty field is also not what a dialog is for - see {@code FieldStatus}.</p>
+	 */
 	@Test
-	void loadingWithNoFileNameIsRefused(@TempDir Path dir) {
+	void loadingWithNoFileNameIsRefusedInTheStatusLine(@TempDir Path dir) {
 		AppContext ctx = TestContext.create(dir);
 		StringBuilder failures = new StringBuilder();
 		ctx.setFailureHandler((message, cause) -> failures.append(message));
 		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
 		Edt.run(() -> panel.getLoadButton().doClick());
-		assertTrue(failures.toString().contains("Choose a"), failures.toString());
+		assertTrue(panel.getStatusText().contains("Choose a"), panel.getStatusText());
+		assertEquals("", failures.toString(), "no dialog for a field that has not been filled in");
 	}
 
 	@Test

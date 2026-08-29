@@ -185,6 +185,50 @@ class WindowsBuildTest {
 	 * way round and stays on: connecting while connected is how the user moves to another
 	 * machine.</p>
 	 */
+	/**
+	 * Connecting says "[connected: ...]" once.
+	 *
+	 * <p>Two things report the same connection to the window - the {@link ConnectionManager}
+	 * listener when the state changes, and the connect worker when it has finished - and the
+	 * handler announced the arrival on both, so the terminal said it twice for one connection.
+	 * The menu is what raises both; connecting through the manager directly, as the tests around
+	 * this one do, only ever raised the first and could not see it.</p>
+	 */
+	@Test
+	void connectingIsAnnouncedOnceAndNotOncePerReport(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		SimhConsoleWindow.register(ctx);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			onEdt(() -> {
+				w.getConnectToSimulatedMenu().getItem(0).doClick();
+				return null;
+			});
+			//-- Disconnect is enabled by "connected, and no worker still running", so it is the
+			//-- one thing that says both reports have arrived - which is the point of the test.
+			long deadline = System.currentTimeMillis() + 20_000;
+			while(!onEdt(() -> w.getDisconnectItem().isEnabled())) {
+				if(System.currentTimeMillis() > deadline)
+					throw new AssertionError("the connect never finished");
+				Thread.sleep(5);
+			}
+
+			String terminal = onEdt(() -> w.getPanel().getGlassTerminal().getText());
+			int first = terminal.indexOf("[connected:");
+			assertTrue(first >= 0, "it said it connected: " + terminal.replace("\n", " | "));
+			assertEquals(-1, terminal.indexOf("[connected:", first + 1),
+				"and said it once: " + terminal.replace("\n", " | "));
+		} finally {
+			ctx.getConnectionManager().close();
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
 	@Test
 	void disconnectIsOfferedOnlyWhenThereIsSomethingToDisconnect(@TempDir Path dir) throws Exception {
 		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
