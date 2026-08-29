@@ -13,10 +13,21 @@ the cabinet.
 
 ## Running a scan
 
-**Scan the I/O page** reads all 4096 words, one at a time, and can be cancelled from its progress
-dialog. It reads them singly on purpose: most of the I/O page is empty, a bulk read of
-mostly-nonexistent addresses is where the console dialects behave least predictably, and a scan
-you want to be able to stop wants one answer per question. It is not fast over a serial line.
+**Scan the I/O page** reads all 4096 words, one at a time. It reads them singly on purpose: most
+of the I/O page is empty, a bulk read of mostly-nonexistent addresses is where the console
+dialects behave least predictably, and a scan you want to be able to stop wants one answer per
+question. It is not fast over a serial line.
+
+**You watch it happen.** Addresses appear in the list on the left as they answer, already named
+where the description knows them, and the status line counts them. A progress bar and a **Cancel**
+sit at the bottom right for as long as the scan runs, and nothing else about the window is blocked
+— it is your own window, not a dialog standing in front of it.
+
+**Cancel keeps what it found.** That is the point of stopping one: the device you were looking for
+has answered and the remaining three thousand addresses are not going to say anything. **Closing
+the window also stops the scan** — a scan is minutes of console traffic on the one thread every
+other window queues behind, and leaving it running for a window nobody is looking at would make
+every other window wait for it.
 
 ## What you get
 

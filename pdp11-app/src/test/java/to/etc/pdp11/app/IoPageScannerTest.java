@@ -15,6 +15,10 @@ import to.etc.pdp11.core.util.ProgressMonitor;
 import to.etc.pdp11.ui.AppContext;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -197,6 +201,118 @@ class IoPageScannerTest {
 
 			assertTrue(r.cancelled(), "it should say it stopped early");
 			assertEquals(64, r.examined(), "and stop where it was asked to");
+		} finally {
+			m.close();
+		}
+	}
+
+	/**
+	 * The addresses arrive as they are found, not in one go when the scan is over.
+	 *
+	 * <p>A scan is 4096 examines, and over a serial line that is minutes of a window showing
+	 * nothing. Each answering address goes into the target group and is reported at the moment it
+	 * answers - already named, so the row the window has just drawn says {@code CPU.PSW} rather
+	 * than appearing blank and being relabelled at the end.</p>
+	 */
+	@Test
+	void theAddressesArriveAsTheyAreFoundRatherThanAllAtTheEnd(@TempDir Path dir) throws Exception {
+		Fixture f = connected(dir, ConsoleProtocol.SIMH);
+		ConnectionManager m = f.context().getConnectionManager();
+		try {
+			List<MemoryCell> seen = new ArrayList<>();
+			List<Integer> sizeWhenSeen = new ArrayList<>();
+			List<String> nameWhenSeen = new ArrayList<>();
+			AtomicInteger sizeAtStart = new AtomicInteger(-1);
+
+			IoPageScanner.Result r = m.getConnection().call(() -> IoPageScanner.scan(m.getConsole(),
+				f.context().getMemoryCellGroups(), f.target(), ProgressMonitor.NULL,
+				new IoPageScanner.Listener() {
+					@Override
+					public void scanStarted() {
+						sizeAtStart.set(f.target().size());
+					}
+
+					@Override
+					public void addressFound(MemoryCell cell) {
+						seen.add(cell);
+						sizeWhenSeen.add(f.target().size());
+						nameWhenSeen.add(cell.getName());
+					}
+				}));
+
+			assertEquals(0, sizeAtStart.get(), "the group is emptied before anything goes into it");
+			assertEquals(r.found(), seen.size(), "one report per address that answered");
+			assertTrue(seen.size() > 0);
+			//-- In the group already, and one at a time: that is what a window watching the group
+			//-- needs for the list to fill in rather than appear.
+			for(int i = 0; i < seen.size(); i++) {
+				assertEquals(i + 1, sizeWhenSeen.get(i).intValue(),
+					"address " + i + " was reported with " + sizeWhenSeen.get(i) + " cells in the group");
+			}
+			//-- And named on the way past, not in a pass afterwards.
+			int psw = -1;
+			for(int i = 0; i < seen.size(); i++) {
+				if(seen.get(i).getAddr().val() == 017777776L)
+					psw = i;
+			}
+			assertTrue(psw >= 0, "the PSW answers on any machine");
+			assertEquals("CPU.PSW", nameWhenSeen.get(psw), "it was named when it was reported");
+		} finally {
+			m.close();
+		}
+	}
+
+	/**
+	 * Stopped early, the addresses it did find are still there.
+	 *
+	 * <p>Which is the whole reason to stop a scan rather than let it run: the device you were
+	 * looking for has answered and the remaining three thousand addresses are not going to say
+	 * anything. Throwing the results away because the scan did not finish would make Cancel
+	 * useless.</p>
+	 */
+	@Test
+	void cancellingKeepsTheAddressesFoundSoFar(@TempDir Path dir) throws Exception {
+		Fixture f = connected(dir, ConsoleProtocol.SIMH);
+		ConnectionManager m = f.context().getConnectionManager();
+		try {
+			AtomicBoolean stop = new AtomicBoolean();
+			ProgressMonitor stopWhenAsked = new ProgressMonitor() {
+				@Override
+				public void begin(String task, int total) {
+				}
+
+				@Override
+				public void step(int amount, String note) {
+				}
+
+				@Override
+				public boolean isCancelled() {
+					return stop.get();
+				}
+
+				@Override
+				public void done() {
+				}
+			};
+			//-- Stop at the first address that answers, wherever in the I/O page that turns out
+			//-- to be: this is not a test about where the devices are.
+			IoPageScanner.Result r = m.getConnection().call(() -> IoPageScanner.scan(m.getConsole(),
+				f.context().getMemoryCellGroups(), f.target(), stopWhenAsked,
+				new IoPageScanner.Listener() {
+					@Override
+					public void scanStarted() {
+					}
+
+					@Override
+					public void addressFound(MemoryCell cell) {
+						stop.set(true);
+					}
+				}));
+
+			assertTrue(r.cancelled(), "it should say it stopped early");
+			assertTrue(r.examined() < IoPageScanner.IOPAGE_WORDS, "and not have scanned the lot");
+			assertEquals(1, r.found(), "the one address that answered before it was stopped");
+			assertEquals(1, f.target().size(), "and it is still in the group");
 		} finally {
 			m.close();
 		}

@@ -113,6 +113,75 @@ class IoPageScannerPanelTest {
 		}
 	}
 
+	/**
+	 * The scan's progress bar and its Cancel live on the window, and only while one is running.
+	 *
+	 * <p>It used to be a modal {@code ProgressDialog}, which is the wrong shape for the one
+	 * operation in the application that fills the window it belongs to: the dialog stood in front
+	 * of the list that was filling in. Cancel stops the scan and what it found stays.</p>
+	 */
+	@Test
+	void theProgressAndItsCancelAreOnTheWindowAndStopTheScan(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		IoPageScannerPanel panel = Edt.call(() -> new IoPageScannerPanel(ctx));
+		UiRenderer.layOut(panel, 1000, 520);
+		Edt.run(panel::attach);
+		try {
+			assertFalse(panel.getProgressBar().isVisible(), "nothing is running yet");
+			assertFalse(panel.getCancelButton().isVisible());
+
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			until("the button to arm", () -> panel.getScanButton().isEnabled());
+			Edt.run(() -> panel.getScanButton().doClick());
+
+			until("the progress to appear", () -> Edt.call(() -> panel.getCancelButton().isVisible()));
+			assertTrue(Edt.call(() -> panel.getProgressBar().isVisible()));
+			assertFalse(Edt.call(() -> panel.getScanButton().isEnabled()), "one scan at a time");
+			Edt.run(() -> panel.getCancelButton().doClick());
+
+			until("the scan to stop", () -> panel.getStatusText().contains("answered"));
+			assertTrue(panel.getStatusText().contains("stopped early"), panel.getStatusText());
+			assertFalse(panel.getStatusText().contains("of " + IoPageScanner.IOPAGE_WORDS + " addresses"),
+				"it did not scan the whole page: " + panel.getStatusText());
+			//-- And the window is back to how it was, with whatever the scan got to still listed.
+			assertFalse(Edt.call(() -> panel.getProgressBar().isVisible()));
+			assertFalse(Edt.call(() -> panel.getCancelButton().isVisible()));
+			assertEquals(panel.getGroup().size(), Edt.call(() -> panel.getList().getRowCount()),
+				"the list shows what the scan found before it was stopped");
+		} finally {
+			Edt.run(panel::detach);
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * Closing the window stops the scan too.
+	 *
+	 * <p>A scan is minutes of console traffic on the one thread every other window's buttons
+	 * queue behind. Leaving it running after its window has gone would be the application
+	 * ignoring all of them for a result nobody is going to look at.</p>
+	 */
+	@Test
+	void closingTheWindowStopsTheScan(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		IoPageScannerPanel panel = Edt.call(() -> new IoPageScannerPanel(ctx));
+		Edt.run(panel::attach);
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			until("the button to arm", () -> panel.getScanButton().isEnabled());
+			Edt.run(() -> panel.getScanButton().doClick());
+			until("the progress to appear", () -> Edt.call(() -> panel.getCancelButton().isVisible()));
+
+			//-- Exactly what IoPageScannerWindow.onHiding does.
+			Edt.run(panel::detach);
+
+			until("the scan to stop", () -> panel.getStatusText().contains("answered"));
+			assertTrue(panel.getStatusText().contains("stopped early"), panel.getStatusText());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void renderToAFileForLookingAt(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);

@@ -33,6 +33,29 @@
 
 ### Changes
 
+- **The I/O page scanner fills in as it scans, and its progress is on the window rather than in
+  front of it.** A scan is 4096 examines - minutes over a serial line - and it used to show
+  nothing at all for the whole of it, behind a modal `ProgressDialog`, and then everything at
+  once. That is the wrong shape for the one operation in the application that fills the window it
+  belongs to: the dialog stood in front of the list that was filling in, so the thing worth
+  watching was behind the thing telling you to wait.
+
+  Each address that answers now goes into the list as it answers - already named, so a row says
+  `CPU.PSW` when it appears rather than appearing blank and being relabelled at the end - and the
+  list keeps the newest row in view. The progress bar and its **Cancel** live on the window's own
+  status line, showing only while a scan is running, and the window stays usable throughout.
+
+  **Cancel keeps what it found**, which is the only reason to stop one: the device you were
+  looking for has answered and the remaining three thousand addresses are not going to say
+  anything. **Closing the window cancels the scan too** - it is minutes of traffic on the one
+  thread every other window's buttons queue behind, and carrying on with it for a window nobody
+  is looking at would make all of them wait for a result nobody will see.
+
+  In the core, `IoPageScanner.scan` takes an optional `Listener` and stores each address as it is
+  found instead of collecting them and building the group at the end; the retype-to-the-machine's
+  -width now happens before the scan rather than after it, which is also a better place for it to
+  fail.
+
 - **The Memory Dumper's fields line up, and its buttons are underneath them.** Three rows in three
   layouts of its own: the range to read on one line, the format and the entry address and Write
   file on the next, the file name below that - so no two labels started in the same place and no

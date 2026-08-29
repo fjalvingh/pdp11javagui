@@ -75,6 +75,44 @@ public final class IoPageScanner {
 		boolean cancelled) {
 	}
 
+	/**
+	 * Told what the scan is finding, while it is finding it.
+	 *
+	 * <p>A scan is four thousand examines, and over a serial line that is minutes. The Pascal
+	 * shows nothing for all of it and then everything at once; a window that fills in as the
+	 * addresses answer is telling the user the same thing at the time it is worth knowing - and
+	 * a scan they can watch is one they can decide to stop.</p>
+	 *
+	 * <p>Both methods are called <b>on the command thread</b>, so an implementation that touches
+	 * a window marshals for itself.</p>
+	 */
+	public interface Listener {
+		/**
+		 * The target group has been emptied and re-expressed at this machine's address width,
+		 * and nothing is in it yet.
+		 */
+		void scanStarted();
+
+		/** One more address answered, and its cell is in the target group now. */
+		void addressFound(MemoryCell cell);
+
+		/** Accepts everything and does nothing. For a caller with no window to fill in. */
+		Listener NULL = new Listener() {
+			@Override
+			public void scanStarted() {
+			}
+
+			@Override
+			public void addressFound(MemoryCell cell) {
+			}
+
+			@Override
+			public String toString() {
+				return "IoPageScanner.Listener.NULL";
+			}
+		};
+	}
+
 	private IoPageScanner() {
 	}
 
@@ -89,6 +127,20 @@ public final class IoPageScanner {
 	 */
 	public static Result scan(Console console, MemoryCellGroups groups, MemoryCellGroup target,
 		ProgressMonitor pm) throws ConsoleException {
+		return scan(console, groups, target, pm, Listener.NULL);
+	}
+
+	/**
+	 * The same, telling {@code listener} about each address as it answers.
+	 *
+	 * <p>The addresses go into {@code target} as they are found rather than in one go at the end,
+	 * so a window watching the group can show a scan filling in. What that costs is that a scan
+	 * which is cancelled or which fails leaves the group holding what it got to - which is the
+	 * point: those addresses did answer, and throwing them away because the scan did not finish
+	 * would be throwing away the only reason to stop it early.</p>
+	 */
+	public static Result scan(Console console, MemoryCellGroups groups, MemoryCellGroup target,
+		ProgressMonitor pm, Listener listener) throws ConsoleException {
 		if(!console.features().contains(ConsoleFeature.NON_FATAL_UNIBUS_TIMEOUT)) {
 			//-- The Pascal puts this in a message box from inside the scan ({@code :152-159}).
 			//-- Same words, thrown instead, because the core has no dialogs.
@@ -99,13 +151,23 @@ public final class IoPageScanner {
 		MemoryAddressType type = console.physicalAddressType();
 		long base = type.getIopageBase();
 
-		//-- Examine into a local list rather than into the group. The Pascal adds 4096 cells,
-		//-- examines them and then deletes the ones that did not answer, which is a rebuild of
-		//-- the group's index per deletion; building only what survives is the same result.
-		List<Address> answered = new ArrayList<>();
-		List<CellValue> values = new ArrayList<>();
+		//-- Retype the target to the machine's width before storing anything in it, and before
+		//-- the scan rather than after it. A group refuses a cell whose address is not its own
+		//-- width, and the window creates this one at 22 bits before it knows what it is connected
+		//-- to - so on a 16- or 18-bit machine the scan used to run to completion, minutes of it
+		//-- over a serial line, and then throw on the first address it stored and lose the lot.
+		//-- shiftRange with no words is the way to empty a group and re-express it: clear() keeps
+		//-- the type it was created with.
+		target.shiftRange(Address.of(type, base), 0, false);
+		listener.scanStarted();
+
+		//-- Straight into the group, one address at a time. The Pascal adds all 4096 cells,
+		//-- examines them and then deletes the ones that did not answer, which is a rebuild of the
+		//-- group's index per deletion; adding only what survives is the same result, and it is
+		//-- also what lets a window show the scan filling in rather than nothing for minutes.
 		boolean cancelled = false;
 		int examined = 0;
+		int named = 0;
 		pm.begin("Scanning the I/O page ...", IOPAGE_WORDS);
 		try {
 			for(int i = 0; i < IOPAGE_WORDS; i++) {
@@ -120,30 +182,22 @@ public final class IoPageScanner {
 				//-- A bus timeout is an answer: it means nothing is there.
 				if(!v.isKnown())
 					continue;
-				answered.add(a);
-				values.add(v);
+				MemoryCell mc = target.add(a);
+				mc.setPdpValue(v);
+				mc.setEditValue(v);
+				//-- Named here rather than in a pass afterwards, so the row the window has just
+				//-- shown says "DL11.RCSR" instead of appearing blank and being relabelled later.
+				if(nameFromDescription(groups, mc))
+					named++;
+				listener.addressFound(mc);
 			}
 		} finally {
 			pm.done();
 		}
 
-		//-- Retype the target to the machine's width before storing anything in it. A group
-		//-- refuses a cell whose address is not its own width, and the window creates this one at
-		//-- 22 bits before it knows what it is connected to - so on a 16- or 18-bit machine the
-		//-- scan used to run to completion, minutes of it over a serial line, and then throw on
-		//-- the first address it stored and lose the lot. shiftRange with no words is the way to
-		//-- empty a group and re-express it: clear() keeps the type it was created with.
-		target.shiftRange(Address.of(type, base), 0, false);
-		for(int i = 0; i < answered.size(); i++) {
-			MemoryCell mc = target.add(answered.get(i));
-			mc.setPdpValue(values.get(i));
-			mc.setEditValue(values.get(i));
-		}
-
-		int named = nameFromDescription(groups, target);
 		List<Block> blocks = new ArrayList<>();
 		String description = describeUnknownBlocks(target, blocks);
-		return new Result(examined, answered.size(), named, List.copyOf(blocks), description, cancelled);
+		return new Result(examined, target.size(), named, List.copyOf(blocks), description, cancelled);
 	}
 
 	/**
@@ -153,17 +207,13 @@ public final class IoPageScanner {
 	 * the name is prefixed with its group, so a scan result reads {@code DL11.RCSR} rather than
 	 * {@code RCSR} and says which device it belongs to ({@code :211-222}).</p>
 	 */
-	private static int nameFromDescription(MemoryCellGroups groups, MemoryCellGroup target) {
-		int named = 0;
-		for(MemoryCell mc : target.getCells()) {
-			MemoryCell symbol = groups.findNamedCellAt(mc);
-			if(symbol == null)
-				continue;
-			mc.setName(symbol.getGroup().getGroupName() + "." + symbol.getName());
-			mc.setInfo(symbol.getInfo());
-			named++;
-		}
-		return named;
+	private static boolean nameFromDescription(MemoryCellGroups groups, MemoryCell mc) {
+		MemoryCell symbol = groups.findNamedCellAt(mc);
+		if(symbol == null)
+			return false;
+		mc.setName(symbol.getGroup().getGroupName() + "." + symbol.getName());
+		mc.setInfo(symbol.getInfo());
+		return true;
 	}
 
 	/**
