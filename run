@@ -1,0 +1,4 @@
+#!/bin/bash
+mvn21 clean install -Dmaven.test.skip=true -Dmaven.javadoc.skip=true -DskipITs=true -Djetty.skip=true
+java -jar pdp11-app/target/pdp11gui.jar &
+

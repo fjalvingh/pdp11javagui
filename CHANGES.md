@@ -33,6 +33,16 @@
 
 ### Changes
 
+- **The Memory Dumper's fields line up, and its buttons are underneath them.** Three rows in three
+  layouts of its own: the range to read on one line, the format and the entry address and Write
+  file on the next, the file name below that - so no two labels started in the same place and no
+  two fields did either, and both buttons came before the file name they act on. Everything typed
+  or chosen is now one grid, with the two addresses of the range sharing the field column rather
+  than taking a label column each, and Examine all / Write file are a row under all of it. The
+  entry address keeps its place directly under the format selector, which is what decides whether
+  it is shown at all (FABLE-ISSUES #63). A row that does not apply to the chosen format now
+  collapses instead of leaving a gap.
+
 - **The Disassembler lists a hundred instructions at a time, instead of an address range.** The
   **to** field is gone. It was asking the wrong question: an instruction is one, two or three
   words, so an end address is a guess at how much of a program it covers, and the answer to

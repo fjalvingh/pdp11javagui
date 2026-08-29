@@ -98,8 +98,8 @@ public final class MemoryDumperPanel extends JPanel {
 		m_endAddr.setFont(mono);
 		m_entryAddr.setFont(mono);
 
-		add(buildRangeBar(), "growx, wrap");
-		add(buildFileBar(), "growx, wrap");
+		add(buildInputs(), "growx, wrap");
+		add(buildButtonBar(), "growx, wrap");
 		add(m_grid, "grow, wrap");
 		add(m_statusLabel, "growx");
 
@@ -116,44 +116,36 @@ public final class MemoryDumperPanel extends JPanel {
 	}
 
 	/**
-	 * The range to read off the machine. Nothing about the file being written is here - see
-	 * {@link #buildFileBar}.
-	 */
-	private JPanel buildRangeBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]8[][]16[]", "[]"));
-		bar.add(new JLabel("From:"));
-		bar.add(m_startAddr);
-		bar.add(new JLabel("to:"));
-		bar.add(m_endAddr);
-		bar.add(m_examine);
-		m_examine.setToolTipText("Read this range off the machine into the grid below");
-		m_examine.addActionListener(e -> readFromMachine());
-		m_startAddr.addActionListener(e -> readFromMachine());
-		m_endAddr.addActionListener(e -> readFromMachine());
-		m_entryAddr.setToolTipText("Where the loaded program starts. Blank means the start of the range.");
-		return bar;
-	}
-
-	/**
-	 * The file: its format, its name or names, and the entry address the format may want.
+	 * Everything that is typed or chosen, in one column.
 	 *
-	 * <p>The entry address used to sit in the range bar above, next to the addresses that say
-	 * what to read off the machine - which is a different subject, and worse, it was shown and
-	 * hidden by the format selector in this bar with a whole row between the two
-	 * (FABLE-ISSUES #63). It is a property of the file, so it lives beside the thing that
-	 * decides whether the file has one.</p>
+	 * <p>One grid, so the labels line up and the fields start in the same place. The range to
+	 * read off the machine used to sit on a line of its own, in a layout of its own, and lined up
+	 * with neither the format below it nor the file name below that; the entry address was off to
+	 * the right of the format, in a third layout again. {@code hidemode 3} is what lets a row that
+	 * does not apply to the chosen format leave rather than sit there empty - see
+	 * {@link #showFormat()}.</p>
+	 *
+	 * <p>The entry address stays directly under the format selector, which is what decides whether
+	 * it is shown at all (FABLE-ISSUES #63): it used to be in the range bar, next to the addresses
+	 * that say what to read off the machine - a different subject - and shown and hidden from a
+	 * whole row away.</p>
 	 */
-	private JPanel buildFileBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][grow][][]", "[][][]"));
+	private JPanel buildInputs() {
+		JPanel bar = new JPanel(new MigLayout("insets 0, hidemode 3", "[][grow][]", ""));
+
+		//-- Two addresses for one idea, so they share the field column rather than taking a
+		//-- label column each and pushing everything below them out of line.
+		JPanel range = new JPanel(new MigLayout("insets 0", "[]8[]4[]", "[]"));
+		range.add(m_startAddr);
+		range.add(new JLabel("to:"));
+		range.add(m_endAddr);
+		bar.add(new JLabel("From:"));
+		bar.add(range, "wrap");
+
 		bar.add(new JLabel("Format:"));
-		bar.add(m_format, "growx");
-		JPanel entry = new JPanel(new MigLayout("insets 0", "[][]", "[]"));
-		entry.add(m_entryLabel);
-		entry.add(m_entryAddr);
-		bar.add(entry);
-		bar.add(m_dump, "wrap");
-		m_format.addActionListener(e -> showFormat());
-		m_dump.addActionListener(e -> writeFile());
+		bar.add(m_format, "growx, wrap");
+		bar.add(m_entryLabel);
+		bar.add(m_entryAddr, "wrap");
 
 		//-- Two rows, built once and shown as the format needs them. A format wanting a third
 		//-- file would add a row here; the original hands the same three widgets to five objects.
@@ -168,8 +160,31 @@ public final class MemoryDumperPanel extends JPanel {
 			m_fileBrowse.add(browse);
 			bar.add(label);
 			bar.add(field, "growx");
-			bar.add(browse, "span 2, wrap");
+			bar.add(browse, "wrap");
 		}
+
+		m_startAddr.addActionListener(e -> readFromMachine());
+		m_endAddr.addActionListener(e -> readFromMachine());
+		m_entryAddr.setToolTipText("Where the loaded program starts. Blank means the start of the range.");
+		m_format.addActionListener(e -> showFormat());
+		return bar;
+	}
+
+	/**
+	 * The two things you can do, under everything you fill in first.
+	 *
+	 * <p>Write file used to sit on the format's line, to the right of the entry address, and
+	 * Examine all on the line above that - so both buttons came before the file name they act on.
+	 * A window is read downwards, and the last thing on the way down should be the thing that
+	 * does something.</p>
+	 */
+	private JPanel buildButtonBar() {
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]", "[]"));
+		bar.add(m_examine);
+		bar.add(m_dump);
+		m_examine.setToolTipText("Read this range off the machine into the grid below");
+		m_examine.addActionListener(e -> readFromMachine());
+		m_dump.addActionListener(e -> writeFile());
 		return bar;
 	}
 

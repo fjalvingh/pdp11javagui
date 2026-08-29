@@ -58,10 +58,10 @@ exists, it simply says where the program starts and whoever cares listens.
 | Control | What it does |
 |---|---|
 | **From** / **to** | The range to dump, octal |
-| **Examine all** | Read that range off the machine into the grid |
 | **Format** | From the table above |
 | **Entry address** | What to record as the start address. Blank means the start of the range |
 | The file rows | Where to write, with **Browse …** |
+| **Examine all** | Read that range off the machine into the grid |
 | **Write file** | Write it |
 
 **Examine first, then write.** The grid shows exactly what is about to be written; the file is
