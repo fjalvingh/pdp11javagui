@@ -72,16 +72,42 @@ Above the fields:
   complemented (`MPC-7-L` down to `MPC-0-L`), so the raw field below reads `215` where the
   microword actually goes to `162`. Showing the raw field alone would invite somebody to "correct"
   it.
+* on the PDP-11/05, **Part of** and **Does** — see below.
 
 Then one row per field the *machine* has — which fields exist is a property of the processor, not
 a fixed table — with its **Bits**, its value in octal, and what the print set says that value
 means: `2 = DATO`.
 
-Below them, where the document carries it: the **Source code** of the microword, **Jumped to
-from**, and which listing file and line it was read from.
+Below them, where the document carries it: the **Source code** of the microword, the 11/05's
+**Flow notes**, **Jumped to from**, and which listing file and line it was read from.
 
 Some fields are highlighted: those are the ones this microword is actually *doing* something with,
 as opposed to leaving at their resting value.
+
+### What an 11/05 microword is for
+
+The bits say which lines a microword asserts; they do not say that `ET-2` is the second step of
+taking an EMT trap. DEC wrote that down, in the *microprogram flow* (drawing `K-MP-KD11-B-1`, 1972)
+that is part of the 11/05 engineering drawings, and the window shows it:
+
+* **Part of** — the routine the microword belongs to, with what sort of routine it is: the
+  *Instruction fetch*, a *Source operand* or *Destination operand* addressing mode, an
+  *Instruction* such as `JSR` or `RTI`, a *Trap*, a *Console* switch (Start, Examine, Deposit,
+  Continue, Load), *Power fail*, or *Interrupts and service* (bus grants, the console UART, the line
+  clock). It is in the status line too, beside the µPC.
+* **Does** — what the flow prints beside the microword, such as `B,BA←R[6]-2; ENABOVER`.
+  `R[S]` and `R[D]` are the instruction's source and destination registers, `K[n]` is a constant,
+  `BUT` is *branch on micro test*.
+* **Flow notes** — the flow's comments on it: how it is reached (`GET TO ET-2 FROM BT-1 VIA
+  GOTO`), where a branch can go (the `IF … GOTO` lists), and anything else DEC thought worth saying.
+
+The text is shown as printed, in capitals and with the document's own spelling. The flow leaves 13
+microwords out, and says so on its last page; for those the notes say that, and quote where the flow
+mentions them. The grouping into sorts of routine is this program's; the rest is DEC's.
+
+The flow was checked against the listing: both print every microword's address, next address and
+tag, and they agree for all 201 microwords the flow shows. It describes revision E, and describes
+revision F equally well — the two differ in bits, not in addresses or tags.
 
 ### A branch base is not a successor
 

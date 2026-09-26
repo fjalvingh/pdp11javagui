@@ -16,3 +16,9 @@ shipped listings; this file is the record of what was changed and why.
    SBO-3  324 bit 18 SP3  -> 0   1976 classifier slip (conf 0.17); all three scans show 0
    SBO-3  324 bit 27 SP2  -> 0   1976 classifier slip (conf 0.04); all three scans show 0
    SBO-4  340 bit 27 SP2  -> 0   1976 classifier slip (conf 0.13); all three scans show 0
+
+-- Symbolic tags, both listings --
+   SBF-1  047  -> SBE-1   the OCR read E as F. Both listing scans print SBE-1, and the
+   DBF-1  110  -> DBE-1   microprogram flow (K-MP-KD11-B-1, kd11b-flow.tsv) names all three
+   DF-1   250  -> DE-1    with E, under "SOURCE EVEN BYTE" / "DESTINATION EVEN BYTE", at the
+                          same address and next address. The ASCII sort order still holds.

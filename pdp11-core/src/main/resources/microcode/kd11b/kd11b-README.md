@@ -111,7 +111,7 @@ addresses.
 
 **Tags (`NAM`).** Read by eye from upscaled crops of the 1976 scans, all 214 of them. This is
 checked, not merely asserted: **the listing is sorted, and the transcribed list sorts exactly in
-ASCII order** (`D0-4` < `D1-1` < … < `D7-5` < `DB0-1` < `DBF-1` < `DF-1` < `DO-1` < `DO-10` <
+ASCII order** (`D0-4` < `D1-1` < … < `D7-5` < `DB0-1` < `DBE-1` < `DE-1` < `DO-1` < `DO-10` <
 … < `DO-18` < `DO-2` < …). A misread character almost always breaks that ordering, so the sort is
 a genuine check on 214 names, and it is what distinguishes `D0-` (digit zero) from `DO-`
 (letter O), which are otherwise nearly identical in this font.

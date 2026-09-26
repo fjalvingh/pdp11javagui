@@ -3,6 +3,7 @@ package to.etc.pdp11.ui.microcode;
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.microcode.MicroInstruction;
 import to.etc.pdp11.core.microcode.Microcode;
+import to.etc.pdp11.core.microcode.MicrowordRole;
 import to.etc.pdp11.core.microcode.MicrocodeField;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.core.util.Octal;
@@ -546,7 +547,7 @@ public final class MicrocodePanel extends JPanel {
 			m_history.push(m_current.getAddress());
 		m_current = mi;
 		m_model.setInstruction(mi, mi == null || m_code == null ? List.of() : m_code.predecessorsOf(mi),
-			differingFields(mi));
+			differingFields(mi), mi == null || m_code == null ? null : m_code.roleOf(mi));
 		m_updating = true;
 		try {
 			if(mi != null)
@@ -577,8 +578,12 @@ public final class MicrocodePanel extends JPanel {
 		StringBuilder sb = new StringBuilder();
 		if(m_current != null) {
 			sb.append("µPC = ").append(m_current.getAddressOctal())
-				.append("  ·  ").append(m_current.getSymbolicTag())
-				.append("  ·  next ").append(m_current.getNextAddressOctal());
+				.append("  ·  ").append(m_current.getSymbolicTag());
+			//-- What it is part of, which is the first thing anybody looking at a µPC wants to know.
+			MicrowordRole role = m_code.roleOf(m_current);
+			if(role != null && role.summary() != null)
+				sb.append("  ·  ").append(role.summary());
+			sb.append("  ·  next ").append(m_current.getNextAddressOctal());
 			//-- Said here, on the microword, and not as a problem with the whole document: the
 			//-- 11/05's listing has one microword that genuinely leaves it, and a status line that
 			//-- said so permanently read as though the load had failed.

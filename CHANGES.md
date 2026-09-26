@@ -33,6 +33,18 @@
 
 ### Changes
 
+- **The 11/05's microcode window says what each microword is for.** Which routine it belongs to -
+  the instruction fetch, a source or destination addressing mode, an instruction such as `JSR`, a
+  trap, a console switch, power fail, interrupt and bus-grant service - is in the status line and
+  in a new **Part of** row, what the microword does is in **Does**, and DEC's comments on it (how
+  it is reached, where it branches) are in **Flow notes**. All of it comes from the microprogram
+  flow in the 1973 engineering drawings, `K-MP-KD11-B-1`, transcribed page by page, and it is
+  checked against the listing: the two agree on the address, successor and tag of all 201
+  microwords the flow shows.
+
+  That check found three microword tags the listing's transcription had misread: `SBF-1`,
+  `DBF-1` and `DF-1` are `SBE-1`, `DBE-1` and `DE-1` in both drawing sets, and are corrected.
+
 - **The windows show PDP11GUI's own icon rather than the Java cup.** It is the original's
   `pdp11GUI.ico`, all seven sizes from 16 to 256 pixels, set on the main window and every tool
   window (dialogs take their owner's) and on the macOS Dock.

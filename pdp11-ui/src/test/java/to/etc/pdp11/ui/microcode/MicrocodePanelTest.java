@@ -286,9 +286,12 @@ class MicrocodePanelTest {
 
 		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_F));
 		//-- Three rows of provenance rather than four: this document carries no microassembler
-		//-- source, so there is no "Source code" row rather than an empty one.
+		//-- source, so there is no "Source code" row rather than an empty one. What it has instead
+		//-- is DEC's microprogram flow: what the microword is part of and does, above the fields,
+		//-- and one row per comment and the drawing it came from, below them.
 		int revF = Edt.call(panel.getTable()::getRowCount);
-		assertEquals(FIELDS_START + Kd11bFields.ARCHITECTURE.size() + 3, revF);
+		int notes = panel.getMicrocode().roleOf(panel.getCurrent()).notes().size();
+		assertEquals(FIELDS_START + 2 + Kd11bFields.ARCHITECTURE.size() + 3 + notes + 1, revF);
 
 		Edt.run(() -> panel.chooseSource(MicrocodeSource.PDP1105_E));
 		assertEquals(revF, Edt.call(panel.getTable()::getRowCount), "same field table, other bits");
@@ -377,6 +380,37 @@ class MicrocodePanelTest {
 		Edt.run(() -> panel.searchFor("7000"));
 		assertTrue(Edt.call(panel::getStatusText).contains("8 bit control store"),
 			Edt.call(panel::getStatusText));
+	}
+
+	/**
+	 * What a microword is for: the routine DEC's microprogram flow puts it in, in the status
+	 * line, and what it does there and the flow's comments on it in the table.
+	 */
+	@Test
+	void anElevenOhFiveMicrowordSaysWhatItIsFor(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("ET-2"));
+
+		String status = Edt.call(panel::getStatusText);
+		assertTrue(status.contains("ET-2  ·  Trap: EMT TRAP (VECTOR LOC=30)"), status);
+		assertEquals("Trap: EMT TRAP (VECTOR LOC=30)", rowInfo(panel, "Part of"));
+		assertEquals("R[12]←B", rowInfo(panel, "Does"));
+		assertEquals("GET TO ET-2 FROM BT-1 VIA GOTO", rowInfo(panel, "Flow notes"));
+		assertEquals("K-MP-KD11-B-1 page 16", rowInfo(panel, "Flow"));
+
+		//-- A microword the flow leaves out is not given a guessed routine; its notes say so.
+		Edt.run(() -> panel.searchFor("A145"));
+		assertFalse(hasRow(panel, "Part of"));
+		assertEquals("Not shown in the flow, which says so on its last page", rowInfo(panel, "Flow notes"));
+	}
+
+	/** The 11/44 has no flow; what says what its microwords are for is its source code row. */
+	@Test
+	void theElevenFortyFourHasNoFlowRows(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1144);
+		assertFalse(hasRow(panel, "Part of"));
+		assertFalse(hasRow(panel, "Flow"));
 	}
 
 	/**
@@ -498,6 +532,16 @@ class MicrocodePanelTest {
 
 	private static String infoOf(MicrocodePanel panel, String fieldName) {
 		return rowInfo(panel, fieldName);
+	}
+
+	private static boolean hasRow(MicrocodePanel panel, String label) {
+		return Edt.call(() -> {
+			for(int i = 0; i < panel.getModel().getRowCount(); i++) {
+				if(panel.getModel().getRow(i).label().equals(label))
+					return true;
+			}
+			return false;
+		});
 	}
 
 	private static String rowInfo(MicrocodePanel panel, String label) {

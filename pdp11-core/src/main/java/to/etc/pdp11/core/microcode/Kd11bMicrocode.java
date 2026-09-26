@@ -53,8 +53,15 @@ import java.util.Map;
  *
  * <p>214 of 256 locations are printed; the other 42 are not. So a next-address can point at a
  * location that has no microword, and one does: {@code A145 @145 -> 377}, whose own 40 bits are
- * almost entirely zero and which looks like a filler or diagnostic entry. That is a
- * {@link Microcode.Problem}, not an exception, and not a reason to reject the listing.</p>
+ * almost entirely zero and which looks like a filler or diagnostic entry. That one is known and
+ * excused (see {@link #verify}); any other is a {@link Microcode.Problem}, and never an exception
+ * or a reason to reject the listing.</p>
+ *
+ * <h2>What each microword is for</h2>
+ *
+ * <p>The bit table does not say, but the same drawing set carries DEC's microprogram flow, which
+ * does. {@link Kd11bFlow} reads it, and every microword loaded here gets its routine and
+ * description from it through {@link Microcode#roleOf}.</p>
  */
 public final class Kd11bMicrocode {
 	/**
@@ -187,8 +194,10 @@ public final class Kd11bMicrocode {
 			problems.add(new Microcode.Problem(Microcode.ProblemKind.WRONG_MICROWORD_COUNT, sourceName, 0,
 				"The listing has " + row + " microwords, where both drawing sets print "
 					+ Kd11bFields.LISTED_MICROWORDS));
+		//-- What each microword is for, from DEC's microprogram flow. Matched by tag, so it serves
+		//-- a transcription loaded from a file as well as the packaged ones.
 		return new Microcode(arch, sourceName, revision == null ? null : revision.getLabel(),
-			instructions, problems);
+			instructions, problems, Kd11bFlow.builtin().annotate(instructions));
 	}
 
 	/** Where the three columns this reads are, or {@code null} when the row is not the header. */

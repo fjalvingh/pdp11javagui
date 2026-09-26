@@ -109,6 +109,8 @@ public final class Microcode {
 
 	private final List<Problem> m_problems;
 
+	private final Map<Integer, MicrowordRole> m_roles;
+
 	/**
 	 * @param architecture what the microwords were decoded against
 	 * @param sourceName   which document they came out of
@@ -119,6 +121,16 @@ public final class Microcode {
 	 */
 	Microcode(MicrocodeArchitecture architecture, String sourceName, String revision,
 		List<MicroInstruction> instructions, List<Problem> problems) {
+		this(architecture, sourceName, revision, instructions, problems, Map.of());
+	}
+
+	/**
+	 * @param roles what each microword is for, by address, where a document says; see
+	 *              {@link #roleOf}
+	 */
+	Microcode(MicrocodeArchitecture architecture, String sourceName, String revision,
+		List<MicroInstruction> instructions, List<Problem> problems, Map<Integer, MicrowordRole> roles) {
+		m_roles = Map.copyOf(roles);
 		m_architecture = architecture;
 		m_sourceName = sourceName;
 		m_revision = revision;
@@ -251,6 +263,18 @@ public final class Microcode {
 	 */
 	public boolean nextNotInDocument(MicroInstruction mi) {
 		return !m_addressIndex.containsKey(mi.getNextAddress());
+	}
+
+	/**
+	 * What this microword is for - the routine it belongs to and what it does there - or
+	 * {@code null} where nothing says.
+	 *
+	 * <p>The 11/05's microcode has DEC's microprogram flow for this ({@link Kd11bFlow}). The
+	 * 11/44's has none: what its listing carries instead is the microassembler source, which is
+	 * {@link MicroInstruction#getOperations()}.</p>
+	 */
+	public MicrowordRole roleOf(MicroInstruction mi) {
+		return m_roles.get(mi.getAddress());
 	}
 
 	/** Everything the loader was unhappy about. Empty for a sound document. */
