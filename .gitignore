@@ -14,6 +14,8 @@ bin/
 #-- directory because Surefire will not accept a <jvm> path that is not one.
 !tools/xvfb/bin/
 .vscode/
+.mvn
+.m2
 
 # OS
 .DS_Store
