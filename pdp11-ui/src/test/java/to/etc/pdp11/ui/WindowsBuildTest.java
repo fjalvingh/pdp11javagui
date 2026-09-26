@@ -92,6 +92,9 @@ class WindowsBuildTest {
 			assertNotNull(w.getManualItem(), "Help has a User manual entry");
 			assertEquals(KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), w.getManualItem().getAccelerator());
 			assertFalse(w.isVisible(), "built, not shown");
+			//-- PDP11GUI's own icon, not the Java cup every frame gets by default.
+			assertEquals(AppIcon.images(), w.getIconImages());
+			assertFalse(w.getIconImages().isEmpty());
 		} finally {
 			onEdt(() -> {
 				w.dispose();
@@ -508,6 +511,8 @@ class WindowsBuildTest {
 		ToolWindow w = onEdt(() -> ctx.getWindowManager().open(WindowType.LOG));
 		try {
 			assertEquals("Log", w.getTitle());
+			//-- A tool window is a frame of its own, so it needs the icon as much as the main one.
+			assertEquals(AppIcon.images(), w.getIconImages());
 			//-- Opened once, so asking again is the same window rather than a second one.
 			assertSame(w, onEdt(() -> ctx.getWindowManager().open(WindowType.LOG)));
 			assertEquals(1, ctx.getWindowManager().allWindows().size());

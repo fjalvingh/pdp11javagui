@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.window;
 
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.AppIcon;
 
 import javax.swing.JFrame;
 import java.awt.event.WindowAdapter;
@@ -49,6 +50,7 @@ public abstract class ToolWindow extends JFrame {
 		super(key.title());
 		m_key = key;
 		m_context = context;
+		setIconImages(AppIcon.images());
 		//-- Closing a tool window hides it. Only the main window quits the application, and only
 		//-- the window manager disposes of these - a closed window that is reopened should come
 		//-- back as it was, which is what "hide" means and "dispose" does not.

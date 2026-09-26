@@ -33,6 +33,10 @@
 
 ### Changes
 
+- **The windows show PDP11GUI's own icon rather than the Java cup.** It is the original's
+  `pdp11GUI.ico`, all seven sizes from 16 to 256 pixels, set on the main window and every tool
+  window (dialogs take their owner's) and on the macOS Dock.
+
 - **The I/O page scanner fills in as it scans, and its progress is on the window rather than in
   front of it.** A scan is 4096 examines - minutes over a serial line - and it used to show
   nothing at all for the whole of it, behind a modal `ProgressDialog`, and then everything at

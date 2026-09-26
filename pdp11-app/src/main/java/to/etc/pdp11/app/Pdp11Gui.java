@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatDarculaLaf;
 import to.etc.pdp11.core.util.AppVersion;
 import to.etc.pdp11.core.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.AppIcon;
 import to.etc.pdp11.ui.MainWindow;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
@@ -55,6 +56,7 @@ public final class Pdp11Gui {
 
 		EventQueue.invokeLater(() -> {
 			installLookAndFeel();
+			AppIcon.installOnTaskbar();
 			AppContext context = AppContext.create(logger);
 			registerWindows(context);
 			//-- Before the main window, so its Windows menu has the device groups in it the

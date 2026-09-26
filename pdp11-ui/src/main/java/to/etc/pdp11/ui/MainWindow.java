@@ -85,6 +85,7 @@ public final class MainWindow extends JFrame {
 	public MainWindow(AppContext context) {
 		super("PDP11GUI");
 		m_context = context;
+		setIconImages(AppIcon.images());
 		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 		addWindowListener(new WindowAdapter() {
 			@Override
