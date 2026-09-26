@@ -380,6 +380,27 @@ class MicrocodePanelTest {
 	}
 
 	/**
+	 * The 11/05's one microword that leaves the listing is noted where it is shown, and nowhere
+	 * else: a status line that always said "1 problem" read as though the load had failed.
+	 */
+	@Test
+	void theKnownExitIsNotedOnA145Only(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_E);
+		String opened = Edt.call(panel::getStatusText);
+		assertFalse(opened.contains("problem"), opened);
+		assertFalse(opened.contains("not in this document"), opened);
+
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("A145"));
+		String a145 = Edt.call(panel::getStatusText);
+		assertTrue(a145.contains("next 377 (not in this document)"), a145);
+		assertFalse(a145.contains("problem"), a145);
+
+		Edt.run(() -> panel.searchFor("B-1"));
+		assertFalse(Edt.call(panel::getStatusText).contains("not in this document"), Edt.call(panel::getStatusText));
+	}
+
+	/**
 	 * 73 of the 214 microwords select a microtest, and there the hardware ORs the result into the
 	 * next address - so the printed value is a branch base and presenting it as the successor is
 	 * stating as fact something that depends on the state of the machine.

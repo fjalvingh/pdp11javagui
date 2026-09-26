@@ -573,11 +573,17 @@ public final class MicrocodePanel extends JPanel {
 			m_status.setForeground(UiColors.ERROR_TEXT);
 			return;
 		}
+		boolean leavesDocument = m_current != null && m_code.nextNotInDocument(m_current);
 		StringBuilder sb = new StringBuilder();
 		if(m_current != null) {
 			sb.append("µPC = ").append(m_current.getAddressOctal())
 				.append("  ·  ").append(m_current.getSymbolicTag())
 				.append("  ·  next ").append(m_current.getNextAddressOctal());
+			//-- Said here, on the microword, and not as a problem with the whole document: the
+			//-- 11/05's listing has one microword that genuinely leaves it, and a status line that
+			//-- said so permanently read as though the load had failed.
+			if(leavesDocument)
+				sb.append(" (not in this document)");
 			//-- Where a microtest is selected the hardware ORs its result into the next address,
 			//-- so what is printed is a branch base and not the successor. Saying "next 147" flat
 			//-- would be stating as fact something that depends on the state of the machine.
@@ -588,7 +594,7 @@ public final class MicrocodePanel extends JPanel {
 		sb.append(m_code.describe());
 		m_status.setText(sb.toString());
 		m_status.setToolTipText(m_code.isOk() ? null : firstProblems());
-		m_status.setForeground(m_code.isOk() ? UiColors.SECONDARY_TEXT : UiColors.ERROR_TEXT);
+		m_status.setForeground(m_code.isOk() && !leavesDocument ? UiColors.SECONDARY_TEXT : UiColors.ERROR_TEXT);
 	}
 
 	private String firstProblems() {

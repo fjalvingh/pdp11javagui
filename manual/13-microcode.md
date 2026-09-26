@@ -105,6 +105,11 @@ If part of a listing cannot be read, what could not be read is a count in the st
 note in [the log](14-terminal-log-simh.md#the-log-window), and the rest of the microcode is there
 to look at. Hover the status line for the first few problems.
 
+The 11/05's listing loads with no problems, although one microword leaves it: `A145` goes to 377,
+one of the control store locations the drawings do not print. That is how the listing is, not a
+fault in reading it, so it is shown only when `A145` is - as "next 377 (not in this document)" in
+the status line.
+
 ---
 
 [← I/O page scanner](12-io-page-scanner.md) · [Manual index](README.md) · [Next: Terminal, log and SimH console →](14-terminal-log-simh.md)

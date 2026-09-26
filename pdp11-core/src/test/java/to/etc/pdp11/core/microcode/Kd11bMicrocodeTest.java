@@ -69,17 +69,42 @@ class Kd11bMicrocodeTest {
 	}
 
 	/**
-	 * The one complaint the shipped data is allowed: the control store is sparse, and the filler
-	 * microword at 145 points into a location the listing does not print.
+	 * The shipped data has nothing to complain about. The control store is sparse, and the filler
+	 * microword at 145 points into a location the listing does not print - but that is known, and
+	 * a document reported as having a problem for as long as it is open reads as a failed load.
 	 */
 	@Test
-	void theOnlyProblemIsTheOneMicrowordThatLeavesTheListing() {
+	void theShippedDataHasNoProblems() {
 		for(Microcode code : List.of(REV_E, REV_F)) {
-			assertEquals(1, code.getProblems().size(), code.getProblems().toString());
-			Microcode.Problem p = code.getProblems().get(0);
-			assertEquals(Microcode.ProblemKind.MISSING_NEXT, p.kind());
-			assertTrue(p.message().startsWith("A145 goes to 377"), p.message());
+			assertEquals(List.of(), code.getProblems(), code.getSourceName());
+			assertTrue(code.isOk());
 		}
+	}
+
+	/** The known exit is still said, on the one microword it is about. */
+	@Test
+	void onlyA145LeavesTheListing() {
+		for(Microcode code : List.of(REV_E, REV_F)) {
+			List<String> leaving = code.byAddress().stream()
+				.filter(code::nextNotInDocument)
+				.map(mi -> mi.getSymbolicTag() + " -> " + mi.getNextAddressOctal())
+				.toList();
+			assertEquals(List.of("A145 -> 377"), leaving, code.getSourceName());
+		}
+	}
+
+	/** Excusing A145 excuses A145, and not the next microword to leave a document. */
+	@Test
+	void anyOtherExitFromTheListingIsAProblem() {
+		//-- An all-zero NXT is active low and decodes to 377, which neither document prints.
+		String zero = "0".repeat(40);
+		Microcode known = Kd11bMicrocode.parse("test", null, List.of("NAM\tLOC\tWORD40", "X-1\t145\t" + zero));
+		assertTrue(known.getProblems().stream().noneMatch(p -> p.kind() == Microcode.ProblemKind.MISSING_NEXT),
+			known.getProblems().toString());
+
+		Microcode other = Kd11bMicrocode.parse("test", null, List.of("NAM\tLOC\tWORD40", "X-1\t144\t" + zero));
+		assertTrue(other.getProblems().stream().anyMatch(p -> p.kind() == Microcode.ProblemKind.MISSING_NEXT
+			&& p.message().startsWith("X-1 goes to 377")), other.getProblems().toString());
 	}
 
 	@Test

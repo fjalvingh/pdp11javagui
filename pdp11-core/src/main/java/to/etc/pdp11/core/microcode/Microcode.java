@@ -241,6 +241,18 @@ public final class Microcode {
 		return list == null ? List.of() : List.copyOf(list);
 	}
 
+	/**
+	 * Whether this microword's next address names a location this document does not print, which
+	 * is where following it stops.
+	 *
+	 * <p>Asked per microword, because it can be expected: the KD11-B's control store is sparse, and
+	 * the one microword of its listing that leaves it is not a {@link Problem} with the document.
+	 * It is still worth saying when that microword is the one on screen.</p>
+	 */
+	public boolean nextNotInDocument(MicroInstruction mi) {
+		return !m_addressIndex.containsKey(mi.getNextAddress());
+	}
+
 	/** Everything the loader was unhappy about. Empty for a sound document. */
 	public List<Problem> getProblems() {
 		return m_problems;

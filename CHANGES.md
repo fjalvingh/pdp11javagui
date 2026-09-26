@@ -96,6 +96,13 @@
 
 ### Fixes
 
+- **The 11/05's microcode window no longer says "1 problem" all the time.** The one microword that
+  leaves the listing - `A145`, which goes to the unprinted location 377 in both board revisions -
+  is known, and reporting it as a problem with the whole document made the status line look like a
+  failed load. It is now excused, and said only while `A145` is on screen, as "next 377 (not in
+  this document)". Any other microword going somewhere the document does not print is still a
+  problem.
+
 - **Connecting says it once.** The terminal printed `[connected: SimH over SimH: pdp11]` twice for
   one connection, and the note about a connection with no machine console twice with it. Two
   things report the same connection to the main window - the `ConnectionManager` listener when the

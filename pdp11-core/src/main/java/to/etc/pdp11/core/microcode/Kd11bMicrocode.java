@@ -296,8 +296,20 @@ public final class Kd11bMicrocode {
 	 * exists.</p>
 	 *
 	 * <p>The last of those is a complaint and not a verdict, because the control store is sparse:
-	 * 42 of its 256 locations are not printed and one microword genuinely points into them.</p>
+	 * 42 of its 256 locations are not printed and one microword genuinely points into them. That
+	 * one, {@link #KNOWN_EXITS}, is not a problem with the document and is not reported as one -
+	 * a window that said "1 problem" for as long as the 11/05 is open reads as the whole load
+	 * being in doubt. It is still visible where it matters, on the microword itself, through
+	 * {@link Microcode#nextNotInDocument}. Any other exit is reported.</p>
 	 */
+	/**
+	 * The microwords, by address, that go to a control store location the listing does not print,
+	 * and where they go. Both drawing sets agree on it: {@code A145} at 145, whose 40 bits are
+	 * almost all zero - a filler or diagnostic entry - and whose all-zero {@code NXT} decodes to
+	 * 377. See {@code kd11b-README.md} §5.
+	 */
+	static final Map<Integer, Integer> KNOWN_EXITS = Map.of(0145, 0377);
+
 	static List<Microcode.Problem> verify(String sourceName, List<MicroInstruction> all,
 		Map<Integer, MicroInstruction> byAddress) {
 		List<Microcode.Problem> problems = new ArrayList<>();
@@ -309,7 +321,8 @@ public final class Kd11bMicrocode {
 					+ ", outside a " + Kd11bFields.ARCHITECTURE.getAddressBits() + " bit control store"));
 				continue;
 			}
-			if(byAddress.get(mi.getNextAddress()) == null)
+			if(byAddress.get(mi.getNextAddress()) == null
+				&& !Integer.valueOf(mi.getNextAddress()).equals(KNOWN_EXITS.get(mi.getAddress())))
 				problems.add(new Microcode.Problem(Microcode.ProblemKind.MISSING_NEXT, sourceName, mi.getFileLine(),
 					mi.getSymbolicTag() + " goes to " + mi.getNextAddressOctal()
 						+ ", which is one of the 42 control store locations the listing does not print"));
