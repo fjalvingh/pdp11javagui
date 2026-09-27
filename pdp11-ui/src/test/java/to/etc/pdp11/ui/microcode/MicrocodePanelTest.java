@@ -383,6 +383,48 @@ class MicrocodePanelTest {
 	}
 
 	/**
+	 * Double-clicking where a microword says it goes next goes there, from the decoded row and
+	 * from the raw next-address field alike, and Back comes back. Any other row does nothing.
+	 */
+	@Test
+	void doubleClickingTheNextAddressFollowsIt(@TempDir Path dir) {
+		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
+		Edt.run(() -> UiRenderer.layOut(panel, WIDTH, HEIGHT));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.searchFor("B-1"));
+
+		doubleClick(panel, "Next microword");
+		assertEquals("B-2", panel.getCurrent().getSymbolicTag(), "B-1 goes to 147");
+		doubleClick(panel, Kd11bFields.ARCHITECTURE.getNextAddressField().name());
+		assertEquals("B-3", panel.getCurrent().getSymbolicTag(), "B-2 goes to 146");
+
+		doubleClick(panel, "Address");
+		assertEquals("B-3", panel.getCurrent().getSymbolicTag(), "not a row that goes anywhere");
+
+		Edt.run(panel::back);
+		assertEquals("B-2", panel.getCurrent().getSymbolicTag());
+	}
+
+	/** A real double-click, on the Info cell of the row with this label. */
+	private static void doubleClick(MicrocodePanel panel, String label) {
+		Edt.run(() -> {
+			JTable table = panel.getTable();
+			for(int i = 0; i < table.getRowCount(); i++) {
+				if(panel.getModel().getRow(i).label().equals(label)) {
+					java.awt.Rectangle r = table.getCellRect(i, 2, true);
+					java.awt.Point p = new java.awt.Point(r.x + 5, r.y + r.height / 2);
+					for(int click = 1; click <= 2; click++)
+						table.dispatchEvent(new java.awt.event.MouseEvent(table, java.awt.event.MouseEvent.MOUSE_CLICKED,
+							System.currentTimeMillis(), java.awt.event.InputEvent.BUTTON1_DOWN_MASK, p.x, p.y, click,
+							false, java.awt.event.MouseEvent.BUTTON1));
+					return;
+				}
+			}
+			throw new IllegalArgumentException("No row labelled " + label);
+		});
+	}
+
+	/**
 	 * What a microword is for: the routine DEC's microprogram flow puts it in, in the status
 	 * line, and what it does there and the flow's comments on it in the table.
 	 */

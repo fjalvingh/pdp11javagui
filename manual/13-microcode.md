@@ -51,7 +51,7 @@ store PROMs change part number between revisions, and they are exactly the two h
 | **Search by** | **µPC**, **Symbolic tag**, or **Listing line** (where the document has line numbers) |
 | **µInstruction** | Editable, and its drop-down is the whole index — dropped open at *Symbolic tag* it is the listing's table of contents |
 | **Back** | Return to the microword you came from |
-| **Next instruction** | Follow this microword's next-address field, which is where it goes when nothing branches |
+| **Next instruction** | Follow this microword's next-address field, which is where it goes when nothing branches. Double-clicking the **Next microword** row, or the next-address field itself, does the same |
 | **Open listing …** | Read another copy of the selected microcode — a re-transcription, another scan, or a listing split into one file per page (choose them all at once) |
 
 **Back exists because microcode is mostly read backwards** from the state you ended up in. And

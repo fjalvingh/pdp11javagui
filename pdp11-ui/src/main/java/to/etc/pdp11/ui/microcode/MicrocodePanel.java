@@ -20,10 +20,13 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableColumn;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -161,6 +164,14 @@ public final class MicrocodePanel extends JPanel {
 		m_table.setAutoCreateRowSorter(false);
 		m_table.getTableHeader().setReorderingAllowed(false);
 		m_table.setDefaultRenderer(Object.class, new RowRenderer());
+		//-- Double-clicking where the microword says it goes next goes there, as Next does.
+		m_table.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseClicked(MouseEvent e) {
+				if(e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e))
+					rowDoubleClicked(m_table.rowAtPoint(e.getPoint()));
+			}
+		});
 		for(int i = 0; i < MicrocodeTableModel.WIDTHS.length; i++) {
 			TableColumn c = m_table.getColumnModel().getColumn(i);
 			//-- Both, not just the preferred width: any auto-resize mode redistributes preferred
@@ -532,6 +543,12 @@ public final class MicrocodePanel extends JPanel {
 		select(to, true);
 	}
 
+	/** A row was double-clicked: follow it if it is one that says where to go next. */
+	void rowDoubleClicked(int row) {
+		if(row >= 0 && row < m_model.getRowCount() && m_model.getRow(row).next())
+			next();
+	}
+
 	/** Back the way we came. */
 	public void back() {
 		if(m_history.isEmpty() || m_code == null)
@@ -633,6 +650,7 @@ public final class MicrocodePanel extends JPanel {
 			if(c instanceof JComponent jc) {
 				String tip = r.differs() && m_selected.getOther() != null
 					? "This field is different in " + m_selected.getOther().getLabel()
+					: r.next() ? "Double-click to go to the next microword"
 					: column == 2 && !r.info().isEmpty() ? r.info() : null;
 				jc.setToolTipText(tip);
 			}

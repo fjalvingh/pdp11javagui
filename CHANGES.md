@@ -33,6 +33,10 @@
 
 ### Changes
 
+- **Double-clicking the next address in the microcode window goes there.** Either the decoded
+  **Next microword** row or the raw next-address field, as the Next instruction button does, and
+  Back comes back.
+
 - **The 11/05's microcode window says what each microword is for.** Which routine it belongs to -
   the instruction fetch, a source or destination addressing mode, an instruction such as `JSR`, a
   trap, a console switch, power fail, interrupt and bus-grant service - is in the status line and

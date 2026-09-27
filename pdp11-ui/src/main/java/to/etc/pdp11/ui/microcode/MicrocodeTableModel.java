@@ -27,8 +27,13 @@ public final class MicrocodeTableModel extends AbstractTableModel {
 	 * @param highlight the field is doing something this cycle
 	 * @param differs   the other revision of the same board has something else here, which is the
 	 *                  only way a wrongly chosen revision ever shows itself
+	 * @param next      the row says where the microword goes next, so double-clicking it goes there
 	 */
-	public record Row(String label, String bits, String info, boolean highlight, boolean differs) {
+	public record Row(String label, String bits, String info, boolean highlight, boolean differs, boolean next) {
+		public Row(String label, String bits, String info, boolean highlight, boolean differs) {
+			this(label, bits, info, highlight, differs, false);
+		}
+
 		public Row(String label, String bits, String info, boolean highlight) {
 			this(label, bits, info, highlight, false);
 		}
@@ -87,7 +92,7 @@ public final class MicrocodeTableModel extends AbstractTableModel {
 		//-- where a microtest is selected the hardware ORs its result into those bits, so what is
 		//-- printed is a branch base and not the successor: saying "next 162" flat would be
 		//-- stating as fact something that depends on the state of the machine.
-		rows.add(new Row("Next microword", "", nextAddress(mi), false));
+		rows.add(new Row("Next microword", "", nextAddress(mi), false, false, true));
 		//-- What it is for, above the bits: of everything here it is what a reader wants first,
 		//-- and highlighted like the 11/44's source code row, which is the same thing said
 		//-- another way. From DEC's microprogram flow, so a microword the flow leaves out has
@@ -117,7 +122,8 @@ public final class MicrocodeTableModel extends AbstractTableModel {
 			//-- ({@code FormMicroCodeU.pas:341}, where the default is -1 and the comparison can
 			//-- never be equal). A row that is always yellow says nothing; this one is not.
 			rows.add(new Row(f.name(), f.bitRange(), info,
-				f.hasDefault() && !mi.isDefault(f) && dontCare == null, differing.contains(f)));
+				f.hasDefault() && !mi.isDefault(f) && dontCare == null, differing.contains(f),
+				f == mi.getArchitecture().getNextAddressField()));
 		}
 		//-- Highlighted, like the Pascal highlights it: of everything here it is the one row that
 		//-- says what the microword is for. A document that does not carry the microassembler
