@@ -1,7 +1,7 @@
 package to.etc.pdp11.ui.log;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;

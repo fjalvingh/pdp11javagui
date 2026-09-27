@@ -40,6 +40,7 @@
     </developers>
 
     <modules>
+        <module>pdp11-common</module>
         <module>pdp11-gui</module>
     </modules>
 
@@ -102,6 +103,11 @@
                 <scope>import</scope>
             </dependency>
 
+            <dependency>
+                <groupId>to.etc.pdp11</groupId>
+                <artifactId>pdp11-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>to.etc.pdp11</groupId>
                 <artifactId>pdp11-core</artifactId>

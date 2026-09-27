@@ -8,15 +8,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import to.etc.pdp11.core.bits.BitfieldsDef;
 import to.etc.pdp11.core.bits.BitfieldsDefs;
-import to.etc.pdp11.core.disas.DecodedInstruction;
 import to.etc.pdp11.core.machine.MachineDescription;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.NumberConverter;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
 
 import java.util.Locale;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -92,18 +89,5 @@ class DefaultLocaleTest {
 		defs.add(new BitfieldsDef("Bits.RLCS"));
 		assertNotNull(defs.findByName("BITS.RLCS"), "case-insensitive means ASCII-insensitive");
 		assertNotNull(defs.findByName("bits.rlcs"));
-	}
-
-	@Test
-	void aMnemonicIsStillAsciiInTurkey() {
-		Locale.setDefault(new Locale("tr", "TR"));
-		assertEquals("inc     r0", new DecodedInstruction(0, 1, "INC", "r0", true).text());
-		assertEquals("mfpi", new DecodedInstruction(0, 1, "MFPI", "", true).textTrimmed());
-	}
-
-	@Test
-	void hexStillComesOutInAsciiDigitsInTurkey() {
-		Locale.setDefault(new Locale("tr", "TR"));
-		assertEquals("FF", NumberConverter.format(NumberConverter.Base.HEX, 255));
 	}
 }

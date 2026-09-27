@@ -1,8 +1,8 @@
 package to.etc.pdp11.app;
 
 import com.formdev.flatlaf.FlatDarculaLaf;
-import to.etc.pdp11.core.util.AppVersion;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.AppVersion;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.AppIcon;
 import to.etc.pdp11.ui.MainWindow;

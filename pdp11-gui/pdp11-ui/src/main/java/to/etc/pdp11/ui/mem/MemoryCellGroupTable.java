@@ -1,12 +1,12 @@
 package to.etc.pdp11.ui.mem;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellListener;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellListener;
+import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 

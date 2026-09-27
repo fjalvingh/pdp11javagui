@@ -1,7 +1,7 @@
 package to.etc.pdp11.ui.log;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 
 import java.util.ArrayList;
 import java.util.Collections;

@@ -1,18 +1,18 @@
 package to.etc.pdp11.core.memtest;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.console.ConsoleConnection;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.SimhConsole;
 import to.etc.pdp11.core.fake.FakeSimh;
 import to.etc.pdp11.core.io.FakeTransport;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.ProgressMonitor;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.ProgressMonitor;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.util.Random;
 

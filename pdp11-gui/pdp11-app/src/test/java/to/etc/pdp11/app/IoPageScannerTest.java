@@ -2,16 +2,16 @@ package to.etc.pdp11.app;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.machine.IoPageScanner;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.ProgressMonitor;
 import to.etc.pdp11.ui.AppContext;
 
 import java.nio.file.Path;
@@ -79,7 +79,7 @@ class IoPageScannerTest {
 
 			//-- A named cell says which device it belongs to, which is the point of the prefix.
 			MemoryCell psw = f.target().findByAddress(
-				to.etc.pdp11.core.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777776));
+				to.etc.pdp11.common.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777776));
 			assertNotNull(psw, "the PSW answers on any machine");
 			assertEquals("CPU.PSW", psw.getName());
 			assertEquals("Processor Status Word", psw.getInfo());
@@ -111,7 +111,7 @@ class IoPageScannerTest {
 			//-- 017772200 is still MMU.SIPDR0. That is a real name for a real register and the
 			//-- scanner is right to use it.
 			MemoryCell sipdr0 = f.target().findByAddress(
-				to.etc.pdp11.core.addr.Address.of(MemoryAddressType.PHYSICAL22, 017772200));
+				to.etc.pdp11.common.addr.Address.of(MemoryAddressType.PHYSICAL22, 017772200));
 			if(sipdr0 != null)
 				assertEquals("MMU.SIPDR0", sipdr0.getName());
 

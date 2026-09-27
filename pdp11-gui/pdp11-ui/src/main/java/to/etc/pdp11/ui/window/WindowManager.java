@@ -307,7 +307,7 @@ public final class WindowManager {
 	private void log(String message) {
 		AppContext ctx = m_context;
 		if(ctx != null)
-			ctx.getLogger().log(to.etc.pdp11.core.util.LogChannel.OTHER, message);
+			ctx.getLogger().log(to.etc.pdp11.common.util.LogChannel.OTHER, message);
 	}
 
 	/** Note where everything is. Called on the way out. */

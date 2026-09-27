@@ -7,8 +7,8 @@ import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TransportConfig;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
 import to.etc.pdp11.core.mmu.CpuMode;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.ui.AppContext;
@@ -420,8 +420,8 @@ class MmuPanelTest {
 	/** Write one I/O page register into the machine, the way any window does. */
 	private static void deposit(AppContext ctx, int addr16, int value) {
 		ctx.onConsole("deposit", console -> console.deposit(
-			to.etc.pdp11.core.addr.Address.of(to.etc.pdp11.core.addr.MemoryAddressType.PHYSICAL16, addr16)
-				.withWidth(to.etc.pdp11.core.addr.MemoryAddressType.PHYSICAL22), value));
+			to.etc.pdp11.common.addr.Address.of(to.etc.pdp11.common.addr.MemoryAddressType.PHYSICAL16, addr16)
+				.withWidth(to.etc.pdp11.common.addr.MemoryAddressType.PHYSICAL22), value));
 	}
 
 	/** Wait for something the command thread will get round to. */

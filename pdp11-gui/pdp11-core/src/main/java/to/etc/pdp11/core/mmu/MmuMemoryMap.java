@@ -1,8 +1,8 @@
 package to.etc.pdp11.core.mmu;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.util.Octal;
 
 import java.util.ArrayList;
 import java.util.List;

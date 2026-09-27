@@ -7,8 +7,8 @@ import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TextChannel;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.TerminalProfile;
-import to.etc.pdp11.core.util.AppVersion;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.AppVersion;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
@@ -317,14 +317,14 @@ public final class MainWindow extends JFrame {
 	 */
 	private JMenu buildRegisterGroupMenu() {
 		JMenu menu = new JMenu("Device registers");
-		java.util.List<to.etc.pdp11.core.mem.MemoryCellGroup> groups = RegisterGroupWindow.groupsOf(m_context);
+		java.util.List<to.etc.pdp11.common.mem.MemoryCellGroup> groups = RegisterGroupWindow.groupsOf(m_context);
 		if(groups.isEmpty()) {
 			JMenuItem none = new JMenuItem("No machine description loaded");
 			none.setEnabled(false);
 			menu.add(none);
 			return menu;
 		}
-		for(to.etc.pdp11.core.mem.MemoryCellGroup group : groups) {
+		for(to.etc.pdp11.common.mem.MemoryCellGroup group : groups) {
 			JMenuItem item = new JMenuItem(group.getGroupName());
 			if(!group.getGroupInfo().isEmpty())
 				item.setToolTipText(group.getGroupInfo());

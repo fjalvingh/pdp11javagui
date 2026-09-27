@@ -1,16 +1,16 @@
 package to.etc.pdp11.core.machine;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.bits.BitfieldDef;
 import to.etc.pdp11.core.bits.BitfieldsDef;
 import to.etc.pdp11.core.bits.BitfieldsDefs;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Octal;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

@@ -1,11 +1,11 @@
 package to.etc.pdp11.ui.disas;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.core.disas.DisassemblyListing;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.common.disas.DisassemblyListing;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MachineState;

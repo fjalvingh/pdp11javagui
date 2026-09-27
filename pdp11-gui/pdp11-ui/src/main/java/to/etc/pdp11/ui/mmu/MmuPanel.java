@@ -7,7 +7,7 @@ import to.etc.pdp11.core.mmu.AccessSpace;
 import to.etc.pdp11.core.mmu.CpuMode;
 import to.etc.pdp11.core.mmu.MmuMemoryMap;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.ProgressDialog;
 import to.etc.pdp11.ui.UiColors;

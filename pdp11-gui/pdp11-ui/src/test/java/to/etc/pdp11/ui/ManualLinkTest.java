@@ -1,7 +1,7 @@
 package to.etc.pdp11.ui;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.util.AppVersion;
+import to.etc.pdp11.common.util.AppVersion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;

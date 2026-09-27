@@ -1,10 +1,10 @@
 package to.etc.pdp11.core.mmu;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

@@ -2,9 +2,9 @@ package to.etc.pdp11.app;
 
 import to.etc.pdp11.core.bits.BitfieldsDefs;
 import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Scheduler;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.settings.SettingsStore;
 import to.etc.pdp11.ui.window.WindowManager;

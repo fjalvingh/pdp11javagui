@@ -2,13 +2,13 @@ package to.etc.pdp11.core.conn;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.SimhConsole;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.io.File;
 import java.nio.file.Files;

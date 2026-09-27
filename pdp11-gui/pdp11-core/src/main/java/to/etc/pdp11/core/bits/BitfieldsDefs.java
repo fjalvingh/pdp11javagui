@@ -1,7 +1,7 @@
 package to.etc.pdp11.core.bits;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 
 import java.util.ArrayList;
 import java.util.Collections;

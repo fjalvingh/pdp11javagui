@@ -10,8 +10,8 @@ import to.etc.pdp11.core.console.Pdp1144Console;
 import to.etc.pdp11.core.console.Pdp1144Firmware;
 import to.etc.pdp11.core.fake.FakePdp11;
 import to.etc.pdp11.core.io.FakeTransport;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -116,7 +116,7 @@ class SimhConsolePanelTest {
 
 			//-- Something happens with the window shut.
 			ctx.onConsole("examine", console -> console.examine(
-				to.etc.pdp11.core.addr.Address.of(to.etc.pdp11.core.addr.MemoryAddressType.PHYSICAL22, 01000)));
+				to.etc.pdp11.common.addr.Address.of(to.etc.pdp11.common.addr.MemoryAddressType.PHYSICAL22, 01000)));
 			until("the examine to reach the channel",
 				() -> ctx.getConnectionManager().getProtocolChannel().getText().contains("E 1000"));
 			assertEquals(whileHidden, transcript(panel), "a hidden window is not being updated");

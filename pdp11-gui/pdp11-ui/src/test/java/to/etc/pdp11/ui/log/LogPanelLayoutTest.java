@@ -2,7 +2,7 @@ package to.etc.pdp11.ui.log;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.UiRenderer;
 
 import java.awt.Rectangle;

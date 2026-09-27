@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.memfile.MemoryFileFormat;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.memfile.MemoryFileFormat;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -107,7 +107,7 @@ class MemoryDumperPanelTest {
 			m.getConnection().run(() -> {
 				for(int i = 0; i < 4; i++) {
 					m.getConsole().deposit(
-						to.etc.pdp11.core.addr.Address.of(m.getConsole().physicalAddressType(), 01000 + 2L * i),
+						to.etc.pdp11.common.addr.Address.of(m.getConsole().physicalAddressType(), 01000 + 2L * i),
 						0100 + i);
 				}
 			});

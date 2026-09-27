@@ -1,8 +1,8 @@
 package to.etc.pdp11.core.console;
 
 import to.etc.pdp11.core.io.PhysicalTransport;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

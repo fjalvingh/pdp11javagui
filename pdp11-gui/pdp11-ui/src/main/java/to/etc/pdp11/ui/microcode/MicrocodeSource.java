@@ -1,11 +1,11 @@
 package to.etc.pdp11.ui.microcode;
 
-import to.etc.pdp11.core.microcode.Kd11bFields;
-import to.etc.pdp11.core.microcode.Kd11bMicrocode;
-import to.etc.pdp11.core.microcode.Microcode;
-import to.etc.pdp11.core.microcode.MicrocodeArchitecture;
-import to.etc.pdp11.core.microcode.Pdp1144Fields;
-import to.etc.pdp11.core.microcode.Pdp1144Microcode;
+import to.etc.pdp11.common.microcode.Kd11bFields;
+import to.etc.pdp11.common.microcode.Kd11bMicrocode;
+import to.etc.pdp11.common.microcode.Microcode;
+import to.etc.pdp11.common.microcode.MicrocodeArchitecture;
+import to.etc.pdp11.common.microcode.Pdp1144Fields;
+import to.etc.pdp11.common.microcode.Pdp1144Microcode;
 
 import java.io.IOException;
 import java.nio.file.Path;

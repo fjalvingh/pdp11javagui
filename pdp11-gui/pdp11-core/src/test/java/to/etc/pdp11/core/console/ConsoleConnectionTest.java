@@ -2,7 +2,7 @@ package to.etc.pdp11.core.console;
 
 import org.junit.jupiter.api.Test;
 import to.etc.pdp11.core.io.PhysicalTransport;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -169,12 +169,12 @@ class ConsoleConnectionTest {
 		List<String> logged = new java.util.concurrent.CopyOnWriteArrayList<>();
 		ConsoleConnection c = new ConsoleConnection(t, new Logger() {
 			@Override
-			public boolean isEnabled(to.etc.pdp11.core.util.LogChannel channel) {
+			public boolean isEnabled(to.etc.pdp11.common.util.LogChannel channel) {
 				return true;
 			}
 
 			@Override
-			public void log(to.etc.pdp11.core.util.LogChannel channel, String message) {
+			public void log(to.etc.pdp11.common.util.LogChannel channel, String message) {
 				logged.add(message);
 			}
 		});

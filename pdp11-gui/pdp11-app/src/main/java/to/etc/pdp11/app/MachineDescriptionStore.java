@@ -1,8 +1,8 @@
 package to.etc.pdp11.app;
 
 import to.etc.pdp11.core.machine.MachineDescription;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
 import to.etc.pdp11.ui.AppContext;
 
 import java.io.IOException;

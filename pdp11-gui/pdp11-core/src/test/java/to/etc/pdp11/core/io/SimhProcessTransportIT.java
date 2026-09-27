@@ -2,7 +2,7 @@ package to.etc.pdp11.core.io;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

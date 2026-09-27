@@ -1,10 +1,10 @@
 package to.etc.pdp11.core.console;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.util.List;
 

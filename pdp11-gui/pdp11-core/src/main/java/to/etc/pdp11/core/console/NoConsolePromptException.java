@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.console;
 
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.Logger;
 
 import java.util.Locale;
 
@@ -43,19 +43,19 @@ public class NoConsolePromptException extends ConsoleException {
 	 * the in-app window, so the failure was invisible to anything watching the process.
 	 */
 	public void logDiagnostics(Logger logger) {
-		logger.log(to.etc.pdp11.core.util.LogChannel.OTHER, getMessage());
+		logger.log(to.etc.pdp11.common.util.LogChannel.OTHER, getMessage());
 		//-- Cap what gets printed: a buffer big enough for the tail to matter is itself the
 		//-- interesting fact, and the whole of it is not.
 		String tail = m_unconsumedInput.length() <= 500
 			? m_unconsumedInput
 			: m_unconsumedInput.substring(m_unconsumedInput.length() - 500);
-		logger.log(to.etc.pdp11.core.util.LogChannel.OTHER,
+		logger.log(to.etc.pdp11.common.util.LogChannel.OTHER,
 			String.format(Locale.ROOT, "  unconsumed raw input (%d bytes, last %d shown): \"%s\"",
 				m_unconsumedInput.length(), tail.length(), printable(tail)));
-		logger.log(to.etc.pdp11.core.util.LogChannel.OTHER,
+		logger.log(to.etc.pdp11.common.util.LogChannel.OTHER,
 			String.format(Locale.ROOT, "  %d answer(s) since the command was sent:", m_answers.size()));
 		for(int i = 0; i < m_answers.size(); i++) {
-			logger.log(to.etc.pdp11.core.util.LogChannel.OTHER, "    #" + i + ": " + m_answers.get(i).asText());
+			logger.log(to.etc.pdp11.common.util.LogChannel.OTHER, "    #" + i + ": " + m_answers.get(i).asText());
 		}
 	}
 

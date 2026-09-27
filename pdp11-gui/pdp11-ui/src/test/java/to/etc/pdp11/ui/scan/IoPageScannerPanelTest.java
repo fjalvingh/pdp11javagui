@@ -3,12 +3,12 @@ package to.etc.pdp11.ui.scan;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.machine.IoPageScanner;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -106,7 +106,7 @@ class IoPageScannerPanelTest {
 
 			//-- A register the CPU always has, found by the scan and named by the MMU's own group.
 			MemoryCell psw = panel.getGroup().findByAddress(
-				to.etc.pdp11.core.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777776));
+				to.etc.pdp11.common.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777776));
 			assertTrue(psw != null && psw.getPdpValue().isKnown(), "the PSW answered");
 		} finally {
 			ctx.getConnectionManager().close();
@@ -193,7 +193,7 @@ class IoPageScannerPanelTest {
 			String[] infos = {"Receiver status", "Receiver buffer", "Transmitter status", "Transmitter buffer"};
 			for(int i = 0; i < names.length; i++) {
 				MemoryCell mc = panel.getGroup().add(
-					to.etc.pdp11.core.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777560L + 2L * i));
+					to.etc.pdp11.common.addr.Address.of(MemoryAddressType.PHYSICAL22, 017777560L + 2L * i));
 				mc.setName(names[i]);
 				mc.setInfo(infos[i]);
 				mc.setPdpValue(CellValue.of(0100 * (i + 1)));
@@ -201,7 +201,7 @@ class IoPageScannerPanelTest {
 			}
 			for(int i = 0; i < 3; i++) {
 				MemoryCell mc = panel.getGroup().add(
-					to.etc.pdp11.core.addr.Address.of(MemoryAddressType.PHYSICAL22, 017772000L + 2L * i));
+					to.etc.pdp11.common.addr.Address.of(MemoryAddressType.PHYSICAL22, 017772000L + 2L * i));
 				mc.setName("device_172000.reg_" + Integer.toOctalString(2 * i));
 				mc.setInfo("device base at 172000, word #" + i + ", octal offset +" + Integer.toOctalString(2 * i));
 				mc.setPdpValue(CellValue.of(0));

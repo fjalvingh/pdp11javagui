@@ -13,12 +13,19 @@
     <artifactId>pdp11-core</artifactId>
     <name>pdp11-core</name>
     <description>
-        Model, transports, console protocol, disassembler, memory loaders and disc images.
+        Transports, console protocols, the simulated machines and machine descriptions: what
+        talks to a PDP-11. The model it talks about - addresses, memory cells, the disassembler,
+        memory files - is in pdp11-common.
         No Swing, no AWT, no display: everything here is unit-testable headlessly against the
         ported Fake* simulators. See PLAN.md section 2.
     </description>
 
     <dependencies>
+        <dependency>
+            <groupId>to.etc.pdp11</groupId>
+            <artifactId>pdp11-common</artifactId>
+        </dependency>
+
         <!--
             The serial transport. It sits on the classpath, not the module path, so the
             limit-modules setting below does not apply to it; jSerialComm's own API uses

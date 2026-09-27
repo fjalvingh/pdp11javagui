@@ -1,11 +1,11 @@
 package to.etc.pdp11.core.console;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.util.ProgressMonitor;
 
 import java.util.EnumSet;
 

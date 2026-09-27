@@ -1,9 +1,9 @@
 package to.etc.pdp11.core.fake;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.util.Octal;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.util.Octal;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.util.List;
 import java.util.Locale;

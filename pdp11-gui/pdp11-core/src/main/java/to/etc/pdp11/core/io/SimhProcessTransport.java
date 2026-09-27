@@ -1,7 +1,7 @@
 package to.etc.pdp11.core.io;
 
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;

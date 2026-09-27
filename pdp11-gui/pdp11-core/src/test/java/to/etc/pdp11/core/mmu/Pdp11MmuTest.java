@@ -2,12 +2,12 @@ package to.etc.pdp11.core.mmu;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

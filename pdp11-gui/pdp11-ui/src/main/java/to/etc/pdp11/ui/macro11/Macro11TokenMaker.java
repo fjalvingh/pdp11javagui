@@ -43,7 +43,7 @@ public final class Macro11TokenMaker extends AbstractTokenMaker {
 	 * The PDP-11 instruction set, as MACRO-11 spells it.
 	 *
 	 * <p>Deliberately the mnemonics rather than the opcodes: this is a text editor and it knows
-	 * nothing about encoding. {@link to.etc.pdp11.core.disas.Disassembler} is the other half of
+	 * nothing about encoding. {@link to.etc.pdp11.common.disas.Disassembler} is the other half of
 	 * that and is a different problem.</p>
 	 */
 	private static final String[] INSTRUCTIONS = {

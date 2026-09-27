@@ -1,13 +1,13 @@
 package to.etc.pdp11.ui.mem;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 
@@ -282,7 +282,7 @@ public final class MemoryPanel extends JPanel {
 				Files.writeString(file, script, StandardCharsets.US_ASCII);
 				return file;
 			},
-			written -> m_context.getLogger().log(to.etc.pdp11.core.util.LogChannel.OTHER, "Wrote " + written),
+			written -> m_context.getLogger().log(to.etc.pdp11.common.util.LogChannel.OTHER, "Wrote " + written),
 			null);
 	}
 

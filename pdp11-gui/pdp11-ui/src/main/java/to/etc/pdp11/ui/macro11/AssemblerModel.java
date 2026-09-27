@@ -1,12 +1,12 @@
 package to.etc.pdp11.ui.macro11;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.macro11.Macro11;
-import to.etc.pdp11.core.macro11.Macro11Listing;
-import to.etc.pdp11.core.macro11.Macro11ListingParser;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.macro11.Macro11;
+import to.etc.pdp11.common.macro11.Macro11Listing;
+import to.etc.pdp11.common.macro11.Macro11ListingParser;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.ProgressDialog;
 

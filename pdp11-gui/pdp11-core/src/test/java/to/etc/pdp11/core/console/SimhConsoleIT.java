@@ -2,16 +2,16 @@ package to.etc.pdp11.core.console;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.io.PhysicalTransport;
 import to.etc.pdp11.core.io.SimhProcessTransport;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.ProgressMonitor;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.ProgressMonitor;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.io.IOException;
 import java.nio.file.Files;

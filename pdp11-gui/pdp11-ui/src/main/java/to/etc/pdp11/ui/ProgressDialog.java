@@ -1,7 +1,7 @@
 package to.etc.pdp11.ui;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.util.ProgressMonitor;
 
 import javax.swing.JButton;
 import javax.swing.JComponent;

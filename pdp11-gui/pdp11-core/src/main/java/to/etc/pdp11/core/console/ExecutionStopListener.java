@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.console;
 
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 
 /**
  * Told when the machine stops - whether because it was asked to, or because the program ran

@@ -1,6 +1,6 @@
 package to.etc.pdp11.ui;
 
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 

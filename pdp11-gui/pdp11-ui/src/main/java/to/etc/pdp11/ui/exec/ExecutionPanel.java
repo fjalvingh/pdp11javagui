@@ -1,14 +1,14 @@
 package to.etc.pdp11.ui.exec;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
-import to.etc.pdp11.core.macro11.Macro11;
+import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.macro11.AssemblerModel;

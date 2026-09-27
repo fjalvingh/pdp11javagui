@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.mmu;
 
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 
 /**
  * What came of translating a virtual address.

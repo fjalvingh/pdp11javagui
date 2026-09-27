@@ -1,16 +1,16 @@
 package to.etc.pdp11.ui.memtest;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.memtest.ChipSize;
 import to.etc.pdp11.core.memtest.MemoryTestResult;
 import to.etc.pdp11.core.memtest.MemoryTester;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.ProgressDialog;
@@ -304,7 +304,7 @@ public final class MemoryTestPanel extends JPanel {
 
 	@FunctionalInterface
 	private interface TestRun {
-		MemoryTestResult run(MemoryTester tester, to.etc.pdp11.core.util.ProgressMonitor pm) throws ConsoleException;
+		MemoryTestResult run(MemoryTester tester, to.etc.pdp11.common.util.ProgressMonitor pm) throws ConsoleException;
 	}
 
 	private void run(String what, TestRun work) {

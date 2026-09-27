@@ -2,7 +2,7 @@ package to.etc.pdp11.ui.mem;
 
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 

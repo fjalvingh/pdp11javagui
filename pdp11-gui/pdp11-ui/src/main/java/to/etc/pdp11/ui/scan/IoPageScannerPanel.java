@@ -1,13 +1,13 @@
 package to.etc.pdp11.ui.scan;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.machine.IoPageScanner;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.util.ProgressMonitor;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.mem.MemoryCellGroupList;

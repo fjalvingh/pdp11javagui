@@ -43,9 +43,9 @@ cp "$here/pascal-disas-dump.pas" "$work/"
 "$work/pascal-disas-dump" > "$work/pascal.txt"
 
 cat > "$work/JavaDisasDump.java" <<'JAVA'
-import to.etc.pdp11.core.disas.DecodedInstruction;
-import to.etc.pdp11.core.disas.Disassembler;
-import to.etc.pdp11.core.disas.MemoryImage;
+import to.etc.pdp11.common.disas.DecodedInstruction;
+import to.etc.pdp11.common.disas.Disassembler;
+import to.etc.pdp11.common.disas.MemoryImage;
 
 public class JavaDisasDump {
 	public static void main(String[] args) {
@@ -61,9 +61,9 @@ public class JavaDisasDump {
 }
 JAVA
 
-classes=$root/pdp11-gui/pdp11-core/target/classes
+classes=$root/pdp11-common/target/classes
 if [ ! -d "$classes" ]; then
-	echo "$classes does not exist; run ./mvnw -pl :pdp11-core compile first" >&2
+	echo "$classes does not exist; run ./mvnw -pl pdp11-common compile first" >&2
 	exit 1
 fi
 java -cp "$classes" "$work/JavaDisasDump.java" > "$work/java.txt"

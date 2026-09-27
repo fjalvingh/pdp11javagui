@@ -1,6 +1,6 @@
 package to.etc.pdp11.ui.log;
 
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 
 /**
  * One line in the log: when, on which channel, and what.

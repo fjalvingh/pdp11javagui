@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.fake;
 
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.util.Random;
 

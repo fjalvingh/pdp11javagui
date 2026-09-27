@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.conn;
 
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 
 /**
  * Which console dialect is on the other end.

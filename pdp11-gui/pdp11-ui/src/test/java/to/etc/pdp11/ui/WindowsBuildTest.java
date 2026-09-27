@@ -3,7 +3,7 @@ package to.etc.pdp11.ui;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.core.util.LogChannel;
+import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.dump.MemoryDumperWindow;
@@ -819,8 +819,8 @@ class WindowsBuildTest {
 			onEdt(() -> ctx.getWindowManager().open(WindowType.EXECUTION));
 			//-- The panel updates from the machine state, so a state change must reach it again.
 			onEdt(() -> {
-				ctx.getMachineState().stopped(to.etc.pdp11.core.addr.Address.of(
-					to.etc.pdp11.core.addr.MemoryAddressType.VIRTUAL, 0777));
+				ctx.getMachineState().stopped(to.etc.pdp11.common.addr.Address.of(
+					to.etc.pdp11.common.addr.MemoryAddressType.VIRTUAL, 0777));
 				return null;
 			});
 			assertEquals("000777", w.getPanel().getCurrentPcField().getText(),
@@ -842,8 +842,8 @@ class WindowsBuildTest {
 		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
 		AppContext ctx = context(dir);
 		RegisterGroupWindow.register(ctx);
-		to.etc.pdp11.core.mem.MemoryCellGroup g = ctx.getMemoryCellGroups()
-			.addGroup(to.etc.pdp11.core.addr.MemoryAddressType.PHYSICAL16, "DL11");
+		to.etc.pdp11.common.mem.MemoryCellGroup g = ctx.getMemoryCellGroups()
+			.addGroup(to.etc.pdp11.common.addr.MemoryAddressType.PHYSICAL16, "DL11");
 		g.setUsageTag("machine");
 		g.add(0177560, 4);
 		try {

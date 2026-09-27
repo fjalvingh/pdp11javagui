@@ -1,17 +1,17 @@
 package to.etc.pdp11.app;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.bits.BitfieldDef;
 import to.etc.pdp11.core.bits.BitfieldsDef;
 import to.etc.pdp11.core.bits.BitfieldsDefs;
 import to.etc.pdp11.core.machine.M4Preprocessor;
 import to.etc.pdp11.core.machine.MachineDescription;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.Logger;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

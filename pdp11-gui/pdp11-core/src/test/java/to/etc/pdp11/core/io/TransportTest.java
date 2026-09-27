@@ -1,9 +1,9 @@
 package to.etc.pdp11.core.io;
 
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.fake.FakePdp11Odt;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -357,7 +357,7 @@ class TransportTest {
 
 	@Test
 	void thePortProbeStartsAtTheFamiliarPairAndStepsInTwos() throws IOException {
-		SimhProcessTransport.Ports p = SimhProcessTransport.findFreePorts(to.etc.pdp11.core.util.Logger.NULL);
+		SimhProcessTransport.Ports p = SimhProcessTransport.findFreePorts(to.etc.pdp11.common.util.Logger.NULL);
 		assertEquals(p.remote() + 1, p.console(), "the pair must stay adjacent");
 		assertEquals(0, (p.remote() - SimhProcessTransport.REMOTE_PORT_BASE) % 2);
 		assertTrue(p.remote() >= SimhProcessTransport.REMOTE_PORT_BASE);
@@ -378,7 +378,7 @@ class TransportTest {
 				return;                                     // something else already has it
 			}
 			SimhProcessTransport.Ports p =
-				SimhProcessTransport.findFreePorts(to.etc.pdp11.core.util.Logger.NULL);
+				SimhProcessTransport.findFreePorts(to.etc.pdp11.common.util.Logger.NULL);
 			assertNotEquals(SimhProcessTransport.REMOTE_PORT_BASE, p.remote());
 			assertEquals(p.remote() + 1, p.console());
 		}
@@ -440,7 +440,7 @@ class TransportTest {
 
 		TransportException x = org.junit.jupiter.api.Assertions.assertThrows(TransportException.class,
 			() -> SimhProcessTransport.launch(script.toString(), null, dir.resolve("tmp"),
-				to.etc.pdp11.core.util.Logger.NULL));
+				to.etc.pdp11.common.util.Logger.NULL));
 
 		assertTrue(x.getMessage().contains("could not bind the remote console"),
 			"the one diagnostic there was is missing from: " + x.getMessage());

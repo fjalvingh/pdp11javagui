@@ -2,14 +2,14 @@ package to.etc.pdp11.ui;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.core.bits.BitfieldsDefs;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Scheduler;
 import to.etc.pdp11.ui.log.UiLogger;
 import to.etc.pdp11.ui.settings.SettingsStore;
 import to.etc.pdp11.ui.window.WindowKey;

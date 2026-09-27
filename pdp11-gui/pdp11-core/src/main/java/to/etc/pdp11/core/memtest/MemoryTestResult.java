@@ -1,6 +1,6 @@
 package to.etc.pdp11.core.memtest;
 
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 
 import java.util.List;
 

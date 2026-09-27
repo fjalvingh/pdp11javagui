@@ -1,18 +1,18 @@
 package to.etc.pdp11.core.console;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.CpuRegisters;
-import to.etc.pdp11.core.addr.MemoryAddressType;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.CpuRegisters;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
 import to.etc.pdp11.core.mmu.TranslationResult;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Octal;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Octal;
+import to.etc.pdp11.common.util.ProgressMonitor;
 
 import java.util.EnumSet;
 import java.util.List;

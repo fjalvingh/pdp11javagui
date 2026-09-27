@@ -3,15 +3,15 @@ package to.etc.pdp11.ui.load;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.addr.MemoryAddressType;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.memfile.MemoryDumper;
-import to.etc.pdp11.core.memfile.MemoryFileFormat;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.memfile.MemoryDumper;
+import to.etc.pdp11.common.memfile.MemoryFileFormat;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -193,7 +193,7 @@ class MemoryLoaderPanelTest {
 			other.add(Address.of(type, 01000));
 			other.add(Address.of(type, 01002));
 			m.getConnection().run(() -> m.getConsole().examine(other, false,
-				to.etc.pdp11.core.util.ProgressMonitor.NULL));
+				to.etc.pdp11.common.util.ProgressMonitor.NULL));
 			Edt.run(() -> {
 			});
 

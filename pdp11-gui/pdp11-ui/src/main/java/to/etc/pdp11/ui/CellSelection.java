@@ -1,6 +1,6 @@
 package to.etc.pdp11.ui;
 
-import to.etc.pdp11.core.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCell;
 
 import javax.swing.SwingUtilities;
 import java.util.List;

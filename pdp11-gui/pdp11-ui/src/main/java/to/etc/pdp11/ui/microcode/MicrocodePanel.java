@@ -1,12 +1,12 @@
 package to.etc.pdp11.ui.microcode;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.microcode.MicroInstruction;
-import to.etc.pdp11.core.microcode.Microcode;
-import to.etc.pdp11.core.microcode.MicrowordRole;
-import to.etc.pdp11.core.microcode.MicrocodeField;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Octal;
+import to.etc.pdp11.common.microcode.MicroInstruction;
+import to.etc.pdp11.common.microcode.Microcode;
+import to.etc.pdp11.common.microcode.MicrowordRole;
+import to.etc.pdp11.common.microcode.MicrocodeField;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 

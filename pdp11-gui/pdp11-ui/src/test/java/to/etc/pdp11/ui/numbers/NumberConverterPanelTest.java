@@ -2,7 +2,7 @@ package to.etc.pdp11.ui.numbers;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import to.etc.pdp11.core.util.NumberConverter.Base;
+import to.etc.pdp11.common.util.NumberConverter.Base;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.UiRenderer;
 

@@ -19,10 +19,10 @@ import to.etc.pdp11.core.io.PhysicalTransport;
 import to.etc.pdp11.core.io.SerialTransport;
 import to.etc.pdp11.core.io.SimhProcessTransport;
 import to.etc.pdp11.core.io.TelnetTransport;
-import to.etc.pdp11.core.mem.MemoryCellGroups;
-import to.etc.pdp11.core.util.LogChannel;
-import to.etc.pdp11.core.util.Logger;
-import to.etc.pdp11.core.util.Scheduler;
+import to.etc.pdp11.common.mem.MemoryCellGroups;
+import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.common.util.Logger;
+import to.etc.pdp11.common.util.Scheduler;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

@@ -1,7 +1,7 @@
 package to.etc.pdp11.core.console;
 
-import to.etc.pdp11.core.addr.Address;
-import to.etc.pdp11.core.mem.CellValue;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.mem.CellValue;
 
 /**
  * One decoded thing a console said.

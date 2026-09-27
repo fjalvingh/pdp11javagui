@@ -1,8 +1,8 @@
 package to.etc.pdp11.ui.numbers;
 
 import net.miginfocom.swing.MigLayout;
-import to.etc.pdp11.core.util.NumberConverter;
-import to.etc.pdp11.core.util.NumberConverter.Base;
+import to.etc.pdp11.common.util.NumberConverter;
+import to.etc.pdp11.common.util.NumberConverter.Base;
 import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.AbstractAction;

@@ -1,13 +1,13 @@
 package to.etc.pdp11.core.memtest;
 
-import to.etc.pdp11.core.addr.Address;
+import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleException;
-import to.etc.pdp11.core.mem.CellValue;
-import to.etc.pdp11.core.mem.MemoryCell;
-import to.etc.pdp11.core.mem.MemoryCellGroup;
-import to.etc.pdp11.core.util.Octal;
-import to.etc.pdp11.core.util.ProgressMonitor;
+import to.etc.pdp11.common.mem.CellValue;
+import to.etc.pdp11.common.mem.MemoryCell;
+import to.etc.pdp11.common.mem.MemoryCellGroup;
+import to.etc.pdp11.common.util.Octal;
+import to.etc.pdp11.common.util.ProgressMonitor;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
