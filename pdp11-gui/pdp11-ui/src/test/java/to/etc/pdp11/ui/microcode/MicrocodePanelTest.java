@@ -4,6 +4,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.common.microcode.Kd11bFields;
+import to.etc.pdp11.common.microcode.MicrocodeBrowser.SearchBy;
+import to.etc.pdp11.common.microcode.MicrocodeSource;
+import to.etc.pdp11.common.microcode.MicrowordRow;
 import to.etc.pdp11.common.microcode.Pdp1144Fields;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
@@ -125,7 +128,7 @@ class MicrocodePanelTest {
 		List<String> highlighted = Edt.call(() -> {
 			List<String> l = new java.util.ArrayList<>();
 			for(int i = 0; i < panel.getModel().getRowCount(); i++) {
-				MicrocodeTableModel.Row r = panel.getModel().getRow(i);
+				MicrowordRow r = panel.getModel().getRow(i);
 				if(r.highlight())
 					l.add(r.label());
 			}
@@ -143,11 +146,11 @@ class MicrocodePanelTest {
 		assertEquals("2-J", panel.getCurrent().getSymbolicTag());
 		int listingLine = panel.getCurrent().getLineNumber();
 
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("2-J"));
 		assertEquals(0732, panel.getCurrent().getAddress());
 
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.LINE));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.LINE));
 		Edt.run(() -> panel.searchFor(String.valueOf(listingLine)));
 		assertEquals(0732, panel.getCurrent().getAddress());
 	}
@@ -159,7 +162,7 @@ class MicrocodePanelTest {
 		assertEquals(1018, Edt.call(() -> panel.getSearchBox().getItemCount()));
 		assertEquals("0000", Edt.call(() -> panel.getSearchBox().getItemAt(0)));
 
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		assertEquals(1018, Edt.call(() -> panel.getSearchBox().getItemCount()));
 		//-- Tag order is flow order, so the first entry is the first block of page 1.
 		assertEquals("1-A", Edt.call(() -> panel.getSearchBox().getItemAt(0)));
@@ -333,7 +336,7 @@ class MicrocodePanelTest {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
 
 		//-- U1-1 is one of the five where rev E has AUX=1, CKO=0 and rev F has AUX=0, CKO=1.
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("U1-1"));
 		assertEquals(List.of(Kd11bFields.AUX, Kd11bFields.CKO), markedRows(panel));
 
@@ -357,7 +360,7 @@ class MicrocodePanelTest {
 	@Test
 	void aFieldThatIsNotWhatTheMachineDoesSaysSo(@TempDir Path dir) {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("U1-1"));
 
 		String alu = infoOf(panel, Kd11bFields.ALU);
@@ -390,7 +393,7 @@ class MicrocodePanelTest {
 	void doubleClickingTheNextAddressFollowsIt(@TempDir Path dir) {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
 		Edt.run(() -> UiRenderer.layOut(panel, WIDTH, HEIGHT));
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("B-1"));
 
 		doubleClick(panel, "Next microword");
@@ -431,7 +434,7 @@ class MicrocodePanelTest {
 	@Test
 	void anElevenOhFiveMicrowordSaysWhatItIsFor(@TempDir Path dir) {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("ET-2"));
 
 		String status = Edt.call(panel::getStatusText);
@@ -466,7 +469,7 @@ class MicrocodePanelTest {
 		assertFalse(opened.contains("problem"), opened);
 		assertFalse(opened.contains("not in this document"), opened);
 
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("A145"));
 		String a145 = Edt.call(panel::getStatusText);
 		assertTrue(a145.contains("next 377 (not in this document)"), a145);
@@ -484,7 +487,7 @@ class MicrocodePanelTest {
 	@Test
 	void aBranchingMicrowordsNextAddressIsShownAsABase(@TempDir Path dir) {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 
 		Edt.run(() -> panel.searchFor("RST-1"));
 		String branching = Edt.call(panel::getStatusText);
@@ -503,7 +506,7 @@ class MicrocodePanelTest {
 	@Test
 	void renderThePdp1105ForLookingAt(@TempDir Path dir) throws Exception {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
-		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(MicrocodePanel.SearchBy.TAG));
+		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 		Edt.run(() -> panel.searchFor("U1-1"));
 		Path file = Edt.call(() -> UiRenderer.renderToFile(panel, WIDTH, HEIGHT,
 			Path.of("target", "ui-render", "microcode-panel-1105.png")));
@@ -515,7 +518,7 @@ class MicrocodePanelTest {
 		return Edt.call(() -> {
 			List<String> l = new java.util.ArrayList<>();
 			for(int i = 0; i < panel.getModel().getRowCount(); i++) {
-				MicrocodeTableModel.Row r = panel.getModel().getRow(i);
+				MicrowordRow r = panel.getModel().getRow(i);
 				if(r.differs())
 					l.add(r.label());
 			}
@@ -589,7 +592,7 @@ class MicrocodePanelTest {
 	private static String rowInfo(MicrocodePanel panel, String label) {
 		return Edt.call(() -> {
 			for(int i = 0; i < panel.getModel().getRowCount(); i++) {
-				MicrocodeTableModel.Row r = panel.getModel().getRow(i);
+				MicrowordRow r = panel.getModel().getRow(i);
 				if(r.label().equals(label))
 					return r.info();
 			}

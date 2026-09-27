@@ -1,18 +1,12 @@
-package to.etc.pdp11.ui.microcode;
-
-import to.etc.pdp11.common.microcode.Kd11bFields;
-import to.etc.pdp11.common.microcode.Kd11bMicrocode;
-import to.etc.pdp11.common.microcode.Microcode;
-import to.etc.pdp11.common.microcode.MicrocodeArchitecture;
-import to.etc.pdp11.common.microcode.Pdp1144Fields;
-import to.etc.pdp11.common.microcode.Pdp1144Microcode;
+package to.etc.pdp11.common.microcode;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
 /**
- * What the microcode window can be asked to show, which is one entry in its combo.
+ * What a microcode browser can be asked to show: one entry in the desktop window's combo, and
+ * one choice on the web page.
  *
  * <p>Three, not two lists. A Machine combo plus a Revision combo would leave the second showing
  * a single value, or disabled, whenever the 11/44 is chosen, and a control that is meaningless

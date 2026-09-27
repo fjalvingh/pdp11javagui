@@ -3,10 +3,11 @@ package to.etc.pdp11.ui.microcode;
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.microcode.MicroInstruction;
 import to.etc.pdp11.common.microcode.Microcode;
-import to.etc.pdp11.common.microcode.MicrowordRole;
-import to.etc.pdp11.common.microcode.MicrocodeField;
+import to.etc.pdp11.common.microcode.MicrocodeBrowser;
+import to.etc.pdp11.common.microcode.MicrocodeBrowser.SearchBy;
+import to.etc.pdp11.common.microcode.MicrocodeSource;
+import to.etc.pdp11.common.microcode.MicrowordRow;
 import to.etc.pdp11.common.util.LogChannel;
-import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.UiColors;
 
@@ -30,14 +31,8 @@ import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.EnumMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -45,9 +40,10 @@ import java.util.function.Consumer;
  * and where in the document it was read from.
  *
  * <p>Ported from {@code TFormMicroCode} ({@code FormMicroCodeU.pas}). Reading the document and
- * cutting the microwords into fields is {@link Microcode} and the loaders beside it in the core,
- * where each is tested against the whole of its source; what is here is the search, the walk and
- * the table.</p>
+ * cutting the microwords into fields is {@link Microcode} and the loaders beside it, where each
+ * is tested against the whole of its source; the search, the walk and what the rows say are
+ * {@link MicrocodeBrowser} and {@link MicrowordRow}, which the web application's microcode page
+ * shows as well. What is here is the widgets, the colours, the file chooser and the settings.</p>
  *
  * <h2>On the 11/05 it is a debugger</h2>
  *
@@ -86,29 +82,6 @@ import java.util.function.Consumer;
  * log, and the rest of the microcode is there to look at.</p>
  */
 public final class MicrocodePanel extends JPanel {
-	/** What the box at the top holds, and so what typing in it means. */
-	public enum SearchBy {
-		ADDRESS("µPC"),
-		TAG("Symbolic tag"),
-		LINE("Listing line");
-
-		/** The ways the loaded document can actually be searched, which is not always all three. */
-		public static SearchBy[] availableFor(MicrocodeSource source) {
-			return source.hasListingLineNumbers() ? values() : new SearchBy[]{ADDRESS, TAG};
-		}
-
-		private final String m_label;
-
-		SearchBy(String label) {
-			m_label = label;
-		}
-
-		@Override
-		public String toString() {
-			return m_label;
-		}
-	}
-
 	private final AppContext m_context;
 
 	/** Which microcode is being looked at. Three entries, not a machine combo and a revision one. */
@@ -131,24 +104,12 @@ public final class MicrocodePanel extends JPanel {
 
 	private final JTable m_table = new JTable(m_model);
 
-	/** Where the user has been, most recent first, so Back walks it. */
-	private final Deque<Integer> m_history = new ArrayDeque<>();
-
-	/** What has been read so far, so that switching back and forth does not re-read anything. */
-	private final Map<MicrocodeSource, Microcode> m_loaded = new EnumMap<>(MicrocodeSource.class);
+	/** Which document, which microword, and the way back: everything but the widgets. */
+	private final MicrocodeBrowser m_browser;
 
 	/** Told the window what to put in its title bar. A panel does not reach for its frame. */
 	private Consumer<String> m_titleListener = t -> {
 	};
-
-	private MicrocodeSource m_selected = MicrocodeSource.DEFAULT;
-
-	private Microcode m_code;
-
-	/** The same microwords off the other revision of the same board, or null when there is none. */
-	private Microcode m_otherRevision;
-
-	private MicroInstruction m_current;
 
 	/** Set while the search box is being refilled, so its own events do not navigate. */
 	private boolean m_updating;
@@ -158,6 +119,7 @@ public final class MicrocodePanel extends JPanel {
 	public MicrocodePanel(AppContext context) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
+		m_browser = new MicrocodeBrowser(context.getLogger());
 
 		m_controls = buildControls();
 		add(m_controls, "growx, wrap");
@@ -210,7 +172,7 @@ public final class MicrocodePanel extends JPanel {
 		//-- 783 and one of 568.
 		JPanel bar = new JPanel(new MigLayout("insets 0", "[][]16[][]8[]", "[]4[]"));
 		bar.add(new JLabel("Microcode:"));
-		m_source.setSelectedItem(m_selected);
+		m_source.setSelectedItem(m_browser.getSource());
 		m_source.setToolTipText("Which processor's microcode to show."
 			+ " The two PDP-11/05 entries are the two M7261 board revisions: read the part numbers"
 			+ " off the two control store PROMs to tell which board is in the machine.");
@@ -221,7 +183,10 @@ public final class MicrocodePanel extends JPanel {
 		bar.add(m_source, "w 110:pref:");
 
 		bar.add(new JLabel("Search by:"));
-		m_searchBy.addActionListener(e -> refillSearch());
+		m_searchBy.addActionListener(e -> {
+			m_browser.setSearchBy(searchBy());
+			refillSearch();
+		});
 		bar.add(m_searchBy, "w 80:pref:");
 
 		bar.add(new JLabel("µInstruction:"));
@@ -264,7 +229,7 @@ public final class MicrocodePanel extends JPanel {
 	 * choice as {@code MemoryLoaderPanel}, which reads its files on the event thread too.</p>
 	 */
 	public void attach() {
-		if(m_code != null)
+		if(m_browser.getMicrocode() != null)
 			return;
 		//-- A selection this version does not know - written by a newer one, or edited by hand -
 		//-- is not a reason to fail to open. Nothing in settings may stop the application.
@@ -285,7 +250,6 @@ public final class MicrocodePanel extends JPanel {
 	 * exchange for a thread and its marshalling.</p>
 	 */
 	public void chooseSource(MicrocodeSource source) {
-		m_selected = source;
 		m_updating = true;
 		try {
 			m_source.setSelectedItem(source);
@@ -293,17 +257,19 @@ public final class MicrocodePanel extends JPanel {
 		} finally {
 			m_updating = false;
 		}
+		m_browser.setSearchBy(searchBy());
 		m_context.getSettings().setMicrocodeSelection(source.getLabel());
 		m_context.saveSettings();
 		m_titleListener.accept("Microcode - " + source.getLabel());
 
 		String remembered = m_context.getSettings().getMicrocodeListing(source.getLabel());
-		if(remembered != null && Files.isReadable(Path.of(remembered)) && loadFrom(Path.of(remembered)))
+		if(remembered != null && Files.isReadable(Path.of(remembered)) && open(source, List.of(Path.of(remembered))))
 			return;
 		//-- Either nothing was remembered, or the file has been moved or damaged since it was
 		//-- chosen. Fall back to the packaged document rather than opening an empty window.
-		Microcode code = m_loaded.get(source);
-		show(code == null ? source.load() : code);
+		m_browser.choose(source);
+		refillSearch();
+		refresh();
 	}
 
 	public void detach() {
@@ -314,18 +280,19 @@ public final class MicrocodePanel extends JPanel {
 	// -------------------------------------------------------------------------------------
 
 	private void chooseListing() {
+		MicrocodeSource source = m_browser.getSource();
 		JFileChooser chooser = new JFileChooser();
 		//-- The multi-selection is for a listing split into one file per page, and a chooser
 		//-- that quietly accepts several files without saying why is a feature nobody finds
 		//-- (FABLE-ISSUES #63). The title is where a file chooser can say it.
-		chooser.setDialogTitle(m_selected.getOpenPrompt());
-		String remembered = m_context.getSettings().getMicrocodeListing(m_selected.getLabel());
+		chooser.setDialogTitle(source.getOpenPrompt());
+		String remembered = m_context.getSettings().getMicrocodeListing(source.getLabel());
 		if(remembered != null)
 			chooser.setSelectedFile(new java.io.File(remembered));
 		//-- One file, not a wildcard over its neighbours: the Pascal strips the digits off the
 		//-- name it was given and loads whatever matches ({@code FormMicroCodeU.pas:126-136}),
 		//-- which quietly picks up files nobody chose.
-		chooser.setMultiSelectionEnabled(m_selected.isSplitAcrossFiles());
+		chooser.setMultiSelectionEnabled(source.isSplitAcrossFiles());
 		if(chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
 			return;
 		java.io.File[] chosen = chooser.getSelectedFiles();
@@ -349,74 +316,21 @@ public final class MicrocodePanel extends JPanel {
 
 	/** Read a document, which for the 11/44 may be split across per-page files. */
 	public boolean loadPages(List<Path> files) {
+		return open(m_browser.getSource(), files);
+	}
+
+	private boolean open(MicrocodeSource source, List<Path> files) {
 		try {
-			replace(m_selected.load(files), files.get(0));
-			return true;
+			m_browser.open(source, files);
 		} catch(IOException | RuntimeException x) {
-			m_context.reportFailure("Cannot read the microcode for " + m_selected.getLabel(), x);
+			m_context.reportFailure("Cannot read the microcode for " + source.getLabel(), x);
 			return false;
 		}
-	}
-
-	private void replace(Microcode code, Path remember) {
-		int keep = m_current == null ? -1 : m_current.getAddress();
-		m_context.getSettings().setMicrocodeListing(m_selected.getLabel(), remember.toAbsolutePath().toString());
+		m_context.getSettings().setMicrocodeListing(source.getLabel(), files.get(0).toAbsolutePath().toString());
 		m_context.saveSettings();
-		show(code);
-		if(keep >= 0 && code.atAddress(keep) != null)
-			select(code.atAddress(keep), false);
-	}
-
-	/** Take a freshly read document, complain about it in the log if it has anything wrong. */
-	private void show(Microcode code) {
-		m_code = code;
-		m_loaded.put(m_selected, code);
-		m_history.clear();
-		m_context.getLogger().log(LogChannel.OTHER, "Microcode: %s", code.describe());
-		for(Microcode.Problem p : code.getProblems())
-			m_context.getLogger().log(LogChannel.OTHER, "Microcode: %s", p.describe());
-		m_otherRevision = otherRevision();
 		refillSearch();
-		select(code.isEmpty() ? null : code.byAddress().get(0), false);
-	}
-
-	/**
-	 * The same board's other revision, read if it has not been already.
-	 *
-	 * <p>Worth the second read: it is what turns "you may have the wrong revision selected" into
-	 * fourteen microwords with two coloured rows in them. Failing to read it costs the colouring
-	 * and nothing else, so it is not allowed to stop the window working.</p>
-	 */
-	private Microcode otherRevision() {
-		MicrocodeSource other = m_selected.getOther();
-		if(other == null)
-			return null;
-		try {
-			return m_loaded.computeIfAbsent(other, MicrocodeSource::load);
-		} catch(RuntimeException x) {
-			m_context.getLogger().log(LogChannel.OTHER,
-				"Microcode: cannot read %s to compare against: %s", other.getLabel(), x);
-			return null;
-		}
-	}
-
-	/**
-	 * Which fields the other revision of this board has something else in, for the microword on
-	 * screen. Empty for a machine with one revision, and for the 200 microwords that are the same
-	 * in both.
-	 */
-	private Set<MicrocodeField> differingFields(MicroInstruction mi) {
-		if(mi == null || m_otherRevision == null)
-			return Set.of();
-		MicroInstruction other = m_otherRevision.atAddress(mi.getAddress());
-		if(other == null || other.getArchitecture() != mi.getArchitecture())
-			return Set.of();
-		Set<MicrocodeField> out = new LinkedHashSet<>();
-		for(MicrocodeField f : mi.getFields()) {
-			if(mi.getValue(f) != other.getValue(f))
-				out.add(f);
-		}
-		return out;
+		refresh();
+		return true;
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -433,32 +347,14 @@ public final class MicrocodePanel extends JPanel {
 		m_updating = true;
 		try {
 			DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
-			if(m_code != null) {
-				for(MicroInstruction mi : instructionsInSearchOrder())
-					model.addElement(searchTextOf(mi));
-			}
+			for(String s : m_browser.searchIndex())
+				model.addElement(s);
 			m_search.setModel(model);
-			if(m_current != null)
-				m_search.getEditor().setItem(searchTextOf(m_current));
+			if(m_browser.getCurrent() != null)
+				m_search.getEditor().setItem(m_browser.searchTextOf(m_browser.getCurrent()));
 		} finally {
 			m_updating = false;
 		}
-	}
-
-	private List<MicroInstruction> instructionsInSearchOrder() {
-		return switch(searchBy()) {
-			case ADDRESS -> m_code.byAddress();
-			case TAG -> m_code.byTag();
-			case LINE -> m_code.byLineNumber();
-		};
-	}
-
-	private String searchTextOf(MicroInstruction mi) {
-		return switch(searchBy()) {
-			case ADDRESS -> mi.getAddressOctal();
-			case TAG -> mi.getSymbolicTag();
-			case LINE -> String.valueOf(mi.getLineNumber());
-		};
 	}
 
 	private SearchBy searchBy() {
@@ -468,79 +364,23 @@ public final class MicrocodePanel extends JPanel {
 
 	/** Which microcode is on screen. */
 	public MicrocodeSource getSource() {
-		return m_selected;
+		return m_browser.getSource();
 	}
 
 	/** How the window is to be titled, which is where the chosen revision is visible. */
 	public void setTitleListener(Consumer<String> listener) {
 		m_titleListener = listener;
-		listener.accept("Microcode - " + m_selected.getLabel());
+		listener.accept("Microcode - " + m_browser.getSource().getLabel());
 	}
 
 	/** Whatever was typed or picked, in whichever of the three ways it is being read. */
 	public void searchFor(String text) {
-		if(m_code == null || text == null)
-			return;
-		String s = text.strip();
-		if(s.isEmpty())
-			return;
-		MicroInstruction found = switch(searchBy()) {
-			case ADDRESS -> m_code.atAddress((int) Octal.parseOr(s, -1));
-			case TAG -> m_code.withTag(s);
-			case LINE -> {
-				try {
-					yield m_code.atLineNumber(Integer.parseInt(s));
-				} catch(NumberFormatException x) {
-					yield null;
-				}
-			}
-		};
-		if(found == null) {
-			//-- Nothing is worse here than jumping somewhere else: say it was not found and leave
-			//-- what is on screen alone. The Pascal's address mode reads an unparseable address
-			//-- as 0 and silently shows the first microword instead.
-			m_status.setText(notFound(s));
-			m_status.setForeground(UiColors.ERROR_TEXT);
-			return;
-		}
-		select(found, true);
-	}
-
-	/**
-	 * Why what was asked for is not there.
-	 *
-	 * <p>The µPC case is the one that needs saying. A KD11-B address typed off the KM11's lights
-	 * can be a perfectly good control store location that the listing does not print - 42 of the
-	 * 256 are not - and "no microword at 377" on its own reads like a typo when it is not.</p>
-	 */
-	private String notFound(String s) {
-		if(searchBy() == SearchBy.TAG)
-			return "No microword tagged " + s;
-		if(searchBy() == SearchBy.LINE)
-			return "No microword on listing line " + s;
-		long address = Octal.parseOr(s, -1);
-		if(address < 0)
-			return "No microword: \"" + s + "\" is not an octal address";
-		int bits = m_code.getArchitecture().getAddressBits();
-		if(address >= (1L << bits))
-			return "No microword at " + s + ": there is no such address in a " + bits
-				+ " bit control store";
-		return "No microword at " + s + ": it is one of the "
-			+ ((1 << bits) - m_code.size()) + " control store locations this document does not print";
+		showOutcome(m_browser.searchFor(text));
 	}
 
 	/** Follow the fall-through, which is what the microword's next-address field says. */
 	public void next() {
-		if(m_current == null || m_code == null)
-			return;
-		MicroInstruction to = m_code.atAddress(m_current.getNextAddress());
-		if(to == null) {
-			m_status.setText("This microword goes to " + m_current.getNextAddressOctal()
-				+ ", which this document does not print");
-			m_status.setForeground(UiColors.ERROR_TEXT);
-			return;
-		}
-		select(to, true);
+		showOutcome(m_browser.next());
 	}
 
 	/** A row was double-clicked: follow it if it is one that says where to go next. */
@@ -551,24 +391,28 @@ public final class MicrocodePanel extends JPanel {
 
 	/** Back the way we came. */
 	public void back() {
-		if(m_history.isEmpty() || m_code == null)
-			return;
-		MicroInstruction to = m_code.atAddress(m_history.pop());
-		if(to != null)
-			select(to, false);
-		updateButtons();
+		m_browser.back();
+		refresh();
 	}
 
-	private void select(MicroInstruction mi, boolean remember) {
-		if(remember && m_current != null && m_current != mi)
-			m_history.push(m_current.getAddress());
-		m_current = mi;
-		m_model.setInstruction(mi, mi == null || m_code == null ? List.of() : m_code.predecessorsOf(mi),
-			differingFields(mi), mi == null || m_code == null ? null : m_code.roleOf(mi));
+	/** Show where a move went, or - leaving what is on screen alone - why it could not go. */
+	private void showOutcome(String whyNot) {
+		if(whyNot == null) {
+			refresh();
+			return;
+		}
+		m_status.setText(whyNot);
+		m_status.setForeground(UiColors.ERROR_TEXT);
+	}
+
+	/** Show the browser's current microword. */
+	private void refresh() {
+		MicroInstruction mi = m_browser.getCurrent();
+		m_model.setRows(m_browser.rows());
 		m_updating = true;
 		try {
 			if(mi != null)
-				m_search.getEditor().setItem(searchTextOf(mi));
+				m_search.getEditor().setItem(m_browser.searchTextOf(mi));
 		} finally {
 			m_updating = false;
 		}
@@ -577,51 +421,25 @@ public final class MicrocodePanel extends JPanel {
 	}
 
 	private void updateButtons() {
-		boolean loaded = m_code != null && !m_code.isEmpty();
+		boolean loaded = m_browser.isLoaded();
 		m_searchBy.setEnabled(loaded);
 		m_search.setEnabled(loaded);
-		m_next.setEnabled(loaded && m_current != null);
-		m_back.setEnabled(!m_history.isEmpty());
+		m_next.setEnabled(m_browser.canGoNext());
+		m_back.setEnabled(m_browser.canGoBack());
 	}
 
 	/** What is on screen, where it came from, and whether the listing hangs together. */
 	private void showStatus() {
-		if(m_code == null) {
-			m_status.setText("No microcode loaded");
-			m_status.setForeground(UiColors.ERROR_TEXT);
-			return;
-		}
-		boolean leavesDocument = m_current != null && m_code.nextNotInDocument(m_current);
-		StringBuilder sb = new StringBuilder();
-		if(m_current != null) {
-			sb.append("µPC = ").append(m_current.getAddressOctal())
-				.append("  ·  ").append(m_current.getSymbolicTag());
-			//-- What it is part of, which is the first thing anybody looking at a µPC wants to know.
-			MicrowordRole role = m_code.roleOf(m_current);
-			if(role != null && role.summary() != null)
-				sb.append("  ·  ").append(role.summary());
-			sb.append("  ·  next ").append(m_current.getNextAddressOctal());
-			//-- Said here, on the microword, and not as a problem with the whole document: the
-			//-- 11/05's listing has one microword that genuinely leaves it, and a status line that
-			//-- said so permanently read as though the load had failed.
-			if(leavesDocument)
-				sb.append(" (not in this document)");
-			//-- Where a microtest is selected the hardware ORs its result into the next address,
-			//-- so what is printed is a branch base and not the successor. Saying "next 147" flat
-			//-- would be stating as fact something that depends on the state of the machine.
-			if(m_current.isBranching())
-				sb.append(" if ").append(m_current.getMicrotestName()).append(" is zero (a branch base)");
-			sb.append("  ·  ");
-		}
-		sb.append(m_code.describe());
-		m_status.setText(sb.toString());
-		m_status.setToolTipText(m_code.isOk() ? null : firstProblems());
-		m_status.setForeground(m_code.isOk() && !leavesDocument ? UiColors.SECONDARY_TEXT : UiColors.ERROR_TEXT);
+		Microcode code = m_browser.getMicrocode();
+		m_status.setText(m_browser.statusText());
+		if(code != null)
+			m_status.setToolTipText(code.isOk() ? null : firstProblems(code));
+		m_status.setForeground(m_browser.isStatusTroubled() ? UiColors.ERROR_TEXT : UiColors.SECONDARY_TEXT);
 	}
 
-	private String firstProblems() {
+	private static String firstProblems(Microcode code) {
 		StringBuilder sb = new StringBuilder("<html>");
-		List<Microcode.Problem> problems = m_code.getProblems();
+		List<Microcode.Problem> problems = code.getProblems();
 		for(int i = 0; i < Math.min(5, problems.size()); i++)
 			sb.append(problems.get(i).describe()).append("<br>");
 		if(problems.size() > 5)
@@ -635,7 +453,7 @@ public final class MicrocodePanel extends JPanel {
 		public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
 			boolean focused, int row, int column) {
 			Component c = super.getTableCellRendererComponent(table, value, selected, focused, row, column);
-			MicrocodeTableModel.Row r = m_model.getRow(row);
+			MicrowordRow r = m_model.getRow(row);
 			if(r.differs() && !selected) {
 				//-- The only way a wrongly chosen board revision ever shows itself.
 				c.setBackground(UiColors.REVISION_DIFFERENCE_BACKGROUND);
@@ -648,8 +466,9 @@ public final class MicrocodePanel extends JPanel {
 				c.setForeground(selected ? table.getSelectionForeground() : table.getForeground());
 			}
 			if(c instanceof JComponent jc) {
-				String tip = r.differs() && m_selected.getOther() != null
-					? "This field is different in " + m_selected.getOther().getLabel()
+				MicrocodeSource other = m_browser.getSource().getOther();
+				String tip = r.differs() && other != null
+					? "This field is different in " + other.getLabel()
 					: r.next() ? "Double-click to go to the next microword"
 					: column == 2 && !r.info().isEmpty() ? r.info() : null;
 				jc.setToolTipText(tip);
@@ -706,11 +525,11 @@ public final class MicrocodePanel extends JPanel {
 	}
 
 	public MicroInstruction getCurrent() {
-		return m_current;
+		return m_browser.getCurrent();
 	}
 
 	public Microcode getMicrocode() {
-		return m_code;
+		return m_browser.getMicrocode();
 	}
 
 	public String getStatusText() {
