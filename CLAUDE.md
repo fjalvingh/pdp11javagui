@@ -95,6 +95,11 @@ silently diverging.
   other forms one by one, and every grid calling `FormMain.SyncBitfieldForm`; a window that is not
   open hears nothing and needs to hear nothing, and adding a window changes no existing one. See
   PLAN.md §5.
+- **A DomUI page is built from components, never from raw tags when a component exists.**
+  `Text2` for text, `ComboFixed2` for a choice, `FormBuilder` to lay out labelled controls,
+  `ButtonBar2`, `DataTable` with a `RowRenderer`, `LinkButton` / `ALink`, `MessageLine`,
+  `AppPageTitleBar`, `ContentPanel` - not `Div`, `Span`, `Label`, `HTag` or `Table`/`TR`/`TD`.
+  Look in `domui/` (`component`, `component2`) and its demo before reaching for a tag.
 - **Only `UiColors` names a colour.** Everything that means something - a value typed and not
   deposited, the line the PC is on, connected, failed - is a constant there, tuned for the dark
   theme the application runs. A `new Color(...)` anywhere else is how a second theme becomes a

@@ -1,79 +1,33 @@
 /*
- * The web tools' own styling, on top of DomUI's theme. The colours mean what UiColors' do on the
- * desktop: a field that is doing something this cycle, and a field the other board revision
- * disagrees on - the only way a wrongly chosen KD11-B revision ever shows itself.
+ * What DomUI's theme does not already say. The colours mean what UiColors' do on the desktop: a
+ * field that is doing something this cycle, and a field the other board revision disagrees on -
+ * the only way a wrongly chosen KD11-B revision ever shows itself.
  */
-.pdp-page {
-	padding: 12px 16px;
-	max-width: 1100px;
-}
-
-.pdp-intro {
-	margin-bottom: 8px;
-}
-
-.pdp-tools > div {
+.pdp-tool-link {
+	display: block;
+	clear: both;
 	margin: 4px 0;
-}
-
-.pdp-controls {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 6px 10px;
-	margin: 8px 0;
-}
-
-.pdp-inline {
-	display: inline-block;
 }
 
 .pdp-mono {
 	font-family: monospace;
 }
 
-.pdp-message {
-	color: #c62828;
-	min-height: 1.2em;
-}
-
-.pdp-rows {
-	border-collapse: collapse;
-	width: 100%;
-}
-
-.pdp-rows th {
-	text-align: left;
-	border-bottom: 1px solid #999;
-	padding: 3px 8px;
-}
-
-.pdp-rows td {
-	padding: 2px 8px;
-	vertical-align: top;
-	border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-}
-
-.pdp-rows td:first-child {
-	white-space: nowrap;
-}
-
-tr.pdp-highlight td {
+.pdp-rows tr.pdp-highlight td {
 	background: #ffff80;
 	color: #000;
 }
 
-tr.pdp-differs td {
+.pdp-rows tr.pdp-differs td {
 	background: #ffcc99;
 	color: #600;
 }
 
-.pdp-status {
-	margin-top: 8px;
-	color: #666;
-	font-size: 90%;
+/* The theme sizes a link's text for a page, and a table's cells smaller; in a cell, match the cell. */
+.pdp-rows td .ui-lbtn-txt {
+	font-size: inherit;
 }
 
-.pdp-status.pdp-trouble {
-	color: #c62828;
+.pdp-rows td .ui-lbtn + .ui-lbtn::before {
+	content: ", ";
 }

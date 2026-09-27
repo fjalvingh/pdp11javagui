@@ -2,21 +2,21 @@ package to.etc.pdp11.web;
 
 import to.etc.domui.component.buttons.DefaultButton;
 import to.etc.domui.component.buttons.LinkButton;
-import to.etc.domui.component.input.ComboFixed;
-import to.etc.domui.component.input.TextStr;
+import to.etc.domui.component.input.Text2;
 import to.etc.domui.component.input.ValueLabelPair;
-import to.etc.domui.dom.html.Div;
-import to.etc.domui.dom.html.HTag;
-import to.etc.domui.dom.html.Label;
-import to.etc.domui.dom.html.Span;
-import to.etc.domui.dom.html.TBody;
-import to.etc.domui.dom.html.TD;
-import to.etc.domui.dom.html.TH;
-import to.etc.domui.dom.html.THead;
-import to.etc.domui.dom.html.TR;
-import to.etc.domui.dom.html.Table;
+import to.etc.domui.component.layout.ContentPanel;
+import to.etc.domui.component.layout.MessageLine;
+import to.etc.domui.component.layout.title.AppPageTitleBar;
+import to.etc.domui.component.tbl.DataTable;
+import to.etc.domui.component.tbl.RowRenderer;
+import to.etc.domui.component.tbl.SimpleListModel;
+import to.etc.domui.component2.buttons.ButtonBar2;
+import to.etc.domui.component2.combo.ComboFixed2;
+import to.etc.domui.component2.form4.FormBuilder;
+import to.etc.domui.dom.css.DisplayType;
+import to.etc.domui.dom.errors.MsgType;
+import to.etc.domui.dom.html.NodeContainer;
 import to.etc.domui.dom.html.UrlPage;
-import to.etc.domui.state.UIGoto;
 import to.etc.pdp11.common.microcode.MicroInstruction;
 import to.etc.pdp11.common.microcode.MicrocodeBrowser;
 import to.etc.pdp11.common.microcode.MicrocodeBrowser.SearchBy;
@@ -46,44 +46,41 @@ public final class MicrocodePage extends UrlPage {
 
 	private final MicrocodeBrowser m_browser = new MicrocodeBrowser(new Slf4jLogger(MicrocodePage.class));
 
-	private final HTag m_title = new HTag(1);
+	private final AppPageTitleBar m_titleBar = new AppPageTitleBar("Microcode", false);
 
-	private final Div m_searchByHolder = new Div("pdp-inline");
+	private final ComboFixed2<SearchBy> m_searchBy = new ComboFixed2<>(List.of());
 
-	private ComboFixed<SearchBy> m_searchBy;
+	private final Text2<String> m_search = new Text2<>(String.class);
 
-	private final TextStr m_search = new TextStr();
+	private DefaultButton m_back;
 
-	private final DefaultButton m_back = new DefaultButton("Back", b -> {
-		m_browser.back();
-		showCurrent();
-	});
+	private DefaultButton m_next;
 
-	private final DefaultButton m_next = new DefaultButton("Next instruction", b -> show(m_browser.next()));
+	/** Why the last search or step went nowhere; the line is hidden when it went somewhere. */
+	private String m_whyNot;
 
-	/** Why the last search or step went nowhere; empty when it went somewhere. */
-	private final Div m_message = new Div("pdp-message");
+	private final MessageLine m_message = new MessageLine(MsgType.ERROR, (NodeContainer n) -> n.setText(m_whyNot));
 
-	private final Div m_view = new Div("pdp-microword");
+	/** What is on screen and whether the document hangs together; replaced when its type changes. */
+	private MessageLine m_status;
 
-	private final Div m_status = new Div("pdp-status");
+	private final DataTable<MicrowordRow> m_rows = new DataTable<>(new SimpleListModel<>(List.of()), rowRenderer());
 
 	@Override
 	public void createContent() throws Exception {
-		addCssClass("pdp-page");
 		MicrocodeSource source = sourceParameter();
 		m_browser.choose(source);
 
-		add(new LinkButton("PDP-11 tools", b -> UIGoto.moveSub(IndexPage.class)));
-		add(m_title);
+		m_titleBar.setShowBackButton(true);
+		add(m_titleBar);
+		ContentPanel cp = new ContentPanel();
+		add(cp);
 
-		Div bar = new Div("pdp-controls");
-		add(bar);
-		bar.add(new Label("Microcode:"));
 		List<ValueLabelPair<MicrocodeSource>> sources = new ArrayList<>();
 		for(MicrocodeSource s : MicrocodeSource.values())
 			sources.add(new ValueLabelPair<>(s, s.getLabel()));
-		ComboFixed<MicrocodeSource> sourceCombo = new ComboFixed<>(sources);
+		ComboFixed2<MicrocodeSource> sourceCombo = new ComboFixed2<>(sources);
+		sourceCombo.addCssClass("pdp-source");
 		sourceCombo.setMandatory(true);
 		sourceCombo.setValue(source);
 		sourceCombo.setTitle("The two PDP-11/05 entries are the two M7261 board revisions: read the part"
@@ -93,30 +90,92 @@ public final class MicrocodePage extends UrlPage {
 			if(chosen == null)
 				return;
 			m_browser.choose(chosen);
-			buildSearchBy();
+			fillSearchBy();
 			show(null);
 		});
-		bar.add(sourceCombo);
 
-		bar.add(new Label("Search by:"));
-		bar.add(m_searchByHolder);
-		buildSearchBy();
+		m_searchBy.addCssClass("pdp-searchby");
+		m_searchBy.setMandatory(true);
+		fillSearchBy();
+		m_searchBy.setOnValueChanged(c -> {
+			m_browser.setSearchBy(m_searchBy.getValue());
+			showCurrent();
+		});
 
-		bar.add(new Label("µInstruction:"));
-		m_search.addCssClass("pdp-mono");
-		m_search.setOnValueChanged(c -> search());
-		bar.add(m_search);
-		bar.add(new DefaultButton("Go", b -> search()));
-		bar.add(m_back);
+		m_search.addCssClass("pdp-search");
+		m_search.addButton(new DefaultButton("Go", b -> search()));
+		m_search.setReturnPressed(n -> search());
+
+		FormBuilder fb = new FormBuilder(cp);
+		fb.horizontal();
+		fb.label("Microcode").control(sourceCombo);
+		fb.label("Search by").control(m_searchBy);
+		fb.label("µInstruction").control(m_search);
+
+		ButtonBar2 bar = new ButtonBar2();
+		cp.add(bar);
+		m_back = bar.addButton("Back", b -> {
+			m_browser.back();
+			show(null);
+		});
+		m_next = bar.addButton("Next instruction", b -> show(m_browser.next()));
 		m_next.setTitle("Follow this microword's next-address field, which is where it goes when nothing branches");
-		bar.add(m_next);
 
-		add(m_message);
-		add(m_view);
-		add(m_status);
+		m_message.addCssClass("pdp-message");
+		cp.add(m_message);
+		m_rows.addCssClass("pdp-rows");
+		m_rows.setPreventRowHighlight(true);
+		cp.add(m_rows);
+		m_status = statusLine();
+		cp.add(m_status);
 
 		String upc = getPage().getPageParameters().getString(PARAM_UPC, null);
 		show(upc == null ? null : m_browser.searchFor(upc));
+	}
+
+	/**
+	 * Three columns, the last of which can hold links: where the microword goes next, and each
+	 * microword that falls through to it.
+	 */
+	private RowRenderer<MicrowordRow> rowRenderer() {
+		RowRenderer<MicrowordRow> rr = new RowRenderer<>(MicrowordRow.class);
+		rr.column("label").label("Field").nowrap();
+		rr.column("bits").label("Bits").css("pdp-mono").nowrap();
+		rr.column().label("Info").renderer((node, r) -> renderInfo(node, r));
+		rr.addRenderListener((tr, r) -> {
+			MicrocodeSource other = m_browser.getSource().getOther();
+			if(r.differs()) {
+				//-- The only way a wrongly chosen board revision ever shows itself.
+				tr.addCssClass("pdp-differs");
+				if(other != null)
+					tr.setTitle("This field is different in " + other.getLabel());
+			} else if(r.highlight()) {
+				tr.addCssClass("pdp-highlight");
+			}
+		});
+		return rr;
+	}
+
+	private void renderInfo(NodeContainer node, MicrowordRow r) {
+		if(r.next()) {
+			//-- Where it goes next is a link, as a double-click on the row is on the desktop.
+			node.add(new LinkButton(r.info(), b -> show(m_browser.next())));
+			return;
+		}
+		List<MicroInstruction> from = m_browser.predecessors();
+		if(MicrowordRow.PREDECESSORS.equals(r.label()) && !from.isEmpty()) {
+			//-- The one thing a page can do that the window's table cannot: each microword that
+			//-- falls through to this one is somewhere to go.
+			for(MicroInstruction mi : from) {
+				int address = mi.getAddress();
+				node.add(new LinkButton(mi.getSymbolicTag() + " (" + mi.getAddressOctal() + ")", b -> {
+					m_browser.goTo(address);
+					show(null);
+				}));
+			}
+			return;
+		}
+		node.setText(r.info());
 	}
 
 	/** The document the URL asks for; the default for none, and for one this version does not have. */
@@ -132,19 +191,12 @@ public final class MicrocodePage extends UrlPage {
 	}
 
 	/** The search orders this document supports: the KD11-B transcription has no line numbers. */
-	private void buildSearchBy() {
+	private void fillSearchBy() {
 		List<ValueLabelPair<SearchBy>> items = new ArrayList<>();
 		for(SearchBy by : SearchBy.availableFor(m_browser.getSource()))
 			items.add(new ValueLabelPair<>(by, by.getLabel()));
-		m_searchBy = new ComboFixed<>(items);
-		m_searchBy.setMandatory(true);
+		m_searchBy.setData(items);
 		m_searchBy.setValue(m_browser.getSearchBy());
-		m_searchBy.setOnValueChanged(c -> {
-			m_browser.setSearchBy(m_searchBy.getValue());
-			showCurrent();
-		});
-		m_searchByHolder.removeAllChildren();
-		m_searchByHolder.add(m_searchBy);
 	}
 
 	private void search() {
@@ -153,72 +205,37 @@ public final class MicrocodePage extends UrlPage {
 
 	/** Show where a move went, or - leaving what is on screen alone - why it could not go. */
 	private void show(String whyNot) {
-		m_message.setText(whyNot);
+		m_whyNot = whyNot;
+		m_message.setDisplay(whyNot == null ? DisplayType.NONE : null);
+		m_message.forceRebuild();
 		if(whyNot == null)
 			showCurrent();
 	}
 
 	private void showCurrent() {
 		MicroInstruction mi = m_browser.getCurrent();
-		MicrocodeSource source = m_browser.getSource();
-		m_title.setText("Microcode - " + source.getLabel());
-		setPageTitle("Microcode - " + source.getLabel());
+		String title = "Microcode - " + m_browser.getSource().getLabel();
+		m_titleBar.setPageTitle(title);
+		setPageTitle(title);
 		m_search.setValue(mi == null ? null : m_browser.searchTextOf(mi));
 		m_back.setDisabled(!m_browser.canGoBack());
 		m_next.setDisabled(!m_browser.canGoNext());
+		m_rows.setModel(new SimpleListModel<>(m_browser.rows()));
 
-		m_status.setText(m_browser.statusText());
-		m_status.removeCssClass("pdp-trouble");
-		if(m_browser.isStatusTroubled())
-			m_status.addCssClass("pdp-trouble");
+		MessageLine status = statusLine();
+		m_status.replaceWith(status);
+		m_status = status;
+	}
 
-		m_view.removeAllChildren();
-		if(mi == null)
-			return;
-		Table table = new Table("pdp-rows");
-		m_view.add(table);
-		THead head = new THead();
-		table.add(head);
-		TR hr = new TR();
-		head.add(hr);
-		for(String h : new String[]{"Field", "Bits", "Info"}) {
-			TH th = new TH();
-			th.setText(h);
-			hr.add(th);
-		}
-		TBody body = new TBody();
-		table.add(body);
-		MicrocodeSource other = source.getOther();
-		for(MicrowordRow r : m_browser.rows()) {
-			TR tr = body.addRow();
-			if(r.differs())
-				tr.addCssClass("pdp-differs");
-			else if(r.highlight())
-				tr.addCssClass("pdp-highlight");
-			tr.addCell().setText(r.label());
-			tr.addCell("pdp-mono").setText(r.bits());
-			TD info = tr.addCell("pdp-info");
-			if(r.differs() && other != null)
-				tr.setTitle("This field is different in " + other.getLabel());
-			if(r.next()) {
-				//-- Where it goes next is a link, as a double-click on the row is on the desktop.
-				info.add(new LinkButton(r.info(), b -> show(m_browser.next())));
-			} else if(MicrowordRow.PREDECESSORS.equals(r.label()) && !m_browser.predecessors().isEmpty()) {
-				//-- The one thing a page can do that the window's table cannot: each microword that
-				//-- falls through to this one is somewhere to go.
-				for(MicroInstruction from : m_browser.predecessors()) {
-					if(info.getChildCount() > 0)
-						info.add(new Span(", "));
-					int address = from.getAddress();
-					info.add(new LinkButton(from.getSymbolicTag() + " (" + from.getAddressOctal() + ")",
-						b -> {
-							m_browser.goTo(address);
-							show(null);
-						}));
-				}
-			} else {
-				info.setText(r.info());
-			}
-		}
+	/**
+	 * A warning when the document did not read cleanly or the microword leaves it, information
+	 * otherwise. The text is set as text, not as HTML, since a search the user typed ends up in it.
+	 */
+	private MessageLine statusLine() {
+		String text = m_browser.statusText();
+		MessageLine line = new MessageLine(m_browser.isStatusTroubled() ? MsgType.WARNING : MsgType.INFO,
+			(NodeContainer n) -> n.setText(text));
+		line.addCssClass("pdp-status");
+		return line;
 	}
 }

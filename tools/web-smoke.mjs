@@ -23,8 +23,8 @@ const ev = async expr => { const r = await send('Runtime.evaluate', { expression
 const status = () => ev(`document.querySelector('.pdp-status')?.textContent`);
 const message = () => ev(`document.querySelector('.pdp-message')?.textContent`);
 const clickText = async (sel, text) => { const ok = await ev(`(() => { const e = [...document.querySelectorAll('${sel}')].find(x => x.textContent.trim() === ${JSON.stringify(text)}); if (!e) return false; e.click(); return true; })()`); if (!ok) throw new Error('not found: ' + text); await sleep(1200); };
-const setSelect = async (idx, label) => { const ok = await ev(`(() => { const s = document.querySelectorAll('.pdp-controls select')[${idx}]; const o = [...s.options].find(o => o.text === ${JSON.stringify(label)}); if (!o) return false; s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); return true; })()`); if (!ok) throw new Error('no option ' + label); await sleep(1500); };
-const typeSearch = async text => { await ev(`(() => { const i = document.querySelector('.pdp-controls input[type=text], .pdp-controls input:not([type])'); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', {bubbles: true})); })()`); };
+const setSelect = async (css, label) => { const ok = await ev(`(() => { const s = document.querySelector('.${css} select, select.${css}'); const o = [...s.options].find(o => o.text === ${JSON.stringify(label)}); if (!o) return false; s.value = o.value; s.dispatchEvent(new Event('change', {bubbles: true})); return true; })()`); if (!ok) throw new Error('no option ' + label); await sleep(1500); };
+const typeSearch = async text => { await ev(`(() => { const i = document.querySelector('.pdp-search input'); i.focus(); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event('input', {bubbles: true})); })()`); };
 let failures = 0;
 const check = (what, cond, got) => { console.log((cond ? 'PASS ' : 'FAIL ') + what + (cond ? '' : '  -> ' + got)); if (!cond) failures++; };
 
@@ -34,34 +34,41 @@ await sleep(3000);
 let s = await status();
 check('opens on 0043', s?.startsWith('µPC = 0043'), s);
 
-await clickText('.pdp-rows a, .pdp-rows button, .pdp-rows span', '2-J (0732)');
+await clickText('.pdp-rows .ui-lbtn', '2-J (0732)');
 s = await status(); check('predecessor link goes to 0732', s?.startsWith('µPC = 0732'), s);
 
-await clickText('.pdp-controls button', 'Back');
+await clickText('button', 'Back');
 s = await status(); check('Back returns to 0043', s?.startsWith('µPC = 0043'), s);
 
-await clickText('.pdp-controls button', 'Next instruction');
+await clickText('button', 'Next instruction');
 s = await status(); check('Next follows the fall-through', s && !s.startsWith('µPC = 0043') && s.startsWith('µPC = '), s);
 
-await setSelect(0, 'PDP-11/05 (M7261 rev F)');
-const title = await ev(`document.querySelector('h1')?.textContent`);
+await setSelect('pdp-source', 'PDP-11/05 (M7261 rev F)');
+const title = await ev(`document.querySelector('.ui-atl-t')?.textContent.trim()`);
 check('choosing rev F retitles the page', title === 'Microcode - PDP-11/05 (M7261 rev F)', title);
-const byOptions = await ev(`[...document.querySelectorAll('.pdp-controls select')[1].options].map(o => o.text).filter(t => t).join(',')`);
+const byOptions = await ev(`[...document.querySelector('.pdp-searchby select, select.pdp-searchby').options].map(o => o.text).filter(t => t).join(',')`);
 check('rev F cannot be searched by listing line', !byOptions.includes('Listing line'), byOptions);
 
-await setSelect(1, 'Symbolic tag');
+await setSelect('pdp-searchby', 'Symbolic tag');
 await typeSearch('U1-1');
-await clickText('.pdp-controls button', 'Go');
+await clickText('button', 'Go');
 s = await status(); check('tag search finds U1-1', s?.includes('U1-1'), s);
 const differs = await ev(`[...document.querySelectorAll('tr.pdp-differs td:first-child')].map(t => t.textContent.trim()).join('|')`);
 check('rev E/F disagreement marked on AUX and CKO', /^AUX.*\|CKO/.test(differs), differs);
 
-await setSelect(1, 'µPC');
+await setSelect('pdp-searchby', 'µPC');
 await typeSearch('377');
-await clickText('.pdp-controls button', 'Go');
+await clickText('button', 'Go');
 const m = await message(); s = await status();
 check('an unprinted µPC says so', m?.includes('does not print'), m);
 check('and nothing moved', s?.includes('U1-1'), s);
+
+await setSelect('pdp-searchby', 'Symbolic tag');
+await typeSearch('B-1');
+await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' });
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+await sleep(1500);
+s = await status(); check('Enter in the search box searches', s?.includes('B-1'), s);
 
 ws.close();
 process.exit(failures ? 1 : 0);
