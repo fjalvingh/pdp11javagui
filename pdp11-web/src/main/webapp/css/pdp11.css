@@ -13,21 +13,164 @@
 	font-family: monospace;
 }
 
-.pdp-rows tr.pdp-highlight td {
+/* --- One microword ------------------------------------------------------------------------- */
+
+.pdp-microword {
+	max-width: 980px;
+}
+
+.pdp-mw-title {
+	margin: 12px 0 2px 0;
+}
+
+.pdp-mw-tag {
+	font-family: monospace;
+	margin-right: 16px;
+}
+
+.pdp-mw-upc {
+	font-family: monospace;
+	font-weight: normal;
+	color: #777;
+}
+
+.pdp-mw-part {
+	color: #555;
+}
+
+.pdp-mw-does {
+	margin: 6px 0 4px 0;
+	padding: 2px 8px;
+	border-left: 4px solid #8aa;
+	font-family: monospace;
+}
+
+.pdp-mw {
+	border-collapse: collapse;
+	width: 100%;
+	margin-top: 8px;
+}
+
+.pdp-mw td,
+.pdp-mw th {
+	padding: 3px 8px;
+	text-align: left;
+	vertical-align: top;
+}
+
+.pdp-mw tr.pdp-mw-section th {
+	padding-top: 14px;
+	border-bottom: 2px solid #8aa;
+	font-size: 110%;
+}
+
+.pdp-mw tr.pdp-mw-colhead th {
+	font-weight: normal;
+	color: #777;
+	border-bottom: 1px solid #ccc;
+}
+
+.pdp-mw tr.pdp-mw-field td,
+.pdp-mw tr.pdp-mw-pair td {
+	border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.pdp-mw-label {
+	width: 1%;
+	white-space: nowrap;
+	color: #555;
+}
+
+.pdp-mw-name {
+	width: 1%;
+	white-space: nowrap;
+}
+
+.pdp-mw-mnemonic {
+	font-weight: bold;
+}
+
+.pdp-mw-signal {
+	margin-left: 8px;
+	color: #777;
+	font-size: 90%;
+}
+
+.pdp-mw-bits {
+	width: 1%;
+	white-space: nowrap;
+}
+
+.pdp-mw-value {
+	width: 1%;
+	white-space: nowrap;
+	text-align: right;
+}
+
+.pdp-mw-aside,
+.pdp-mw-other {
+	display: block;
+	color: #777;
+	font-style: italic;
+}
+
+.pdp-mw-other {
+	color: #900;
+}
+
+/* Several links in a cell: next to one another, comma separated. */
+.pdp-mw .ui-lbtn + .ui-lbtn::before {
+	content: ",\00a0";
+}
+
+/* The theme sizes a link's text for a page; in the table, match the table. */
+.pdp-mw .ui-lbtn-txt {
+	font-size: inherit;
+	font-family: monospace;
+}
+
+.pdp-mw-code {
+	font-family: monospace;
+	border-left: 4px solid #8aa;
+}
+
+.pdp-mw-note {
+	font-family: monospace;
+}
+
+.pdp-mw tr.pdp-active td {
 	background: #ffff80;
 	color: #000;
 }
 
-.pdp-rows tr.pdp-differs td {
+.pdp-mw tr.pdp-differs td {
 	background: #ffcc99;
-	color: #600;
+	color: #000;
 }
 
-/* The theme sizes a link's text for a page, and a table's cells smaller; in a cell, match the cell. */
-.pdp-rows td .ui-lbtn-txt {
-	font-size: inherit;
+.pdp-mw-legend {
+	margin: 10px 0;
+	color: #777;
+	font-size: 90%;
 }
 
-.pdp-rows td .ui-lbtn + .ui-lbtn::before {
-	content: ", ";
+.pdp-swatch {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	margin: 0 6px 0 16px;
+	vertical-align: middle;
+	border: 1px solid #aaa;
+}
+
+.pdp-swatch:first-child {
+	margin-left: 0;
+}
+
+.pdp-swatch.pdp-active {
+	background: #ffff80;
+}
+
+.pdp-swatch.pdp-differs {
+	background: #ffcc99;
 }

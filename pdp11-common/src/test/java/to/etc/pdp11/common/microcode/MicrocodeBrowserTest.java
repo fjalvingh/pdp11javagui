@@ -127,6 +127,13 @@ class MicrocodeBrowserTest {
 		List<String> marked = b.rows().stream().filter(MicrowordRow::differs).map(MicrowordRow::label).toList();
 		assertEquals(List.of(Kd11bFields.AUX, Kd11bFields.CKO), marked, "and the rows say so");
 
+		//-- And what the other revision has there instead: rev E has AUX=1 where rev F has 0.
+		MicrowordFieldValue aux = b.fieldValues().stream()
+			.filter(v -> v.field().name().equals(Kd11bFields.AUX)).findFirst().orElseThrow();
+		assertTrue(aux.differs());
+		assertEquals(0, aux.value());
+		assertEquals(1, b.otherRevisionField(aux.field()).value());
+
 		b.searchFor("B-1");
 		assertEquals(Set.of(), b.differingFields(), "200 of the 214 are the same in both");
 	}

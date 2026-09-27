@@ -34,7 +34,7 @@ await sleep(3000);
 let s = await status();
 check('opens on 0043', s?.startsWith('µPC = 0043'), s);
 
-await clickText('.pdp-rows .ui-lbtn', '2-J (0732)');
+await clickText('.pdp-mw .ui-lbtn', '2-J (0732)');
 s = await status(); check('predecessor link goes to 0732', s?.startsWith('µPC = 0732'), s);
 
 await clickText('button', 'Back');

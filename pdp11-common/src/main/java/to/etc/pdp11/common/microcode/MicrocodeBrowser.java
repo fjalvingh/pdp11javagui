@@ -347,6 +347,36 @@ public final class MicrocodeBrowser {
 		return out;
 	}
 
+	/** The current microword's fields, each with what it means and whether it is doing anything. */
+	public List<MicrowordFieldValue> fieldValues() {
+		return m_current == null ? List.of() : MicrowordFieldValue.of(m_current, differingFields());
+	}
+
+	/** What the machine's documentation says the current microword is for, or {@code null}. */
+	public MicrowordRole role() {
+		return m_current == null || m_code == null ? null : m_code.roleOf(m_current);
+	}
+
+	/**
+	 * What the other revision of this board has in one field of the current microword, or
+	 * {@code null} where there is no other revision or no such microword on it.
+	 *
+	 * <p>Saying the other value, not only that there is one, is what lets someone holding the
+	 * board decide which revision it is from what the machine does.</p>
+	 */
+	public MicrowordFieldValue otherRevisionField(MicrocodeField field) {
+		if(m_current == null || m_otherRevision == null)
+			return null;
+		MicroInstruction other = m_otherRevision.atAddress(m_current.getAddress());
+		if(other == null || other.getArchitecture() != m_current.getArchitecture())
+			return null;
+		for(MicrowordFieldValue v : MicrowordFieldValue.of(other, Set.of())) {
+			if(v.field().equals(field))
+				return v;
+		}
+		return null;
+	}
+
 	/** The current microword as display rows, or none. */
 	public List<MicrowordRow> rows() {
 		if(m_current == null || m_code == null)

@@ -1,7 +1,5 @@
 package to.etc.pdp11.common.microcode;
 
-import to.etc.pdp11.common.util.Octal;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -22,12 +20,6 @@ import java.util.Set;
  * @param next      the row says where the microword goes next, so choosing it goes there
  */
 public record MicrowordRow(String label, String bits, String info, boolean highlight, boolean differs, boolean next) {
-	/**
-	 * The label of the row listing what falls through to the microword, which a view that can
-	 * link from one microword to another shows as links.
-	 */
-	public static final String PREDECESSORS = "Jumped to from";
-
 	public MicrowordRow(String label, String bits, String info, boolean highlight, boolean differs) {
 		this(label, bits, info, highlight, differs, false);
 	}
@@ -69,29 +61,10 @@ public record MicrowordRow(String label, String bits, String info, boolean highl
 			if(role.action() != null)
 				rows.add(new MicrowordRow("Does", "", role.action(), true));
 		}
-		for(MicrocodeField f : mi.getFields()) {
-			int value = mi.getValue(f);
-			String text = mi.getText(f);
-			String dontCare = mi.getDontCareReason(f);
-			//-- The value in octal, and what it means where the print set says: "2 = DATO". A
-			//-- field whose value is named as nothing, and one the print set does not name at
-			//-- all, both show as the number by itself.
-			String info = octal(value, f.length());
-			if(text != null && !text.isEmpty())
-				info = info + " = " + text;
-			//-- A field whose value is not what the machine does says so instead of saying what
-			//-- it would have meant. The KD11-B's ALU field is this in nine microwords.
-			if(dontCare != null)
-				info = info + "  -  don't care: " + dontCare;
-			//-- Highlighted when the field is doing something, which needs it to have a resting
-			//-- value to differ from. The next-address field has none - it is different in every
-			//-- microword - and the Pascal highlights it in every microword as a result
-			//-- ({@code FormMicroCodeU.pas:341}, where the default is -1 and the comparison can
-			//-- never be equal). A row that is always yellow says nothing; this one is not.
-			rows.add(new MicrowordRow(f.name(), f.bitRange(), info,
-				f.hasDefault() && !mi.isDefault(f) && dontCare == null, differing.contains(f),
-				f == mi.getArchitecture().getNextAddressField()));
-		}
+		//-- The value in octal, and what it means where the print set says: "2 = DATO". Which
+		//-- fields are doing something is decided in MicrowordFieldValue, for every view alike.
+		for(MicrowordFieldValue v : MicrowordFieldValue.of(mi, differing))
+			rows.add(new MicrowordRow(v.field().name(), v.field().bitRange(), v.info(), v.active(), v.differs(), v.nextAddress()));
 		//-- Highlighted, like the Pascal highlights it: of everything here it is the one row that
 		//-- says what the microword is for. A document that does not carry the microassembler
 		//-- source - the KD11-B's is a bit table - gets no such row rather than an empty one.
@@ -103,7 +76,7 @@ public record MicrowordRow(String label, String bits, String info, boolean highl
 			for(int i = 0; i < role.notes().size(); i++)
 				rows.add(new MicrowordRow(i == 0 ? "Flow notes" : "", "", role.notes().get(i), false));
 		}
-		rows.add(new MicrowordRow(PREDECESSORS, "", describe(predecessors), false));
+		rows.add(new MicrowordRow("Jumped to from", "", describe(predecessors), false));
 		rows.add(new MicrowordRow("Listing file", "", mi.getSourceName(), false));
 		rows.add(new MicrowordRow("Listing line#", "", String.valueOf(mi.getLineNumber()), false));
 		if(role != null)
@@ -133,10 +106,5 @@ public record MicrowordRow(String label, String bits, String info, boolean highl
 		for(MicroInstruction mi : predecessors)
 			tags.add(mi.getSymbolicTag() + " (" + mi.getAddressOctal() + ")");
 		return String.join(", ", tags);
-	}
-
-	/** Octal, padded to the digits the field's width needs. */
-	private static String octal(int value, int bits) {
-		return Octal.format(value, Octal.digitsForBits(bits));
 	}
 }
