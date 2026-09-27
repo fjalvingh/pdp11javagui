@@ -1,0 +1,125 @@
+#!/bin/bash
+#
+# Deploy the web application to https://tools.etc.to/
+#
+# The application runs in its own Tomcat 11 instance on pigalle.etc.to, in /env/tools, started
+# by the systemd template unit tomcat11@tools.service and listening on 127.0.0.1:8088. Apache
+# terminates TLS and proxies to it. Both configurations are kept in deploy/pigalle/. The webapp
+# is served as the root context, so it is unpacked into /env/tools/webapps/ROOT; the previous
+# one is kept as ROOT.previous. Modelled on DomUI's deploy-demo, which does the same for
+# https://demo.domui.org/ from /env/demo on the same machine.
+#
+# Usage:
+#   tools/deploy-web [-s server] [-n]
+#
+#   -s server   deploy to another host (default pigalle.etc.to)
+#   -n          do not build; deploy the war that is already in pdp11-web/target/
+#
+set -euo pipefail
+
+SERVER=${DEPLOY_SERVER:-pigalle.etc.to}
+INSTANCE=tools
+BASE=/env/$INSTANCE
+SERVICE=tomcat11@$INSTANCE.service
+HEALTHURL=https://tools.etc.to/
+LOCALPORT=8088
+SKIPBUILD=0
+
+while getopts "s:nh" opt; do
+	case $opt in
+		s) SERVER=$OPTARG ;;
+		n) SKIPBUILD=1 ;;
+		h) sed -n '2,17p' "$0"; exit 0 ;;
+		*) echo "Unknown option; use -h for help" >&2; exit 1 ;;
+	esac
+done
+
+cd "$(dirname "$0")/.."
+ROOTDIR=$(pwd)
+WAR=$ROOTDIR/pdp11-web/target/pdp11-web.war
+
+say() { echo; echo "=== $* ==="; }
+
+#-- 1. Build ---------------------------------------------------------------
+if [ $SKIPBUILD = 0 ]; then
+	say "Building the war"
+	#-- DomUI is not on Maven Central; install it from the submodule if it has never been.
+	ls domui/to.etc.domui/target/to.etc.domui-*.jar >/dev/null 2>&1 || tools/build-domui.sh -q
+	./mvnw -B -q -pl pdp11-web -am clean install -DskipTests
+else
+	say "Skipping the build (-n)"
+fi
+
+if [ ! -f "$WAR" ]; then
+	echo "The war $WAR does not exist - build it first, or drop the -n option." >&2
+	exit 1
+fi
+echo "War is $(du -h "$WAR" | cut -f1), built $(date -r "$WAR" '+%Y-%m-%d %H:%M')"
+
+#-- 2. Copy to the server --------------------------------------------------
+#-- To a staging name first, so that a half-copied file can never be unpacked over a working
+#-- installation.
+say "Copying the war to $SERVER"
+scp -q "$WAR" "$SERVER:/tmp/tools-deploy.war"
+
+#-- 3. Install and restart --------------------------------------------------
+say "Installing on $SERVER and restarting $SERVICE"
+ssh "$SERVER" "bash -euo pipefail -s" <<REMOTE
+	BASE=$BASE
+	SERVICE=$SERVICE
+	INSTANCE=$INSTANCE
+
+	#-- Stop the instance before touching the webapp, so Tomcat is not reading the directory
+	#-- while it is replaced.
+	if systemctl is-active --quiet \$SERVICE; then
+		echo "Stopping \$SERVICE"
+		sudo systemctl stop \$SERVICE
+	else
+		echo "\$SERVICE was not running"
+	fi
+
+	#-- Keep the previous version so a bad deploy can be rolled back by hand.
+	if sudo -u \$INSTANCE test -d \$BASE/webapps/ROOT && [ -n "\$(sudo -u \$INSTANCE ls -A \$BASE/webapps/ROOT 2>/dev/null)" ]; then
+		echo "Keeping the previous version as ROOT.previous"
+		sudo -u \$INSTANCE rm -rf \$BASE/webapps/ROOT.previous
+		sudo -u \$INSTANCE mv \$BASE/webapps/ROOT \$BASE/webapps/ROOT.previous
+	fi
+
+	#-- Unpack the new one. autoDeploy is off and there is no ROOT.war, so Tomcat serves this
+	#-- directory as the root context.
+	echo "Unpacking the new version into \$BASE/webapps/ROOT"
+	chmod 644 /tmp/tools-deploy.war
+	sudo -u \$INSTANCE mkdir -p \$BASE/webapps/ROOT
+	sudo -u \$INSTANCE unzip -q -o /tmp/tools-deploy.war -d \$BASE/webapps/ROOT
+	rm -f /tmp/tools-deploy.war
+
+	#-- Tomcat caches the unpacked application; a stale work directory serves the old one.
+	sudo -u \$INSTANCE rm -rf \$BASE/work/Catalina
+
+	echo "Starting \$SERVICE"
+	sudo systemctl start \$SERVICE
+REMOTE
+
+#-- 4. Wait for it to answer -------------------------------------------------
+say "Waiting for the application to come up"
+for i in $(seq 1 60); do
+	code=$(ssh "$SERVER" "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$LOCALPORT/ || true")
+	if [ "$code" = "200" ]; then
+		echo "Tomcat is answering on port $LOCALPORT"
+		break
+	fi
+	if [ "$i" = 60 ]; then
+		echo "The application did not come up within 2 minutes. Last status: ${code:-none}" >&2
+		echo "Check: ssh $SERVER 'sudo journalctl -u $SERVICE -n 50; sudo tail -50 $BASE/logs/catalina.out'" >&2
+		exit 1
+	fi
+	sleep 2
+done
+
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$HEALTHURL" || true)
+if [ "$code" = "200" ]; then
+	say "Deployed: $HEALTHURL is up"
+else
+	echo "Tomcat is up, but $HEALTHURL answered $code - check the Apache proxy config." >&2
+	exit 1
+fi

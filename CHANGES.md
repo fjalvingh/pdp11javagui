@@ -20,6 +20,9 @@
 - **The microcode window's navigation is no longer inside the window.** Search, history, the
   revision comparison and what each row says are `MicrocodeBrowser` and `MicrowordRow` in
   `pdp11-common`, tested on their own; the Swing panel and the web page are both views over them.
+- **The web application is live at https://tools.etc.to/**, on pigalle.etc.to in its own Tomcat
+  instance behind Apache, like the DomUI demo there. `tools/deploy-web` builds and deploys it; the
+  server's Tomcat and Apache configuration are kept in `deploy/pigalle/`.
 - **DomUI is a git submodule** (`domui/`, branch `skarp-master`). Clone with
   `--recurse-submodules` and run `tools/build-domui.sh` once before building; CI does both.
 
