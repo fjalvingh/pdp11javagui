@@ -7,8 +7,8 @@
 #
 # DomUI is a git submodule (domui/, branch skarp-master) and deliberately not a module of this
 # reactor: its parent pom brings its own plugin setup, Kotlin, Hibernate integrations and a demo
-# application, none of which this build should run. -pl to.etc.domui -am builds just the
-# framework and what it depends on.
+# application, none of which this build should run. -pl ... -am builds just the framework,
+# the FontAwesome icon set it refuses to start without, and what those depend on.
 #
 # Run once after cloning (git clone --recurse-submodules), and again after updating the
 # submodule.
@@ -24,5 +24,5 @@ fi
 cd "$root"
 ./mvnw -f "$root/domui/pom.xml" -B --no-transfer-progress install \
 	-DskipTests -Dmaven.javadoc.skip=true \
-	-pl to.etc.domui -am \
+	-pl to.etc.domui,integrations/fontawesome6free -am \
 	"$@"

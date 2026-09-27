@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+             https://jakarta.ee/xml/ns/jakartaee/web-app_5_0.xsd"
+         version="5.0">
+    <display-name>PDP-11 tools</display-name>
+
+    <!-- DomUI serves every URL of the application through this one filter. -->
+    <filter>
+        <filter-name>DomFilter</filter-name>
+        <filter-class>to.etc.domui.server.AppFilter</filter-class>
+        <init-param>
+            <param-name>application</param-name>
+            <param-value>to.etc.pdp11.web.WebApplication</param-value>
+        </init-param>
+        <init-param>
+            <param-name>extension</param-name>
+            <param-value>ui</param-value>
+        </init-param>
+    </filter>
+    <filter-mapping>
+        <filter-name>DomFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+</web-app>

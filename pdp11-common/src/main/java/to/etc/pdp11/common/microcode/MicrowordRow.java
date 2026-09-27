@@ -22,6 +22,12 @@ import java.util.Set;
  * @param next      the row says where the microword goes next, so choosing it goes there
  */
 public record MicrowordRow(String label, String bits, String info, boolean highlight, boolean differs, boolean next) {
+	/**
+	 * The label of the row listing what falls through to the microword, which a view that can
+	 * link from one microword to another shows as links.
+	 */
+	public static final String PREDECESSORS = "Jumped to from";
+
 	public MicrowordRow(String label, String bits, String info, boolean highlight, boolean differs) {
 		this(label, bits, info, highlight, differs, false);
 	}
@@ -97,7 +103,7 @@ public record MicrowordRow(String label, String bits, String info, boolean highl
 			for(int i = 0; i < role.notes().size(); i++)
 				rows.add(new MicrowordRow(i == 0 ? "Flow notes" : "", "", role.notes().get(i), false));
 		}
-		rows.add(new MicrowordRow("Jumped to from", "", describe(predecessors), false));
+		rows.add(new MicrowordRow(PREDECESSORS, "", describe(predecessors), false));
 		rows.add(new MicrowordRow("Listing file", "", mi.getSourceName(), false));
 		rows.add(new MicrowordRow("Listing line#", "", String.valueOf(mi.getLineNumber()), false));
 		if(role != null)

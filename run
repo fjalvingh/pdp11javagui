@@ -1,4 +1,5 @@
 #!/bin/bash
+#-- The reactor includes the web application, which needs DomUI installed; do that once.
+ls domui/to.etc.domui/target/to.etc.domui-*.jar >/dev/null 2>&1 || tools/build-domui.sh -q
 mvn21 clean install -Dmaven.test.skip=true -Dmaven.javadoc.skip=true -DskipITs=true -Djetty.skip=true
 java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar &
-

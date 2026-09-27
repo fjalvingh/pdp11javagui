@@ -42,6 +42,7 @@
     <modules>
         <module>pdp11-common</module>
         <module>pdp11-gui</module>
+        <module>pdp11-web</module>
     </modules>
 
     <properties>
@@ -62,6 +63,17 @@
         <gson.version>2.13.2</gson.version>
         <jdt.annotation.version>2.4.100</jdt.annotation.version>
 
+        <!--
+            The web application. DomUI is the domui/ submodule (branch skarp-master), installed
+            by tools/build-domui.sh; the servlet API and slf4j follow what DomUI itself builds
+            against, and Jetty is the version DomUI runs on.
+        -->
+        <domui.version>1.2-SNAPSHOT</domui.version>
+        <jakarta.servlet.version>6.1.0</jakarta.servlet.version>
+        <slf4j.version>1.7.36</slf4j.version>
+        <jetty.version>11.0.26</jetty.version>
+        <web.http.port>8080</web.http.port>
+
         <!-- Test dependencies -->
         <junit.version>5.14.4</junit.version>
         <archunit.version>1.5.0</archunit.version>
@@ -73,6 +85,7 @@
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
+        <maven-war-plugin.version>3.4.0</maven-war-plugin.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <!--
             Not bound to a phase: the release workflow calls versions:set from the command
@@ -161,6 +174,27 @@
             </dependency>
 
             <dependency>
+                <groupId>to.etc.domui</groupId>
+                <artifactId>to.etc.domui</artifactId>
+                <version>${domui.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>to.etc.domui</groupId>
+                <artifactId>fontawesome6free</artifactId>
+                <version>${domui.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.servlet</groupId>
+                <artifactId>jakarta.servlet-api</artifactId>
+                <version>${jakarta.servlet.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+
+            <dependency>
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
@@ -234,6 +268,16 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-resources-plugin</artifactId>
                     <version>${maven-resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>${maven-war-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-maven-plugin</artifactId>
+                    <version>${jetty.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

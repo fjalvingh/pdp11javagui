@@ -28,6 +28,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # DomUI, which the web application is built on, is the domui/ submodule.
+          submodules: recursive
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -46,6 +49,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
+
+      # DomUI is not on Maven Central: install the parts of the submodule the web application
+      # uses into the local repository before the reactor needs them.
+      - name: Install DomUI
+        run: tools/build-domui.sh
 
       - name: Build
         run: ./mvnw -B --no-transfer-progress verify

@@ -36,6 +36,8 @@ jobs:
           # --generate-notes lists what changed since the previous tag, so it needs the history
           # and the other tags, not the single commit a tag push checks out by default.
           fetch-depth: 0
+          # DomUI, which the web application is built on, is the domui/ submodule.
+          submodules: recursive
 
       # Deliberately not interpolated into the shell: an input becomes a shell command if it is,
       # and this is the one place in the build with a token that can write to the repository.
@@ -93,6 +95,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
+
+      # DomUI is not on Maven Central: install the parts of the submodule the web application
+      # uses before anything resolves the reactor, which now includes pdp11-web.
+      - name: Install DomUI
+        run: tools/build-domui.sh
 
       # The checked-in poms stay at -SNAPSHOT; the release version comes from the tag and is
       # stamped on for this build only. Nothing is committed and nothing is pushed, so a release
