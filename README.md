@@ -117,19 +117,6 @@ documents, search and walk as the desktop's Microcode window, with what falls th
 microword as links, and `?source=PDP1105_F&upc=011` opening on any microword. With it running,
 `tools/web-smoke.sh` clicks through the page in a headless Chrome.
 
-## Deploying the web application
-
-It runs at <https://tools.etc.to/>, on pigalle.etc.to, set up the same way as the DomUI demo beside
-it: its own Tomcat 11 instance in `/env/tools`, run as user `tools` by `tomcat11@tools.service`
-and listening on 127.0.0.1:8088, behind Apache, which terminates TLS with a Let's Encrypt
-certificate and proxies to it. The instance's `server.xml` and Apache's `040-tools.conf` are kept in
-`deploy/pigalle/`.
-
-```
-tools/deploy-web          # build, copy, unpack as ROOT (keeping ROOT.previous), restart, check
-tools/deploy-web -n       # the same with the war already built
-```
-
 ## Releasing
 
 A release is one file: the shaded `pdp11gui-<version>.jar`, which needs nothing but a JDK 21
