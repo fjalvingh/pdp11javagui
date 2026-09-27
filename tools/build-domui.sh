@@ -5,7 +5,7 @@
 # on Maven Central. It runs from the repository root so that whatever .mvn/maven.config says
 # about the local repository applies to this build and to the reactor's alike.
 #
-# DomUI is a git submodule (domui/, branch skarp-master) and deliberately not a module of this
+# DomUI is a git submodule (domui/, branch domui-fixed) and deliberately not a module of this
 # reactor: its parent pom brings its own plugin setup, Kotlin, Hibernate integrations and a demo
 # application, none of which this build should run. -pl ... -am builds just the framework,
 # the FontAwesome icon set it refuses to start without, and what those depend on.

@@ -6,7 +6,6 @@ import to.etc.domui.component.input.Text2;
 import to.etc.domui.component.input.ValueLabelPair;
 import to.etc.domui.component.layout.ContentPanel;
 import to.etc.domui.component.layout.MessageLine;
-import to.etc.domui.component.layout.title.AppPageTitleBar;
 import to.etc.domui.component2.buttons.ButtonBar2;
 import to.etc.domui.component2.combo.ComboFixed2;
 import to.etc.domui.component2.form4.FormBuilder;
@@ -52,8 +51,6 @@ public final class MicrocodePage extends UrlPage {
 
 	private final MicrocodeBrowser m_browser = new MicrocodeBrowser(new Slf4jLogger(MicrocodePage.class));
 
-	private final AppPageTitleBar m_titleBar = new AppPageTitleBar("Microcode", false);
-
 	private final ComboFixed2<SearchBy> m_searchBy = new ComboFixed2<>(List.of());
 
 	private final Text2<String> m_search = new Text2<>(String.class);
@@ -78,8 +75,7 @@ public final class MicrocodePage extends UrlPage {
 		MicrocodeSource source = sourceParameter();
 		m_browser.choose(source);
 
-		m_titleBar.setShowBackButton(true);
-		add(m_titleBar);
+		setPageTitle("Microcode");
 		ContentPanel cp = new ContentPanel();
 		add(cp);
 
@@ -92,7 +88,7 @@ public final class MicrocodePage extends UrlPage {
 		sourceCombo.setValue(source);
 		sourceCombo.setTitle("The two PDP-11/05 entries are the two M7261 board revisions: read the part"
 			+ " numbers off the two control store PROMs to tell which board is in the machine.");
-		sourceCombo.setOnValueChanged(c -> {
+		sourceCombo.setOnValueChanged(() -> {
 			MicrocodeSource chosen = sourceCombo.getValue();
 			if(chosen == null)
 				return;
@@ -104,13 +100,13 @@ public final class MicrocodePage extends UrlPage {
 		m_searchBy.addCssClass("pdp-searchby");
 		m_searchBy.setMandatory(true);
 		fillSearchBy();
-		m_searchBy.setOnValueChanged(c -> {
+		m_searchBy.setOnValueChanged(() -> {
 			m_browser.setSearchBy(m_searchBy.getValue());
 			showCurrent();
 		});
 
 		m_search.addCssClass("pdp-search");
-		m_search.addButton(new DefaultButton("Go", b -> search()));
+		m_search.addButton(new DefaultButton("Go", () -> search()));
 		m_search.setReturnPressed(n -> search());
 
 		FormBuilder fb = new FormBuilder(cp);
@@ -121,11 +117,11 @@ public final class MicrocodePage extends UrlPage {
 
 		ButtonBar2 bar = new ButtonBar2();
 		cp.add(bar);
-		m_back = bar.addButton("Back", b -> {
+		m_back = bar.addButton("Back", () -> {
 			m_browser.back();
 			show(null);
 		});
-		m_next = bar.addButton("Next instruction", b -> show(m_browser.next()));
+		m_next = bar.addButton("Next instruction", () -> show(m_browser.next()));
 		m_next.setTitle("Follow this microword's next-address field, which is where it goes when nothing branches");
 
 		m_message.addCssClass("pdp-message");
@@ -174,9 +170,6 @@ public final class MicrocodePage extends UrlPage {
 
 	private void showCurrent() {
 		MicroInstruction mi = m_browser.getCurrent();
-		String title = "Microcode - " + m_browser.getSource().getLabel();
-		m_titleBar.setPageTitle(title);
-		setPageTitle(title);
 		m_search.setValue(mi == null ? null : m_browser.searchTextOf(mi));
 		m_back.setDisabled(!m_browser.canGoBack());
 		m_next.setDisabled(!m_browser.canGoNext());
@@ -245,7 +238,7 @@ public final class MicrocodePage extends UrlPage {
 	private void renderFlow(Table table, MicroInstruction mi) {
 		TBody body = section(table, "Flow");
 		TD next = pair(body, "Next", null);
-		next.add(new LinkButton(mi.getNextAddressOctal(), b -> show(m_browser.next())));
+		next.add(new LinkButton(mi.getNextAddressOctal(), () -> show(m_browser.next())));
 		//-- Where a microtest is selected the hardware ORs its result into the next address, so
 		//-- what is printed is a branch base and not the successor; saying "next 162" flat would
 		//-- state as fact something that depends on the state of the machine.
@@ -267,7 +260,7 @@ public final class MicrocodePage extends UrlPage {
 		}
 		for(MicroInstruction p : predecessors) {
 			int address = p.getAddress();
-			reached.add(new LinkButton(p.getSymbolicTag() + " (" + p.getAddressOctal() + ")", b -> {
+			reached.add(new LinkButton(p.getSymbolicTag() + " (" + p.getAddressOctal() + ")", () -> {
 				m_browser.goTo(address);
 				show(null);
 			}));

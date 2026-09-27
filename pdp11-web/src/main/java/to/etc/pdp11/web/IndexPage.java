@@ -1,7 +1,6 @@
 package to.etc.pdp11.web;
 
 import to.etc.domui.component.layout.ContentPanel;
-import to.etc.domui.component.layout.title.AppPageTitleBar;
 import to.etc.domui.component.misc.ALink;
 import to.etc.domui.dom.html.HTag;
 import to.etc.domui.dom.html.Para;
@@ -16,7 +15,6 @@ public final class IndexPage extends UrlPage {
 	@Override
 	public void createContent() throws Exception {
 		setPageTitle("PDP-11 tools");
-		add(new AppPageTitleBar("PDP-11 tools", false));
 		ContentPanel cp = new ContentPanel();
 		add(cp);
 

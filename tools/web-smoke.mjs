@@ -44,8 +44,8 @@ await clickText('button', 'Next instruction');
 s = await status(); check('Next follows the fall-through', s && !s.startsWith('µPC = 0043') && s.startsWith('µPC = '), s);
 
 await setSelect('pdp-source', 'PDP-11/05 (M7261 rev F)');
-const title = await ev(`document.querySelector('.ui-atl-t')?.textContent.trim()`);
-check('choosing rev F retitles the page', title === 'Microcode - PDP-11/05 (M7261 rev F)', title);
+s = await status();
+check('choosing rev F shows the 1976 drawing set', s?.includes('kd11b-microcode-1976'), s);
 const byOptions = await ev(`[...document.querySelector('.pdp-searchby select, select.pdp-searchby').options].map(o => o.text).filter(t => t).join(',')`);
 check('rev F cannot be searched by listing line', !byOptions.includes('Listing line'), byOptions);
 

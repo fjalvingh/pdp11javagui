@@ -3,6 +3,63 @@
  * field that is doing something this cycle, and a field the other board revision disagrees on -
  * the only way a wrongly chosen KD11-B revision ever shows itself.
  */
+/* --- The top bar, after the DomUI demo's ------------------------------------------------------ */
+
+.pdp-topbar {
+	background-color: #24292e;
+	color: rgba(255, 255, 255, 0.75);
+	display: flex;
+	align-items: center;
+	flex-direction: row;
+	justify-content: space-between;
+	height: 60px;
+	margin-bottom: 10px;
+}
+
+.pdp-topbar-logo {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 0 24px 0 12px;
+	text-decoration: none;
+	color: #fff;
+}
+
+.pdp-topbar-name {
+	font-size: 18px;
+	font-weight: bold;
+	white-space: nowrap;
+}
+
+.pdp-topbar-crumb {
+	flex: 2;
+	font-size: 16px;
+}
+
+.pdp-topbar-r {
+	flex: none;
+	display: flex;
+	align-items: center;
+	padding-right: 12px;
+}
+
+/*
+ * The bar keeps its dark ground in both theme variants, so its buttons cannot take the theme's
+ * button colour: in the light variant that is near-black, which makes the theme switch icon
+ * invisible on the bar. Paint them with the bar's own foreground instead.
+ */
+.pdp-topbar .ui-button,
+.pdp-topbar .ui-button:hover,
+.pdp-topbar .ui-button:focus {
+	color: rgba(255, 255, 255, 0.75);
+}
+
+.pdp-topbar .ui-button:hover,
+.pdp-topbar .ui-button:focus {
+	color: #fff;
+}
+
 .pdp-tool-link {
 	display: block;
 	margin: 4px 0;
@@ -30,11 +87,13 @@
 .pdp-mw-upc {
 	font-family: monospace;
 	font-weight: normal;
-	color: #777;
+	color: inherit;
+	opacity: 0.65;
 }
 
 .pdp-mw-part {
-	color: #555;
+	color: inherit;
+	opacity: 0.65;
 }
 
 .pdp-mw-does {
@@ -65,7 +124,8 @@
 
 .pdp-mw tr.pdp-mw-colhead th {
 	font-weight: normal;
-	color: #777;
+	color: inherit;
+	opacity: 0.65;
 	border-bottom: 1px solid #ccc;
 }
 
@@ -77,7 +137,8 @@
 .pdp-mw-label {
 	width: 1%;
 	white-space: nowrap;
-	color: #555;
+	color: inherit;
+	opacity: 0.65;
 }
 
 .pdp-mw-name {
@@ -91,7 +152,8 @@
 
 .pdp-mw-signal {
 	margin-left: 8px;
-	color: #777;
+	color: inherit;
+	opacity: 0.65;
 	font-size: 90%;
 }
 
@@ -109,7 +171,8 @@
 .pdp-mw-aside,
 .pdp-mw-other {
 	display: block;
-	color: #777;
+	color: inherit;
+	opacity: 0.65;
 	font-style: italic;
 }
 
@@ -117,9 +180,10 @@
 	color: #900;
 }
 
-/* Several links in a cell: next to one another, comma separated. */
-.pdp-mw .ui-lbtn + .ui-lbtn::before {
-	content: ",\00a0";
+/* Several links in a cell: comma separated, the comma staying with the link before it. */
+.pdp-mw .ui-lbtn:not(:last-child)::after {
+	content: ",";
+	margin-right: 0.5em;
 }
 
 /* The theme sizes a link's text for a page; in the table, match the table. */
@@ -149,7 +213,8 @@
 
 .pdp-mw-legend {
 	margin: 10px 0;
-	color: #777;
+	color: inherit;
+	opacity: 0.65;
 	font-size: 90%;
 }
 

@@ -69,7 +69,7 @@ Requires JDK 21 or later. Use the Maven wrapper, which pins Maven 3.9.x — the 
 anything older, and Maven 3.5 is still the default on some machines here.
 
 The web application is built on [DomUI](https://github.com/fjalvingh/domui), which is not on
-Maven Central. It is a git submodule, `domui/` on branch `skarp-master`, and has to be installed
+Maven Central. It is a git submodule, `domui/` on branch `domui-fixed`, and has to be installed
 into the local Maven repository once before the build can find it — and again after the
 submodule is updated:
 

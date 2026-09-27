@@ -104,7 +104,7 @@ java11gui/
     pdp11-ui/     Swing windows, window manager, settings binding
     pdp11-app/    main(), packaging, resources (driver *.mac, machines/*.ini)
   pdp11-web/      the web application, on DomUI: minicomputer tools with no machine attached
-  domui/          git submodule, branch skarp-master; not a reactor module
+  domui/          git submodule, branch domui-fixed; not a reactor module
 ```
 
 ### Two applications, one model

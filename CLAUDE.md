@@ -25,7 +25,7 @@ the MACRO-11 driver, the microcode documents and browser). The dependencies run
 common ← core ← ui ← app and common ← web, and never the other way; `pdp11-web` may not reach
 `pdp11-core`, which an enforcer rule in its pom holds down.
 
-DomUI is the git submodule `domui/` (branch `skarp-master`), not a reactor module and not on
+DomUI is the git submodule `domui/` (branch `domui-fixed`), not a reactor module and not on
 Maven Central: `tools/build-domui.sh` installs the parts the web needs into the local repository,
 once after cloning and again after the submodule moves. CI does the same.
 

@@ -64,7 +64,7 @@
         <jdt.annotation.version>2.4.100</jdt.annotation.version>
 
         <!--
-            The web application. DomUI is the domui/ submodule (branch skarp-master), installed
+            The web application. DomUI is the domui/ submodule (branch domui-fixed), installed
             by tools/build-domui.sh; the servlet API and slf4j follow what DomUI itself builds
             against, and Jetty is the version DomUI runs on.
         -->

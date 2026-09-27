@@ -20,7 +20,9 @@
 - **The microcode window's navigation is no longer inside the window.** Search, history, the
   revision comparison and what each row says are `MicrocodeBrowser` and `MicrowordRow` in
   `pdp11-common`, tested on their own; the Swing panel and the web page are both views over them.
-- **DomUI is a git submodule** (`domui/`, branch `skarp-master`). Clone with
+- **The web pages share a top bar**, after the DomUI demo's: the PDP11GUI logo, which goes home, a
+  breadcrumb of the pages that led here, and a light/dark theme switch whose choice is remembered.
+- **DomUI is a git submodule** (`domui/`, branch `domui-fixed`). Clone with
   `--recurse-submodules` and run `tools/build-domui.sh` once before building; CI does both.
 
 ### Documentation
