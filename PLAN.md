@@ -627,7 +627,7 @@ only runs on one machine must not be able to break the build on the others. **Ex
 they drive bitfield definitions, register-group windows, the I/O page scanner and the fakes'
 valid-address map, and they are not in the Pascal repo. **Done:** recovered from
 `PDP11GUI.msi` 1.48.6 (GitHub releases → `Data1.cab`) and committed to
-`pdp11-app/src/main/resources/machines/` — `pdp11.ini` plus the eight `*.modules` libraries
+`pdp11-gui/pdp11-app/src/main/resources/machines/` — `pdp11.ini` plus the eight `*.modules` libraries
 it includes, ISO-8859-1 with CRLF. *Small.*
 
 **Phase 1 — Pure core. DONE.** `Address`, `MemoryAddressType`, octal formatting, `BitfieldDef*`,
@@ -1483,7 +1483,7 @@ is rework.
 - **SimH integration tests** in phase 4+, launching a real `pdp11` from the test and
   exercising examine/deposit/run/halt/step.
 - **Disassembler cross-checks, two of them, with different jobs.** The committed SimH corpus
-  (`pdp11-core/src/test/resources/disas/simh-corpus.txt`, all 65536 words) is the permanent
+  (`pdp11-gui/pdp11-core/src/test/resources/disas/simh-corpus.txt`, all 65536 words) is the permanent
   regression test: SimH is the authority both implementations were written against, and the
   fixture means CI needs no SimH. The Pascal diff (`tools/pascal-disas-diff.sh`) is **not** a
   committed test — pinning a regression test to an implementation with known bugs would pin
@@ -1496,14 +1496,14 @@ is rework.
   later in a few dozen lines to capture byte streams for replay.
 
 Run the app during development with
-`mvn -pl pdp11-app exec:java`, or `java -jar pdp11-app/target/pdp11gui.jar`.
+`mvn -pl pdp11-gui/pdp11-app exec:java`, or `java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar`.
 
 ---
 
 ## 7. Risks and open items
 
 1. ~~**Machine `.ini` files are not in the repo.**~~ **Closed in phase 0.** Recovered from the
-   1.48.6 MSI and committed; see `pdp11-app/src/main/resources/machines/README.md`.
+   1.48.6 MSI and committed; see `pdp11-gui/pdp11-app/src/main/resources/machines/README.md`.
 
    **The m4 subset is now measured, and it is tiny** — across all nine files: `define` ×15,
    `include` ×11, `eval(expr, 8)` ×3, and `$1`/`$2` ×46. Nothing else. No `ifelse`, `ifdef`,
@@ -1513,7 +1513,7 @@ Run the app during development with
    hundred lines of Java, so the fallback of converting the files to a simpler format is not
    needed — build the preprocessor.
 
-   `pdp11-app/src/test/resources/machines/pdp11.expected.ini` is a byte-for-byte golden
+   `pdp11-gui/pdp11-app/src/test/resources/machines/pdp11.expected.ini` is a byte-for-byte golden
    fixture of GNU m4 1.4.21's output over `pdp11.ini`; the phase 2 preprocessor must reproduce
    it exactly.
 

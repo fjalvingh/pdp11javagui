@@ -61,9 +61,9 @@ public class JavaDisasDump {
 }
 JAVA
 
-classes=$root/pdp11-core/target/classes
+classes=$root/pdp11-gui/pdp11-core/target/classes
 if [ ! -d "$classes" ]; then
-	echo "$classes does not exist; run ./mvnw -pl pdp11-core compile first" >&2
+	echo "$classes does not exist; run ./mvnw -pl :pdp11-core compile first" >&2
 	exit 1
 fi
 java -cp "$classes" "$work/JavaDisasDump.java" > "$work/java.txt"

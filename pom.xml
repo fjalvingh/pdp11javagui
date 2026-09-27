@@ -40,18 +40,13 @@
     </developers>
 
     <modules>
-        <module>pdp11-core</module>
-        <module>pdp11-ui</module>
-        <module>pdp11-app</module>
+        <module>pdp11-gui</module>
     </modules>
 
     <properties>
         <jdk.version>21</jdk.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-
-        <!-- The class holding main(); referenced by the shade and exec plugins. -->
-        <main.class>to.etc.pdp11.app.Pdp11Gui</main.class>
 
         <!-- Libraries. Versions live here only; modules declare artifacts without a version. -->
         <flatlaf.version>3.7.2</flatlaf.version>

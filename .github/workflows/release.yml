@@ -114,7 +114,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          jar="pdp11-app/target/pdp11gui.jar"
+          jar="pdp11-gui/pdp11-app/target/pdp11gui.jar"
           stamped="$(unzip -p "$jar" META-INF/MANIFEST.MF | tr -d '\r' \
             | sed -n 's/^Implementation-Version: //p')"
           if [ "$stamped" != "$VERSION" ]; then

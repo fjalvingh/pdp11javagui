@@ -55,5 +55,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pdp11gui-jar
-          path: pdp11-app/target/pdp11gui.jar
+          path: pdp11-gui/pdp11-app/target/pdp11gui.jar
           if-no-files-found: error

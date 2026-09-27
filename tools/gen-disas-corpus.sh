@@ -11,7 +11,7 @@
 #     <word>[,<ext1>[,<ext2>]]<TAB><simh text>
 # with all numbers in octal. Lines starting with '#' are comments.
 #
-# Usage: tools/gen-disas-corpus.sh > pdp11-core/src/test/resources/disas/simh-corpus.txt
+# Usage: tools/gen-disas-corpus.sh > pdp11-gui/pdp11-core/src/test/resources/disas/simh-corpus.txt
 #
 set -euo pipefail
 

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>to.etc.pdp11</groupId>
+        <artifactId>java11gui</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>pdp11-gui</artifactId>
+    <packaging>pom</packaging>
+
+    <name>pdp11-gui</name>
+    <description>
+        The desktop application: the machine connection layer, the Swing windows and main().
+        Everything it shares with the web application is in pdp11-common, one level up.
+    </description>
+
+    <modules>
+        <module>pdp11-core</module>
+        <module>pdp11-ui</module>
+        <module>pdp11-app</module>
+    </modules>
+
+    <properties>
+        <!-- The class holding main(); referenced by the shade and exec plugins in pdp11-app. -->
+        <main.class>to.etc.pdp11.app.Pdp11Gui</main.class>
+    </properties>
+</project>

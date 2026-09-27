@@ -75,13 +75,13 @@ anything older, and Maven 3.5 is still the default on some machines here.
 ## Running
 
 ```
-./mvnw -pl pdp11-app exec:java
+./mvnw -pl pdp11-gui/pdp11-app exec:java
 ```
 
 or, after `./mvnw package`:
 
 ```
-java -jar pdp11-app/target/pdp11gui.jar
+java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar
 ```
 
 Then **File → Connect to simulated → …** for a machine that needs nothing installed, or
@@ -156,7 +156,7 @@ rules the code has to hold to.
 
 Everything runs headless, including the layout tests: the windows are thin frames around
 `JPanel`s, and a panel can be laid out and painted into an image with no display. Each build
-also writes `pdp11-ui/target/ui-render/*.png`, which is what those layouts actually look like —
+also writes `pdp11-gui/pdp11-ui/target/ui-render/*.png`, which is what those layouts actually look like —
 assertions catch a layout that is broken, and a picture catches one that is merely wrong.
 
 The exceptions are the tests about windows rather than about layout: `WindowsBuildTest` opens

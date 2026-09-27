@@ -6,7 +6,7 @@
 
     <parent>
         <groupId>to.etc.pdp11</groupId>
-        <artifactId>java11gui</artifactId>
+        <artifactId>pdp11-gui</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 

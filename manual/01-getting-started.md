@@ -33,7 +33,7 @@ Or, from a source checkout:
 
 ```
 ./mvnw package
-java -jar pdp11-app/target/pdp11gui.jar
+java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar
 ```
 
 ## Your first five minutes, with no PDP-11
