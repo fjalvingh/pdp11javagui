@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### The web application
+
+- **The microcode browsers are on the web.** A new module, `pdp11-web`, is a DomUI web
+  application of minicomputer tools that need no machine, and its first page is the microcode:
+  the PDP-11/44's listing and both PDP-11/05 board revisions, searched by µPC, symbolic tag or
+  listing line, walked with Next and Back, with the fields the other KD11-B revision disagrees on
+  coloured as on the desktop. What falls through to a microword is a list of links, and
+  `?source=PDP1105_F&upc=011` opens on any microword, so one can be linked to.
+  `./mvnw -pl pdp11-web jetty:run` serves it on port 8080.
+- **The project is two applications and what they share.** `pdp11-common` holds what needs no
+  machine - addresses, memory cells, the disassembler, memory file formats, the MACRO-11 driver
+  and the microcode - under `to.etc.pdp11.common.*`; the desktop application's three modules now
+  sit under `pdp11-gui/`, with their artifact ids unchanged. The web application may use common
+  and nothing else, which its build enforces. Disassembling images and small assembly tasks are
+  to follow on the web, from the same classes the desktop uses.
+- **The microcode window's navigation is no longer inside the window.** Search, history, the
+  revision comparison and what each row says are `MicrocodeBrowser` and `MicrowordRow` in
+  `pdp11-common`, tested on their own; the Swing panel and the web page are both views over them.
+- **DomUI is a git submodule** (`domui/`, branch `skarp-master`). Clone with
+  `--recurse-submodules` and run `tools/build-domui.sh` once before building; CI does both.
+
 ### Documentation
 
 - **Help → User manual opens it, on F1.** And it opens the manual for *this* release: a 1.2.0 jar

@@ -95,11 +95,39 @@ MigLayout · [jSerialComm](https://github.com/Fazecast/jSerialComm) ·
 
 ```
 java11gui/
-  pdp11-core/   no Swing dependency at all — model, transports, console protocol,
-                disassembler, memory loaders, disk images. Unit-tested headlessly.
-  pdp11-ui/     Swing windows, window manager, settings binding
-  pdp11-app/    main(), packaging, resources (driver *.mac, machines/*.ini)
+  pdp11-common/   shared by both applications, needs no machine: addresses, memory cells,
+                  disassembler, memory file formats, MACRO-11 driver, microcode documents and
+                  the microcode browser. No Swing, and no dependency on any other module here.
+  pdp11-gui/      the desktop application
+    pdp11-core/   what talks to a machine: transports, console protocols, simulated machines,
+                  machine descriptions, memory tests, MMU. No Swing. Unit-tested headlessly.
+    pdp11-ui/     Swing windows, window manager, settings binding
+    pdp11-app/    main(), packaging, resources (driver *.mac, machines/*.ini)
+  pdp11-web/      the web application, on DomUI: minicomputer tools with no machine attached
+  domui/          git submodule, branch skarp-master; not a reactor module
 ```
+
+### Two applications, one model
+
+The project was one product until the microcode browsers were wanted on the web as well, with
+disassembling images and small assembly tasks to follow. The code was already split along the
+right line: the packages the web needs - `util`, `addr`, `mem`, `microcode`, `disas`, `memfile`,
+`macro11` - depended only on each other, never on the console, transport or simulator code. They
+moved as whole packages into `pdp11-common` and were renamed from `to.etc.pdp11.core.*` to
+`to.etc.pdp11.common.*`, so no package is split across modules and the name says where the class
+lives. The rule for a new class is whether it needs a machine: if not, common.
+
+`pdp11-web` depends on `pdp11-common` and DomUI only. Its pom's enforcer rule bans `pdp11-core`,
+`pdp11-ui`, `pdp11-app` and jSerialComm: a web page has no serial port behind it, and a class the
+web seems to need from core is either about a machine or in the wrong module. The microcode window
+was where this was first tested - its search, history and revision comparison were inside the
+Swing panel, and became `MicrocodeBrowser` in common, which the Swing panel and the web page are
+both views over.
+
+DomUI is not on Maven Central and is not a reactor module (its parent pom brings Kotlin,
+Hibernate integrations and a demo this build has no reason to run). `tools/build-domui.sh`
+installs the framework and its FontAwesome icon set - DomUI refuses to start without one - into
+the local repository; CI checks out the submodule and runs it before the build.
 
 The split is load-bearing. **`maven-enforcer` cannot express it** — Swing and AWT are JDK
 packages, not artifacts, so there is no dependency to ban. What does express it is compiling
@@ -253,18 +281,24 @@ default-charset conversion near it.
 ## 2. `pdp11-core` design
 
 ```
-to.etc.pdp11.core.addr      Address, MemoryAddressType
-to.etc.pdp11.core.mem       MemoryCell, MemoryCellGroup, MemoryCellGroups, listeners
-to.etc.pdp11.core.bits      BitfieldDef, BitfieldsDef, BitfieldsDefs
-to.etc.pdp11.core.mmu       Pdp11Mmu
-to.etc.pdp11.core.disas     Disassembler, DecodedInstruction
-to.etc.pdp11.core.io        PhysicalTransport + impls, IoHub
-to.etc.pdp11.core.console   Console, ConsoleScanner, AnswerPhrase, per-machine impls
-to.etc.pdp11.core.fake      ported Fake* simulators
-to.etc.pdp11.core.machine   machine-description .ini parsing (+ include/define preprocessing)
-to.etc.pdp11.core.media     disk image devices, RLE transfer codec   [last phase]
-to.etc.pdp11.core.util      Logger, ProgressMonitor, octal formatting
+to.etc.pdp11.common.addr      Address, MemoryAddressType                      (pdp11-common)
+to.etc.pdp11.common.mem       MemoryCell, MemoryCellGroup, MemoryCellGroups    (pdp11-common)
+to.etc.pdp11.common.disas     Disassembler, DecodedInstruction                (pdp11-common)
+to.etc.pdp11.common.memfile   memory file formats                             (pdp11-common)
+to.etc.pdp11.common.macro11   MACRO-11 driver and listing parser              (pdp11-common)
+to.etc.pdp11.common.microcode microcode documents, MicrocodeBrowser           (pdp11-common)
+to.etc.pdp11.common.util      Logger, ProgressMonitor, octal formatting       (pdp11-common)
+to.etc.pdp11.core.bits        BitfieldDef, BitfieldsDef, BitfieldsDefs
+to.etc.pdp11.core.mmu         Pdp11Mmu
+to.etc.pdp11.core.io          PhysicalTransport + impls, IoHub
+to.etc.pdp11.core.console     Console, ConsoleScanner, AnswerPhrase, per-machine impls
+to.etc.pdp11.core.fake        ported Fake* simulators
+to.etc.pdp11.core.machine     machine-description .ini parsing (+ include/define preprocessing)
+to.etc.pdp11.core.media       disk image devices, RLE transfer codec   [last phase]
 ```
+
+The section title is kept for its history: the first seven were in `pdp11-core` until the web
+application needed them (see "Two applications, one model" above).
 
 ### `Address` — immutable record
 
@@ -1483,7 +1517,7 @@ is rework.
 - **SimH integration tests** in phase 4+, launching a real `pdp11` from the test and
   exercising examine/deposit/run/halt/step.
 - **Disassembler cross-checks, two of them, with different jobs.** The committed SimH corpus
-  (`pdp11-gui/pdp11-core/src/test/resources/disas/simh-corpus.txt`, all 65536 words) is the permanent
+  (`pdp11-common/src/test/resources/disas/simh-corpus.txt`, all 65536 words) is the permanent
   regression test: SimH is the authority both implementations were written against, and the
   fixture means CI needs no SimH. The Pascal diff (`tools/pascal-disas-diff.sh`) is **not** a
   committed test — pinning a regression test to an implementation with known bugs would pin

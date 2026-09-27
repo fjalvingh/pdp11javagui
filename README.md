@@ -68,7 +68,14 @@ disc-image tooling of phase 7.
 Requires JDK 21 or later. Use the Maven wrapper, which pins Maven 3.9.x — the build refuses
 anything older, and Maven 3.5 is still the default on some machines here.
 
+The web application is built on [DomUI](https://github.com/fjalvingh/domui), which is not on
+Maven Central. It is a git submodule, `domui/` on branch `skarp-master`, and has to be installed
+into the local Maven repository once before the build can find it — and again after the
+submodule is updated:
+
 ```
+git clone --recurse-submodules ...      # or: git submodule update --init
+tools/build-domui.sh
 ./mvnw verify
 ```
 
@@ -97,6 +104,18 @@ Machine descriptions are installed on first run into the data directory -
 ordinary files: edit one to describe your own machine, and it will not be overwritten by a later
 version. The I/O page scanner writes the sections for hardware the description does not know
 about.
+
+## Running the web application
+
+```
+./mvnw -pl pdp11-web -am install -DskipTests
+./mvnw -pl pdp11-web jetty:run
+```
+
+and open <http://localhost:8080/>. So far it has the microcode browsers: the same three
+documents, search and walk as the desktop's Microcode window, with what falls through to a
+microword as links, and `?source=PDP1105_F&upc=011` opening on any microword. With it running,
+`tools/web-smoke.sh` clicks through the page in a headless Chrome.
 
 ## Releasing
 
@@ -133,16 +152,22 @@ of `CHANGES.md` under a version heading before tagging.
 
 ## Modules
 
+Two applications - the desktop IDE and a web application of minicomputer tools - and what they
+share:
+
 | Module | Contains |
 |---|---|
-| `pdp11-core` | Model, transports, console protocols, simulated machines, disassembler, machine descriptions, memory tests, memory file formats. Headless. |
-| `pdp11-ui` | Swing windows, the window manager, settings binding. |
-| `pdp11-app` | `main()`, packaging, and the data resources. |
+| `pdp11-common` | What both applications use: addresses, memory cells, the disassembler, memory file formats, the MACRO-11 driver, the microcode documents and the microcode browser. Headless; depends on nothing else here. |
+| `pdp11-gui/pdp11-core` | What talks to a machine: transports, console protocols, simulated machines, machine descriptions, memory tests, the MMU. Headless. |
+| `pdp11-gui/pdp11-ui` | Swing windows, the window manager, settings binding. |
+| `pdp11-gui/pdp11-app` | `main()`, packaging, and the data resources. |
+| `pdp11-web` | The web application, on DomUI. Uses `pdp11-common` and nothing else of this project. |
 
-**Anything that is an algorithm rather than a layout belongs in `pdp11-core`**, even when only
-one window uses it: the disassembly listing, the I/O page scan, the four memory tests and the
-memory file formats all live there, and every one of them is tested with no display in sight.
-`pdp11-core` must not depend on Swing or AWT — that is what keeps the console protocol layer
+**Anything that is an algorithm rather than a layout belongs in `pdp11-common` or
+`pdp11-core`**, even when only one window uses it: the disassembly listing, the I/O page scan,
+the four memory tests, the memory file formats and the microcode browser all live there, and
+every one of them is tested with no display in sight. Whether it goes in common or core is
+whether it needs a machine. Neither may depend on Swing or AWT — that is what keeps the console protocol layer
 testable against the ported fake PDP-11s with no display. The rule is enforced twice: the
 module compiles with `--limit-modules java.base`, so an offending import is a compile error,
 and an ArchUnit test covers what the flag cannot see. See `CLAUDE.md` for the full set of
