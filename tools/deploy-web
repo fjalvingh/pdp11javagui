@@ -4,10 +4,10 @@
 #
 # The application runs in its own Tomcat 11 instance on pigalle.etc.to, in /env/tools, started
 # by the systemd template unit tomcat11@tools.service and listening on 127.0.0.1:8088. Apache
-# terminates TLS and proxies to it. Both configurations are kept in deploy/pigalle/. The webapp
-# is served as the root context, so it is unpacked into /env/tools/webapps/ROOT; the previous
-# one is kept as ROOT.previous. Modelled on DomUI's deploy-demo, which does the same for
-# https://demo.domui.org/ from /env/demo on the same machine.
+# terminates TLS and proxies to it (040-tools.conf on that machine). The webapp is served as
+# the root context, so it is unpacked into /env/tools/webapps/ROOT; the previous one is kept as
+# ROOT.previous. Modelled on DomUI's deploy-demo, which does the same for https://demo.domui.org/
+# from /env/demo on the same machine.
 #
 # Usage:
 #   tools/deploy-web [-s server] [-n]
