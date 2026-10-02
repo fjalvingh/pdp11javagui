@@ -22,23 +22,23 @@ import java.util.Map;
  * {@code SCHBIT = 39 - LISTCOL}. Those are the numbers on the drawings and on the KM11's
  * connector, which is the point: a microword read here can be compared against the lights.</p>
  *
- * <h2>Three fields are not what the listing's headings suggest</h2>
+ * <h2>One field is not what the listing's headings suggest</h2>
  *
- * <ul>
- *   <li><b>{@code SPA}</b>, the scratchpad register address, is printed as four non-adjacent and
- *       out-of-order single-bit columns - {@code SP0} at bit 18, {@code SP1} at 22, {@code SP2}
- *       at 12, {@code SP3} at 21. Assembled it reads as register numbers, R7 in 28 microwords
- *       and R6 in 22; treated as four flags it reads as nothing at all.</li>
- *   <li><b>{@code BUT}</b>, the branch microtest, is bit-scrambled: schematic bits 3..0 are
- *       {@code BUT-1, BUT-0, BUT-2, BUT-3}. All sixteen microtests are defined, so decoding the
- *       printed nibble as a plain number gives a <i>plausible</i> wrong microtest for every
- *       microword and there is no error to notice - the whole branch structure is simply
- *       mislabelled.</li>
- *   <li><b>{@code BRG}</b> is reversed the same way, {@code BMODE-0} above {@code BMODE-1}. The
- *       order was settled by the data rather than assumed: the printed pattern {@code 01} has to
- *       be {@code SRIGHT}, because that is where all fourteen {@code ASR} microwords are and an
- *       arithmetic shift right cannot be paired with a shift left.</li>
- * </ul>
+ * <p><b>{@code SPA}</b>, the scratchpad register address, is printed as four non-adjacent and
+ * out-of-order single-bit columns - {@code SP0} at bit 18, {@code SP1} at 22, {@code SP2} at 12,
+ * {@code SP3} at 21. Assembled it reads as register numbers, R7 in 28 microwords and R6 in 22;
+ * treated as four flags it reads as nothing at all.</p>
+ *
+ * <p>{@code BUT} and {@code BRG} are <i>not</i> scrambled, though this table used to say they
+ * were. The schematic puts {@code BUT-1, BUT-0, BUT-2, BUT-3} on bits 3..0, and that was taken to
+ * mean the printed nibble had to be put back into signal order; {@code BRG} was likewise read
+ * with {@code BMODE-1} on top. Both read as printed. The microprogram flow listing in
+ * EK-KD11B-MM-001 chapter 2 decides {@code BUT}: of the 13 steps it gives a branch test for, the
+ * printed nibble matches all 13 and the unscrambled one 4 - {@code F-5} is the one
+ * {@code IR-DECODE}, not {@code RST-1}. {@code BRG} comes from the 74194 wiring (section 4.3.6):
+ * bit 5 drives S0 and bit 4 S1, so printed {@code 10} shifts right and {@code 01} left. All
+ * sixteen microtests are defined, so the wrong order gave a <i>plausible</i> wrong name for every
+ * microword and nothing complained; that is why the test holds it against the flow listing.</p>
  *
  * <p>The listing's {@code SM0}/{@code SM1} and {@code BTP}/{@code BBT} headings are likewise
  * pairs rather than flags, and are here as {@code SPAMUX} and {@code BLEG}. That leaves the
@@ -108,9 +108,9 @@ public final class Kd11bFields {
 
 	public static final String ALG = "ALG (RALEG-1..0-L)";
 
-	public static final String BRG = "BRG (BMODE-1..0-H)";
+	public static final String BRG = "BRG (BMODE-0,1-H)";
 
-	public static final String BUT = "BUT (BUT-3..0-L)";
+	public static final String BUT = "BUT (BUT-1,0,2,3-L)";
 
 	// -----------------------------------------------------------------------------------------
 	// The table
@@ -198,9 +198,10 @@ public final class Kd11bFields {
 		l.add(MicrocodeField.of(15, TNS, 3, 8, 2, values(null, "DATO", "DATI", "NONE")));
 		l.add(MicrocodeField.of(16, ALG, 3, 6, 2, values("PSW", "SPR", "NULL", "SP")));
 
-		//-- Trap 2 and trap 3: both of these are printed in the opposite order to the value.
-		l.add(new MicrocodeField(17, BRG, 0, List.of(4, 5), values("HOLD", "SLEFT", "SRIGHT", "LOAD")));
-		l.add(new MicrocodeField(18, BUT, 017, List.of(0, 1, 3, 2), values(
+		//-- Both read as printed, whatever the signal names suggest - see the class comment. For
+		//-- BRG, bit 5 is the 74194's S0 and bit 4 its S1: S1 = L, S0 = H is a shift right.
+		l.add(MicrocodeField.of(17, BRG, 0, 4, 2, values("HOLD", "SLEFT", "SRIGHT", "LOAD")));
+		l.add(MicrocodeField.of(18, BUT, 017, 0, 4, values(
 			"IR-CLK", "INTR", "NON-MOD", "BYTE", "ENOFLO", "MOV", "SWITCHES", "IR-DECODE",
 			"SSYNC", "DEST", "UNARY", "JMP/JSR", "SERVICE", "CONST", "INIT", "NON")));
 

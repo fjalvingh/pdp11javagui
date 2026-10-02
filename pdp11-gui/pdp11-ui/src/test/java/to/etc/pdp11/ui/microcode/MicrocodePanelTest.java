@@ -489,7 +489,7 @@ class MicrocodePanelTest {
 		MicrocodePanel panel = panel(dir, MicrocodeSource.PDP1105_F);
 		Edt.run(() -> panel.getSearchBySelector().setSelectedItem(SearchBy.TAG));
 
-		Edt.run(() -> panel.searchFor("RST-1"));
+		Edt.run(() -> panel.searchFor("F-5"));
 		String branching = Edt.call(panel::getStatusText);
 		assertTrue(branching.contains("IR-DECODE"), branching);
 		assertTrue(branching.contains("branch base"), branching);

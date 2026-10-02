@@ -14,14 +14,13 @@ import to.etc.pdp11.common.microcode.MicrocodeSource;
 public final class IndexPage extends UrlPage {
 	@Override
 	public void createContent() throws Exception {
-		setPageTitle("PDP-11 tools");
+		setPageTitle("Tools");
 		ContentPanel cp = new ContentPanel();
 		add(cp);
 
-		cp.add(new HTag(2, "Microcode"));
+		cp.add(new HTag(2, "PDP 11 Microcode"));
 		Para intro = new Para();
-		intro.setText("A processor's microcode, one microword at a time: what its bits are set to, "
-			+ "what that means, and where in DEC's documentation it was read from.");
+		intro.setText("Interactive microcode listings");
 		cp.add(intro);
 		for(MicrocodeSource source : MicrocodeSource.values()) {
 			PageParameters pp = new PageParameters();
@@ -32,5 +31,9 @@ public final class IndexPage extends UrlPage {
 			link.addCssClass("pdp-tool-link");
 			cp.add(link);
 		}
+	}
+
+	@Override public String getPageTitle() {
+		return "etc.to tools";
 	}
 }

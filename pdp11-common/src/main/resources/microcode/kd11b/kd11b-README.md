@@ -23,13 +23,15 @@ transcription in `derived/`, and the pipeline in `ocr/`.
    the two holding `AUX` and `CKO`.
 7. The **`ALU` field decodes completely** — all 12 codes are named operations, covering 214 of
    214 microwords.
-8. Two traps: the scratchpad address is printed as four scattered out-of-order columns, and the
-   `BUT` nibble is bit-scrambled.
+8. One trap: the scratchpad address is printed as four scattered out-of-order columns. (This
+   used to say the `BUT` nibble is bit-scrambled too. It is not, and neither is `BRG`; both read
+   as printed. See *Correction, October 2026* in §6.)
 9. `FSH` (bit 25) is **`F-SHIFT-L`**, the shifter control on the ALU output — not a spare. The
    transcription confirms it: it is asserted in exactly five chains of seven consecutive shift
    steps.
 10. **Every field now has symbolic value names**, from the schematics. `BUT` uses all 16 of its
-    microtests, and exactly one microword in the whole microprogram is `IR-DECODE`.
+    microtests, and exactly one microword in the whole microprogram is `IR-DECODE`: `F-5`, the
+    last step of the instruction fetch.
 11. `AUX` selects whether the ALU control comes from the microword or is decoded from the
     instruction — and the E→F revision **moved which microwords use it**, wholesale.
 12. The **ten PROM images per revision** are in `proms/`, assembled from the listing and round-trip
@@ -190,9 +192,9 @@ in 141 of 214, and `TNS` is `11` (no bus cycle) in 175. Nothing has to be inferr
 defaults; they are what the polarity says they are.
 
 One listing label is DEC's own mnemonic rather than a signal name, verified by eye against the
-hi-res scan: **`BRG` is `BMODE-0/1-H`** (bits 4–5). `BRG` and `ALG` pair up sensibly — `RALEG`
-selects the ALU's A leg and `BMODE` its B leg, which is what the operation table's `A plus B`,
-`A or B` and `A xor B` operate on.
+hi-res scan: **`BRG` is `BMODE-0/1-H`** (bits 4–5). `RALEG` selects the ALU's A leg; `BMODE` is
+the mode of the B register, the 74194s whose output feeds the B leg (EK-KD11B-MM-001 §4.3.6):
+`B MODE 00` (bit 05) drives S0 and `B MODE 01` (bit 04) drives S1.
 
 ### `FSH` is the shifter, not a spare
 
@@ -207,17 +209,17 @@ exercise. Those 35 microwords are not scattered. They are **five straight-line c
 seven consecutive shift steps**, each following its own next-address links and each stopping on
 the eighth:
 
-| chain | steps | ALU code throughout | B leg |
+| chain | steps | ALU code throughout | BRG |
 | --- | --- | --- | --- |
-| `DO-1` → `DO-7`, then `DO-8` | 7 | `01` `AL` | `10` |
-| `DO-11` → `DO-17`, then `DO-18` | 7 | `01` `AL` | `01` |
-| `SB1-1` → `SB1-7`, then `SB1-8` | 7 | `34` `ASR` | `01` |
-| `SB2-1` → `SB2-7`, then `SB2-8` | 7 | `34` `ASR` | `01` |
-| `SBO-1` → `SBO-7`, then `SBO-8` | 7 | `01` `AL` | `10` |
+| `DO-1` → `DO-7`, then `DO-8` | 7 | `01` `AL` | `10` `SRIGHT` |
+| `DO-11` → `DO-17`, then `DO-18` | 7 | `01` `AL` | `01` `SLEFT` |
+| `SB1-1` → `SB1-7`, then `SB1-8` | 7 | `34` `ASR` | `01` `SLEFT` |
+| `SB2-1` → `SB2-7`, then `SB2-8` | 7 | `34` `ASR` | `01` `SLEFT` |
+| `SBO-1` → `SBO-7`, then `SBO-8` | 7 | `01` `AL` | `10` `SRIGHT` |
 
 Across all 214 microwords `F-SHIFT-L` is asserted with only **two** of the twelve ALU codes —
 `01` (`AL`) and `34` (`ASR`) — and never with `BL`, `A plus B`, `A − B − 1`, `not A` or any
-other. Each chain holds one ALU code and one B-leg select constant for all seven steps. A spare
+other. Each chain holds one ALU code and one B register mode for all seven steps. A spare
 bit cannot produce that; a shifter enable produces exactly that.
 
 It also explains something the ALU decode left hanging: the operation table lists `ROL` and `ROR`
@@ -272,52 +274,95 @@ four separate, non-adjacent single-bit columns: `SP0` at listing column 21, `SP1
 should look like. The `.tsv` files carry the assembled value as `SPA`. A field table that treats
 the four columns as independent flags will show nonsense.
 
-**Trap 2 — the `BUT` bits are scrambled.** Schematic bits 0–3 are `BUT-3-L, BUT-2-L, BUT-0-L,
-BUT-1-L`, so the four printed `BUT` columns are, left to right, `BUT-1, BUT-0, BUT-2, BUT-3`.
-Decoding the printed nibble as a plain binary number gives the wrong microtest — and, because all
-sixteen microtests are defined, it gives a *plausible* wrong one for every microword. There is no
-error to notice; the whole branch structure is simply mislabelled.
+**Not a trap — `BUT` and `BRG` read as printed.** The schematic signal names put `BUT-1-L,
+BUT-0-L, BUT-2-L, BUT-3-L` on CS bits 03..00, and an earlier version of this file took that to mean
+the printed nibble had to be unscrambled into signal order. It does not: the field value is the
+printed nibble, bit 03 leftmost, and the same goes for `BRG`. See *Correction, October 2026* below.
+The warning that came with the old claim still applies, the other way round: all sixteen
+microtests are defined, so the wrong decoding gave a *plausible* wrong name for every microword,
+and the mislabelled branch structure raised no error.
 
 ### Symbolic values
 
 `kd11b-fieldvalues.tsv` carries the value names for every field, keyed by the **printed** bit
-pattern so nothing downstream has to remember which fields are scrambled. The `.tsv` listings
-carry the decoded names as columns.
+pattern. The `.tsv` listings carry the decoded names as columns.
 
 **`BUT` — the branch microtest.** All sixteen are used:
 
 | value | name | microwords | | value | name | microwords |
 | --- | --- | --- | --- | --- | --- | --- |
-| `17` | `NON` | 141 | | `16` | `INIT` | 4 |
-| `13` | `JMP/JSR` | 17 | | `00` | `IR-CLK` | 4 |
-| `03` | `BYTE` | 15 | | `12` | `UNARY` | 3 |
-| `01` | `INTR` | 7 | | `14` | `SERVICE` | 3 |
-| `06` | `SWITCHES` | 5 | | `11` | `DEST` | 2 |
-| `04` | `ENOFLO` | 5 | | `10` | `SSYNC` | 1 |
-| `05` | `MOV` | 4 | | `15` | `CONST` | 1 |
-| `02` | `NON-MOD` | 1 | | `07` | `IR-DECODE` | 1 |
+| `17` | `NON` | 141 | | `12` | `UNARY` | 5 |
+| `15` | `CONST` | 17 | | `00` | `IR-CLK` | 4 |
+| `14` | `SERVICE` | 15 | | `06` | `SWITCHES` | 4 |
+| `04` | `ENOFLO` | 7 | | `03` | `BYTE` | 3 |
+| `02` | `NON-MOD` | 5 | | `11` | `DEST` | 3 |
+| `13` | `JMP/JSR` | 4 | | `05` | `MOV` | 2 |
+| `01` | `INTR` | 1 | | `10` | `SSYNC` | 1 |
+| `16` | `INIT` | 1 | | `07` | `IR-DECODE` | 1 |
 
-`NON` — no branch — in 141 of 214, which is the shape a microtest field should have. The assigned
-meanings corroborate the unscrambling semantically: **`BG-1` (bus grant) is the single `SSYNC`
-test**, the three `SERVICE` tests sit on `D1-2`, `S0-1` and `S1-2`, and **exactly one microword in
-the whole microprogram is `IR-DECODE`** — `RST-1 @357`, which is what an instruction dispatch
-should look like. Read as plain binary those same microwords come out as `INTR`, `BYTE` and
-`INIT`, which fit nothing.
+`NON` — no branch — in 141 of 214, which is the shape a microtest field should have. The
+microtests land where the microprogram says they should: `IR-DECODE` on `F-5`, the end of the
+fetch; `IR-CLK` on `F-4`, which loads the IR; `CONST` (the constants ROM on the A leg) on the
+trap and interrupt entries `BT-1`, `IT-1`, `ET-1`, `ERT-1`, `PF-1`, `LC-1`, `T-1`, which fetch
+their vectors from it; `SERVICE` on the end-of-instruction steps; `SWITCHES` on the console steps
+and `H-2`; `SSYNC` on `INT-1`; `INIT` on `RST-1`, the RESET instruction.
 
-**`BRG` — the B register.** `HOLD` 97, `LOAD` 76, `SRIGHT` 25, `SLEFT` 16. The bit order was
-*determined by the data*, not assumed: the printed pattern `01` has to be `SRIGHT` rather than
-`SLEFT`, because that is where all fourteen `ASR` microwords sit, and an arithmetic shift right
-cannot be paired with a left shift. That makes the five `F-SHIFT` chains read straight through:
+**`BRG` — the B register.** `HOLD` 97, `LOAD` 76, `SLEFT` 25, `SRIGHT` 16. Printed `10` is shift
+right and `01` shift left, from the hardware: the 74194 shifts right on S1 = L, S0 = H and left on
+S1 = H, S0 = L, S0 is bit 05 and S1 bit 04, and the listing prints bit 05 first. The five
+`F-SHIFT` chains then read:
 
 | chain | ALU | BRG |
 | --- | --- | --- |
-| `DO-1` … `DO-7`, `SBO-1` … `SBO-7` | `AL` (A leg through) | `SLEFT` |
-| `DO-11` … `DO-17` | `AL` (A leg through) | `SRIGHT` |
-| `SB1-1` … `SB1-7`, `SB2-1` … `SB2-7` | `ASR` | `SRIGHT` |
+| `DO-1` … `DO-7`, `SBO-1` … `SBO-7` | `AL` (A leg through) | `SRIGHT` |
+| `DO-11` … `DO-17` | `AL` (A leg through) | `SLEFT` |
+| `SB1-1` … `SB1-7`, `SB2-1` … `SB2-7` | `ASR` | `SLEFT` |
 
-The ALU passes a leg through, `F-SHIFT` enables the shifter and `BRG` says which way. That is a
-complete, self-consistent account of all 35 shift microwords from three fields that were decoded
-independently of one another.
+`DO-1` is where the manual says an odd destination byte goes "to get the byte operand into the
+right half of the B register", and its BISB example shifts an odd source byte right eight places
+(EK-KD11B-MM-001 figure 4-10): `SRIGHT` in `DO-1` and `SBO-1`. `B-1`, which doubles the branch
+offset, is `SLEFT` with ALU code `30` (`ASL`).
+
+What does not fit is the name of ALU code `34`. The `SB1`/`SB2` chains shift left, yet `34` is
+called `ASR` here. Table 2-1 says the four shift codes `ASL`, `ROL`, `ASR`, `ROR` "control the
+serial shift inputs to the B register", so the ALU code chooses what shifts in, not the direction.
+The code-to-name assignment for those four (`30`, `32`, `34`, `36`) comes from the notes, not
+from the manual, and `36` is also `A minus 1` in the same table. Treat the names of `32`, `34` and
+`36` as unverified.
+
+### Correction, October 2026
+
+The first version of this file decoded `BUT` by unscrambling the printed nibble into signal order
+(`BUT-3..BUT-0`), and `BRG` as `(BMODE-1 << 1) | BMODE-0`. Both were wrong. They had been "checked"
+against the data, but the checks only showed that the result was plausible: with all sixteen
+microtests defined and only one shift direction to choose, either reading looks plausible.
+
+The microprogram flow listing in EK-KD11B-MM-001 chapter 2 decides it. It gives the action and
+branch test of the steps it walks through. For the 13 that name a `BUT`, the printed nibble read
+straight matches all 13; the old unscrambling matched 4:
+
+| step | listing says | straight | old |
+| --- | --- | --- | --- |
+| `F-4` | `B, IR ← UNIBUS DATA` | `IR-CLK` | `IR-CLK` |
+| `F-5` | `B ← B SEX; BUT` (IR decode) | `IR-DECODE` | `CONST` |
+| `S0-2` | `BUT DESTINATION` | `DEST` | `UNARY` |
+| `S1-2` | `BUT BYTE` | `BYTE` | `SERVICE` |
+| `B2-2B` | `BUT SERVICE` | `SERVICE` | `BYTE` |
+| `BG-1` | `BUT INTERRUPT` | `INTR` | `SSYNC` |
+| `INT-1` | `SET SLAVE SYNC` | `SSYNC` | `NON-MOD` |
+| `ET-3` | `ENAB OVER` | `ENOFLO` | `INTR` |
+| `H-2` | `BUT SWITCH` | `SWITCHES` | `MOV` |
+
+(plus `F-1`, `F-2`, `F-3` and `S0-1`, which both readings or only the straight one get right.)
+Table 5-4 says the same: `BUT IR` is asserted "at F-5". For `BRG`, the flow listing's `B ←` steps
+are all `LOAD` and the others `HOLD` under both readings, since `11` and `00` read the same either
+way; the shift direction comes from the 74194 wiring in §4.3.6 as described above.
+
+`ocr/values.py` has the corrected `but()` and `brg()`. The pipeline's intermediate files are gone,
+so the `BUTNAME` and `BRGNAME` columns of the two `.tsv` listings were recomputed from their
+printed `BUT` and `BRG` columns (69 and 41 rows changed in each), and `kd11b-fieldvalues.tsv` was
+regenerated with `ocr/fieldvalues.py`. No bit changed, so the PROM images in `proms/` are
+unaffected.
 
 **The rest.**
 
@@ -450,9 +495,9 @@ so nothing downstream has to remember the encoding: `NXTADDR` (complemented), `A
 | the ALU field | all 12 codes decode to named operations from the manual's table, covering 214/214 microwords |
 | field polarity and defaults | the `-L`/`-H` suffixes in the schematic signal names |
 | `FSH` = `F-SHIFT-L` | named so on both schematics, and asserted only in five chains of seven consecutive shift steps, only ever with the `AL` and `ASR` ALU codes |
-| the `BRG` bit order | fixed by the data: `ASR` microwords must be `SRIGHT`, which only one of the two orders gives |
+| the `BRG` bit order | the 74194 mode wiring in EK-KD11B-MM-001 §4.3.6 (bit 05 = S0, bit 04 = S1), consistent with the manual's odd-byte steps shifting right and `B-1` shifting left (corrected October 2026) |
 | the `SPA` decode | all 96 microwords with a non-zero ROM scratchpad address have `SPAMUX` = `ROM`; the two decodes were derived separately |
-| the `BUT` unscrambling | semantics: `BG-1` (bus grant) is the one `SSYNC`, `SERVICE` lands on the three interrupt checks, and exactly one microword is `IR-DECODE` |
+| the `BUT` decode | read as printed; matches the manual's microprogram flow listing on all 13 steps that name a `BUT` (corrected October 2026) |
 | the revision split | three transcriptions, plus the two PROMs whose part numbers change being exactly the two holding `AUX` and `CKO` |
 
 **Not checked against hardware.** Nothing here has been compared against a running machine. What

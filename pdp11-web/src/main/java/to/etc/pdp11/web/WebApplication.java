@@ -40,6 +40,10 @@ public final class WebApplication extends DomApplication {
 		});
 	}
 
+	@Override public String getDefaultPageTitle(UrlPage body) {
+		return "etc.to tools";
+	}
+
 	/** Errors go under the top bar rather than above it. */
 	@Override
 	public void addDefaultErrorComponent(NodeContainer page) {

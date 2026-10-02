@@ -28,11 +28,10 @@ import java.util.Set;
  *
  * <p>Most fields are a run of adjacent bits and {@link #of} builds those. Some are not, and they
  * are not an oddity to be worked around somewhere else: the KD11-B prints its four-bit scratchpad
- * address as four <i>non-adjacent and out-of-order</i> single-bit columns, and its {@code BUT}
- * nibble in the order {@code BUT-1, BUT-0, BUT-2, BUT-3}. Decoded as if they were ranges both
- * produce a plausible wrong answer for every microword and there is nothing to notice. So the
- * bits a field is made of are listed, most significant first, and the order is part of the
- * table.</p>
+ * address as four <i>non-adjacent and out-of-order</i> single-bit columns. Decoded as if it
+ * were a range it produces a plausible wrong answer for every microword and there is nothing to
+ * notice. So the bits a field is made of are listed, most significant first, and the order is
+ * part of the table.</p>
  *
  * @param tag          the field's number in the original table, kept because the value names are
  *                     keyed by it there and it makes the two tables checkable against each other

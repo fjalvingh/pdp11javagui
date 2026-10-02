@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,8 +37,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       carry every field decoded by the pipeline that read the scans, and the loader deliberately
  *       ignores those columns and decodes the 40 bits itself. Comparing the two over all 214
  *       microwords of both revisions is what holds {@link Kd11bFields} down - in particular the
- *       scattered {@code SPA}, the scrambled {@code BUT} and the reversed {@code BRG}, each of
- *       which produces a plausible wrong answer for every microword when it is got wrong;</li>
+ *       scattered {@code SPA}, which produces a plausible wrong answer for every microword when
+ *       it is got wrong. The derived columns are only as good as the decode that wrote them,
+ *       though: they once carried a wrongly unscrambled {@code BUT} and {@code BRG} that this
+ *       comparison agreed with. Those two are held against the flow listing in
+ *       {@code Kd11bFlowTest} and against the shift direction here;</li>
  *   <li><b>the revision difference</b>, expressed as an assertion: exactly 20 bits in 14
  *       microwords, all of them {@code AUX} or {@code CKO}, and every address and next-address
  *       identical between the two.</li>
@@ -166,12 +170,12 @@ class Kd11bMicrocodeTest {
 	}
 
 	@Test
-	void theThreeAwkwardFieldsAreNotRanges() {
+	void theScratchpadAddressIsNotARangeButTheMicrotestAndBRegisterAre() {
 		assertFalse(field(Kd11bFields.SPA).isContiguous(), "four scattered out-of-order columns");
 		assertEquals("21,12,22,18", field(Kd11bFields.SPA).bitRange());
-		assertFalse(field(Kd11bFields.BUT).isContiguous(), "printed BUT-1, BUT-0, BUT-2, BUT-3");
-		assertEquals("0,1,3,2", field(Kd11bFields.BUT).bitRange());
-		assertFalse(field(Kd11bFields.BRG).isContiguous(), "printed BMODE-0 above BMODE-1");
+		//-- Whatever the schematic's signal names suggest, these two read as printed.
+		assertEquals("3:0", field(Kd11bFields.BUT).bitRange());
+		assertEquals("5:4", field(Kd11bFields.BRG).bitRange());
 		assertTrue(field(Kd11bFields.NXT).isContiguous());
 		assertEquals("39:32", field(Kd11bFields.NXT).bitRange());
 	}
@@ -199,22 +203,26 @@ class Kd11bMicrocodeTest {
 	}
 
 	/**
-	 * The unscrambled {@code BUT} field corroborates itself semantically, which is the only way
-	 * it can be checked: all sixteen microtests are defined, so a wrong bit order gives a
-	 * plausible wrong microtest for every microword and there is no error to see.
+	 * Where the microtests land. All sixteen are defined, so a wrong bit order gives a plausible
+	 * wrong microtest for every microword and there is no error to see; this one once asserted
+	 * exactly such a wrong order. What holds the field down is {@code Kd11bFlowTest}, against the
+	 * 38 microwords whose microtest the flow names. This is the shape: one instruction dispatch,
+	 * at the end of the fetch, and the vector fetches reading the constants ROM.
 	 */
 	@Test
-	void theUnscrambledBranchMicrotestsLandWhereTheyShould() {
+	void theBranchMicrotestsLandWhereTheyShould() {
 		MicrocodeField but = field(Kd11bFields.BUT);
 		Map<String, List<String>> byTest = new LinkedHashMap<>();
 		for(MicroInstruction mi : REV_F.byAddress())
 			byTest.computeIfAbsent(mi.getText(but), k -> new ArrayList<>()).add(mi.getSymbolicTag());
 		assertEquals(141, byTest.get("NON").size(), "no branch, in 141 of 214");
-		assertEquals(List.of("RST-1"), byTest.get("IR-DECODE"),
+		assertEquals(List.of("F-5"), byTest.get("IR-DECODE"),
 			"exactly one microword in the whole microprogram dispatches on the instruction");
-		assertEquals(0357, REV_F.withTag("RST-1").getAddress());
-		assertEquals(List.of("BG-1"), byTest.get("SSYNC"), "the one SSYNC test is the bus grant");
-		assertEquals(List.of("D1-2", "S0-1", "S1-2"), byTest.get("SERVICE").stream().sorted().toList());
+		assertEquals(List.of("F-4"), byTest.get("IR-CLK").stream().filter(t -> t.startsWith("F-")).toList());
+		assertEquals(List.of("INT-1"), byTest.get("SSYNC"));
+		assertEquals(List.of("RST-1"), byTest.get("INIT"), "the RESET instruction");
+		assertTrue(byTest.get("CONST").containsAll(List.of("BT-1", "IT-1", "ET-1", "ERT-1", "PF-1", "LC-1", "T-1")),
+			"the trap entries fetch their vectors from the constants ROM");
 	}
 
 	/**
@@ -247,6 +255,17 @@ class Kd11bMicrocodeTest {
 		//-- Across all 214 microwords the shifter appears with only two of the twelve ALU codes.
 		assertEquals(List.of("AL", "ASR"), chains.values().stream()
 			.flatMap(List::stream).map(s -> s.split(" ")[0]).distinct().sorted().toList());
+		//-- And the direction, which is what holds BRG's bit order down: bit 5 is the 74194's S0.
+		//-- An odd byte is shifted right into the low half (EK-KD11B-MM-001 figure 4-10), and B-1
+		//-- doubles the branch offset.
+		assertEquals(Collections.nCopies(7, "AL SRIGHT"), chains.get("SBO"));
+		for(int step = 1; step <= 7; step++) {
+			assertEquals("SRIGHT", REV_F.withTag("DO-" + step).getText(brg), "DO-" + step);
+			assertEquals("SLEFT", REV_F.withTag("DO-" + (10 + step)).getText(brg), "DO-" + (10 + step));
+		}
+		assertEquals(Collections.nCopies(7, "ASR SLEFT"), chains.get("SB1"));
+		assertEquals(Collections.nCopies(7, "ASR SLEFT"), chains.get("SB2"));
+		assertEquals("SLEFT", REV_F.withTag("B-1").getText(brg));
 	}
 
 	// -----------------------------------------------------------------------------------------

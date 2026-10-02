@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### The microcode
+
+- **The PDP-11/05's branch microtest and B register mode are decoded as printed.** Both had been
+  unscrambled into the schematic's signal order, which was wrong, and since every value has a
+  name the result was a plausible wrong microtest on 69 microwords and the wrong shift direction
+  on 41, in both revisions. The instruction dispatch is on `F-5`, the end of the fetch, not on
+  `RST-1`, and the odd-byte steps shift right. The field table, the transcription's derived
+  columns and its README are corrected; no bit changed. A test now holds the microtest against
+  the 38 microwords whose branch DEC's flow listing names, which the old decode failed.
+
 ### The web application
 
 - **The microcode browsers are on the web.** A new module, `pdp11-web`, is a DomUI web

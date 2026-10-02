@@ -40,6 +40,7 @@
     </developers>
 
     <modules>
+	<module>domui</module>
         <module>pdp11-common</module>
         <module>pdp11-gui</module>
         <module>pdp11-web</module>

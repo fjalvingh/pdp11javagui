@@ -5,8 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -134,6 +137,45 @@ class Kd11bFlowTest {
 			&& n.contains("ERROR TRAP")), ert1a.toString());
 		//-- The priority list after every BUT SERVICE names it; that is one line, not eight.
 		assertEquals(1, ert1a.stream().filter(n -> n.startsWith("IF STACK OVERFLOW GOTO ERT1A")).count(), ert1a.toString());
+	}
+
+	/**
+	 * The flow names the branch microtest of 38 microwords, in its own spelling, and the listing's
+	 * {@code BUT} field has to say the same for every one of them in both revisions.
+	 *
+	 * <p>This is the only real check the field has. All sixteen microtests are named, so a wrong
+	 * bit order still gives a plausible name for every microword - and it did: {@code BUT} was
+	 * first decoded unscrambled into the schematic's signal order, which agrees with the flow on
+	 * 4 of the 13 steps EK-KD11B-MM-001 walks through and put {@code IR-DECODE} on {@code RST-1}
+	 * rather than on {@code F-5}. A {@code (BUT SERVICE)} in brackets describes the microword
+	 * gone to, not this one, and is left out.</p>
+	 */
+	@Test
+	void theBranchMicrotestIsTheOneTheFlowNames() {
+		Map<String, String> flowSpelling = Map.ofEntries(Map.entry("IR DECODE", "IR-DECODE"),
+			Map.entry("BYTE", "BYTE"), Map.entry("DESTINATION", "DEST"), Map.entry("DEST", "DEST"),
+			Map.entry("MOVE", "MOV"), Map.entry("UNARY", "UNARY"), Map.entry("NONMOD", "NON-MOD"),
+			Map.entry("SERVICE", "SERVICE"), Map.entry("JSRMP", "JMP/JSR"), Map.entry("SWITCH", "SWITCHES"),
+			Map.entry("INTERRUPT", "INTR"), Map.entry("INIT", "INIT"));
+		Pattern but = Pattern.compile("BUT ([A-Z ]+?)(;|$)");
+		for(Microcode code : List.of(REV_E, REV_F)) {
+			MicrocodeField field = code.getArchitecture().byName(Kd11bFields.BUT);
+			int checked = 0;
+			for(Kd11bFlow.Step step : FLOW.getSteps()) {
+				Matcher m = but.matcher(step.action().replaceAll("\\(BUT [A-Z ]+\\)", ""));
+				if(!m.find())
+					continue;
+				String want = flowSpelling.get(m.group(1).trim());
+				assertNotNull(want, step.tag() + ": the flow's " + m.group(1));
+				assertEquals(want, code.withTag(step.tag()).getText(field), code + " " + step.tag() + ": " + step.action());
+				checked++;
+			}
+			assertEquals(38, checked, "microwords the flow names a microtest for");
+		}
+		//-- The two the manual singles out: the IR is clocked in F-4 and dispatched on in F-5.
+		MicrocodeField field = REV_F.getArchitecture().byName(Kd11bFields.BUT);
+		assertEquals("IR-CLK", REV_F.withTag("F-4").getText(field));
+		assertEquals("IR-DECODE", REV_F.withTag("F-5").getText(field));
 	}
 
 	// -----------------------------------------------------------------------------------------
