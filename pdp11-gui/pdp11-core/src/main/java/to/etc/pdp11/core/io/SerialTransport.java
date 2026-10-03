@@ -68,7 +68,11 @@ public final class SerialTransport implements PhysicalTransport {
 		port.setComPortParameters(baudRate, format.m_dataBits, SerialPort.ONE_STOP_BIT, format.m_parity);
 		//-- Block until at least one byte arrives, with no timeout: the reader thread has
 		//-- nothing else to do, and a timeout would just turn this back into a poll loop.
-		port.setComPortTimeouts(SerialPort.TIMEOUT_READ_BLOCKING, 0, 0);
+		//-- SEMI-blocking, and that word is the whole point. jSerialComm's fully blocking mode
+		//-- returns only once the *entire* buffer is filled - 4096 bytes for the reader - so a
+		//-- console that answers a CR with one line was never heard at all, and every serial
+		//-- connection failed its handshake with nothing received. Found against a real 11/05.
+		port.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
 		if(!port.openPort())
 			throw new TransportException("Cannot open serial port " + portName
 				+ " (" + baudRate + " " + format + ")");

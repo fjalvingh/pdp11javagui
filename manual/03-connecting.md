@@ -19,6 +19,8 @@ separately rather than from one long list of sentences.
 | **Robotron K1630 ODT, 18 bit** | The Robotron A6402's ODT, which spells things its own way | 18 bit |
 | **PDP-11/44 console** | The 11/44's console processor | 22 bit |
 | **PDP-11/44 console, V3.40C firmware** | The same, running the undocumented V3.40C firmware | 22 bit |
+| **PDP-11 M9312 boot ROM console** | The console emulator in an M9312 boot ROM, on an 11/04 or 11/34 without ODT | 16 bit |
+| **PDP-11 M9301 boot ROM console** | The same in the older M9301, with a `$` prompt | 16 bit |
 
 **ODT** is the microcode console built into an LSI-11-family processor: the `@` prompt you get
 when the machine halts. It is what you talk to on an 11/23, 11/73 or 11/93 with no front panel.
@@ -26,6 +28,15 @@ when the machine halts. It is what you talk to on an 11/23, 11/73 or 11/93 with 
 If you have an 11/44 and are not sure which firmware it has, try **PDP-11/44 console** first. The
 V3.40C entry exists because that firmware prints nothing at all while a program has the terminal,
 which the ordinary driver waits for.
+
+The **M9312 and M9301** consoles are not ODT, although they also prompt with `@` (or `$`). They
+are a small program in the boot ROM, run by the CPU, and they can examine, deposit and start a
+program, and nothing else. Anything that stops the CPU stops the console as well: a program
+reaching a HALT, an odd address, or an address with nothing behind it. After that, only booting
+from the front panel brings the prompt back. PDP11GUI refuses odd addresses and the CPU registers
+before it sends them. It cannot tell in advance which addresses exist, so on these consoles the
+memory, register and MMU windows read the machine only when you press **Examine all** or
+**Refresh**.
 
 ## Transports
 

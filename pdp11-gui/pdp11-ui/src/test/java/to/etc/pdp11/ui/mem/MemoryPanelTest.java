@@ -364,6 +364,37 @@ class MemoryPanelTest {
 		}
 	}
 
+	/**
+	 * Except on a console a nonexistent address would stop. On an M9312 the window waits to be
+	 * asked: showing it, or a machine arriving, reads nothing; Examine all reads.
+	 *
+	 * <p>"Reads nothing" is proved rather than waited for. Showing the window queues its examine
+	 * on the command thread before {@code attach} returns, so an empty job queued after it cannot
+	 * finish until that examine has.</p>
+	 */
+	@Test
+	void aConsoleThatANonexistentAddressWouldStopIsOnlyReadWhenAsked(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryPanel panel = new MemoryPanel(ctx, "1");
+		UiRenderer.layOut(panel, WIDTH, HEIGHT);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.M9312));
+		try {
+			Edt.run(panel::attach);
+			ctx.getConnectionManager().getConnection().run(() -> {
+			});
+			//-- Taken after attach: a 16-bit machine arriving re-expresses the window's cells.
+			MemoryCell cell = panel.cellAt(0, 1);
+			assertEquals(MemoryAddressType.PHYSICAL16, cell.getAddr().type());
+			assertFalse(cell.getPdpValue().isKnown(), "the window read an M9312 without being asked");
+
+			Edt.run(() -> panel.getMachineControls().get(0).doClick());
+			until("Examine all to read the machine", () -> cell.getPdpValue().isKnown());
+		} finally {
+			Edt.run(panel::detach);
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void renderToAFileForLookingAt(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);

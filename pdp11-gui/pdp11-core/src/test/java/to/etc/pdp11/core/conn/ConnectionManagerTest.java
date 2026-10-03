@@ -108,6 +108,23 @@ class ConnectionManagerTest {
 		}
 	}
 
+	/**
+	 * Windows read the machine on their own only where a nonexistent address is an answer rather
+	 * than the end of the conversation - which is every console except the boot ROMs.
+	 */
+	@Test
+	void onlyAConsoleThatSurvivesANonexistentAddressIsReadUnasked() throws Exception {
+		try(ConnectionManager m = manager()) {
+			assertFalse(m.mayExamineUnasked(), "nothing connected");
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.ODT_22));
+			assertTrue(m.mayExamineUnasked());
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.M9312));
+			assertFalse(m.mayExamineUnasked());
+			m.connect(ConnectionProfile.simulated(ConsoleProtocol.M9301));
+			assertFalse(m.mayExamineUnasked());
+		}
+	}
+
 	@Test
 	void everyConsoleSaysHowItsOutputShouldBeDisplayed() throws Exception {
 		//-- The consoles genuinely disagree about line endings, which is why the terminal has to

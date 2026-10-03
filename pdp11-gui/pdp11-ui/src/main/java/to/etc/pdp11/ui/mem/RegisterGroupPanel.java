@@ -121,9 +121,12 @@ public final class RegisterGroupPanel extends JPanel {
 	 * window never read anything and opened showing a map built from registers nobody had
 	 * examined, and the Memory windows read on Show and on Enter. A data window that is looking
 	 * at a live machine shows what that machine holds; that is what it is for.</p>
+	 *
+	 * <p>Except on a console that a device which is not fitted would stop - see
+	 * {@code ConnectionManager.mayExamineUnasked()}. There it waits for Examine all.</p>
 	 */
 	public void examineIfConnected() {
-		if(m_context.getConnectionManager().isConnected())
+		if(m_context.getConnectionManager().mayExamineUnasked())
 			m_list.examineAll(owner());
 	}
 

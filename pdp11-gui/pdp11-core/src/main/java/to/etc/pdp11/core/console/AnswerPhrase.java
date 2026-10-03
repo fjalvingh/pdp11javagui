@@ -39,11 +39,14 @@ public sealed interface AnswerPhrase {
 	 *
 	 * <p>The address is <b>virtual</b> - a console reports the PC as the program sees it, not
 	 * as the UNIBUS does.</p>
+	 *
+	 * @param haltAddr where, or {@code null} when the console cannot say: the M9312's register
+	 *                 dump is its own registers, not the program's
 	 */
 	record Halt(String rawText, Address haltAddr) implements AnswerPhrase {
 		@Override
 		public String asText() {
-			return "Console answered: Halt, haltaddr=" + haltAddr.toOctal();
+			return "Console answered: Halt, haltaddr=" + (haltAddr == null ? "unknown" : haltAddr.toOctal());
 		}
 	}
 

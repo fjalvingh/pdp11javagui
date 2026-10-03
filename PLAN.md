@@ -35,7 +35,7 @@ reference implementation throughout the port.
 | 1 — Pure core | **Done** | `Address`/`MemoryAddressType`, `BitfieldDef*`, `Disassembler`, `Logger`, `ProgressMonitor`, `Octal`. 47 tests. Disassembler agrees with SimH on all 65536 words bar two documented SimH bugs, and with the Pascal on all but 183 words, all of them Pascal bugs. |
 | 2 — Model | **Done** | `MemoryCell*` + listener bus with the three storm guards, `Pdp11Mmu`, ini parsing, and an m4 replacement that matches GNU m4 byte for byte. 99 tests. The shipped machine description loads clean: 17 groups, 62 bitfield defs, 233 cells. |
 | 3 — Transports and fakes | **Done** | `PhysicalTransport` with fake, serial, telnet and SimH-process implementations, all tested; every fake ported - ODT (both dialects), 11/44, 11/44 V3.40C, M9312, M9301 - plus `FakeSimh`, which the Pascal does not have. 82 tests over the four ported fakes; `FakeSimh` is driven by the SimH console's own. |
-| 4 — Console layer | **Partly done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and three of the four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, and the 11/44 in both firmwares. **Deferred: the M9301/M9312 boot-ROM console** - nothing in phase 5 needs it, and its fakes are ported and waiting. |
+| 4 — Console layer | **Done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and all four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, the 11/44 in both firmwares, and the M9312/M9301 boot-ROM console, which came last, after phase 6 had started. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
 | 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console; the MMU window, which shows any mode's map rather than only the current one; and the Number Converter, at a chosen width rather than always 32 bits; and the Microcode window, which ships DEC's 11/44 listing and both revisions of the PDP-11/05's KD11-B control store rather than asking for any of them, collects what it cannot read instead of refusing to load, and can walk backwards - and which on the 11/05 is a debugger rather than a reference, because the KM11 puts that machine's µPC on the lights. 649 tests. Still to do: the Blinkenlight Execution window. |
 | 7 — Disc images | | |
@@ -984,10 +984,11 @@ had a full transcript from a real PDP-11/23 to be tested against from the first 
   matches no rule; the Pascal stops there with input still in the buffer and looks no further
   until the next byte arrives - and if that byte was the last of the reply, never. Every such
   pass consumes at least one character, so the loop still terminates.
-- **What is left of phase 4:** the M9301 and M9312 boot-ROM console, which is one class and a
+- **What was left of phase 4:** the M9301 and M9312 boot-ROM console, which is one class and a
   prompt. It is the awkward one - no halt, no reset, no init, and an error stops the machine
   rather than reporting itself, so the driver has to notice an *absence* of output and say so.
-  The K1630 needs no console of its own; it is a dialect of this one.
+  The K1630 needs no console of its own; it is a dialect of this one. Done since; see
+  "Outcome - the M9312" below.
 
 **Outcome so far — the 11/44.** The third console, and the one that reads a block per command:
 `E/N:100 <addr>` is sixty-four words for one round trip, which is what makes a memory window over
@@ -1023,6 +1024,44 @@ same treatment `OdtDialect` got, replacing a boolean and a four-line subclass.
   console while a program runs" gate that the Pascal does not have. It is the V3.40C firmware
   that stops listening and says so; the classic one goes on answering. Faithful now, and the
   difference is a test.
+
+**Outcome — the M9312.** The fourth console, `M9312Console`, with `BootRom` for the M9312/M9301
+difference (a prompt and a name; the Pascal's subclass is four lines), its own `M9312Scanner`, and
+two new `ConsoleProtocol`s. It can examine, deposit and start, and that is all it can do.
+
+- **Bulk operations use the ROM's auto-increment, not blocks.** The emulator cannot be asked for a
+  range, and it must not be sent a string of commands to answer in turn: it validates as it reads
+  and prints with the CPU, so it is not listening while it talks. A run of consecutive words is
+  one `L` and then one `E` or `D` each, answered one at a time. The second `E` or `D` after an `L`
+  advances by two and the first does not, which is what makes that work.
+- **The Pascal remembers the last deposit address across calls to save the `L`. Not ported.**
+  Somebody typing at the terminal in between moves the emulator's address and not the
+  remembered one. A single deposit always loads; a group deposit, which nothing can interrupt,
+  does the saving.
+- **What kills it is refused where it can be seen.** An odd address and the register space halt
+  the emulator. The driver refuses both before sending, where the Pascal sends the odd one and
+  skips a register deposit silently (which a group deposit would then mark as done). A
+  nonexistent address cannot be foreseen; when one stops the machine the exception says so
+  rather than reporting a missing prompt, and a group examine keeps what it read first.
+- **The register dump is a stop with no PC.** The ROM prints its own four registers when it
+  starts, which is after a reboot, the only way back from a halt. The Pascal reads that as a
+  stop, and so does this, with a null PC (`AnswerPhrase.Halt` now allows one). It also follows
+  every typing mistake and the handshake's second CR. In each case the machine really is
+  stopped at a prompt, so those count as stops too.
+- **The hazard recorded under phase 5 is resolved where it said it should be.**
+  `ConnectionManager.mayExamineUnasked()` is false for a console without
+  `NON_FATAL_UNIBUS_TIMEOUT`, and the memory, register group and MMU windows ask it before
+  reading on show, on connect or on a range move. It covers all three windows, not just the
+  memory window: a register window opened on a device an 11/04 does not have halts the machine
+  just as surely.
+- **Two decoder fixes over the Pascal.** A short fourth number in the register dump was
+  reported as "incomplete", which rewinds and fails again on the same text indefinitely: it is
+  now unrecognised input. And reading one symbol past the prompt no longer throws on a partial
+  number, which in the Pascal had already published the prompt and so published it twice.
+- **The handshake costs two seconds against an idle emulator, by design.** The power-on prompt
+  has gone by, and the first CR is only remembered. Sending both CRs at once would be faster and
+  wrong: with one already remembered, the second would be remembered in its place and the next
+  command would arrive behind it as nonsense.
 
 **Phase 5 — First usable app.** Main window with terminal and connection status, Settings
 with the decomposed `ConnectionProfile` model, `WindowManager` + `ToolWindow` + geometry
@@ -1135,7 +1174,8 @@ JVM, so the "done when" above is checked on a build machine with no hardware and
   `addNotify()`, which never runs without a display, so the offscreen renders had no column
   headings at all. Both are the kind of thing the render-to-PNG habit is *for*: the assertions
   were all green.
-- **A hazard to revisit when the M9301/M9312 console arrives.** The memory window examines the
+- **A hazard to revisit when the M9301/M9312 console arrives** (resolved: see "Outcome - the
+  M9312" in phase 4). The memory window examines the
   unknown cells of a range as soon as the range moves, which the Pascal's Show button
   deliberately does not - "auf M9312 console emulator führt jede nicht vorhandene Adresse zum
   stop" (`FormMemoryTableU.pas:180-182`). But its `<`/`>` buttons examine anyway (`:211`), so the

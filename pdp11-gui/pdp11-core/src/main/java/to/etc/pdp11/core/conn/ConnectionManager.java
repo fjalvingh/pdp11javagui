@@ -1,15 +1,20 @@
 package to.etc.pdp11.core.conn;
 
 import to.etc.pdp11.core.console.AbstractConsole;
+import to.etc.pdp11.core.console.BootRom;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleConnection;
 import to.etc.pdp11.core.console.ConsoleException;
+import to.etc.pdp11.core.console.ConsoleFeature;
+import to.etc.pdp11.core.console.M9312Console;
 import to.etc.pdp11.core.console.OdtConsole;
 import to.etc.pdp11.core.console.OdtDialect;
 import to.etc.pdp11.core.console.Pdp1144Console;
 import to.etc.pdp11.core.console.Pdp1144Firmware;
 import to.etc.pdp11.core.console.SimhConsole;
 import to.etc.pdp11.core.fake.FakePdp11;
+import to.etc.pdp11.core.fake.FakePdp11M9301;
+import to.etc.pdp11.core.fake.FakePdp11M9312;
 import to.etc.pdp11.core.fake.FakePdp11Odt;
 import to.etc.pdp11.core.fake.FakePdp1144;
 import to.etc.pdp11.core.fake.FakePdp1144V340c;
@@ -181,6 +186,26 @@ public final class ConnectionManager implements AutoCloseable {
 	/** The live console, or {@code null} when there is not one. */
 	public Console getConsole() {
 		return m_console;
+	}
+
+	/**
+	 * Whether a window may read the machine on its own initiative - when it is shown, when a
+	 * machine arrives, when its range moves - rather than only when the user asks.
+	 *
+	 * <p>Only if reading an address with nothing behind it leaves the console talking, which is
+	 * {@link ConsoleFeature#NON_FATAL_UNIBUS_TIMEOUT}. On an M9301 or M9312 it halts the CPU and
+	 * the console with it ({@code FormMemoryTableU.pas:180-182}: "on the M9312 console emulator
+	 * every nonexistent address leads to a stop"), and a register window opened on a device that
+	 * is not fitted would do that without anybody pressing anything. The decision belongs to the
+	 * console rather than to each window, so it is made here, once.</p>
+	 *
+	 * <p>{@code features()} is state the console already holds rather than a machine call, so this
+	 * may be asked on the event thread.</p>
+	 */
+	public boolean mayExamineUnasked() {
+		Console console = m_console;
+		return isConnected() && console != null
+			&& console.features().contains(ConsoleFeature.NON_FATAL_UNIBUS_TIMEOUT);
 	}
 
 	/** The live connection, or {@code null}. This is what {@code call()} is invoked on. */
@@ -369,6 +394,8 @@ public final class ConnectionManager implements AutoCloseable {
 				FakePdp11Odt.OdtDialect.K1630);
 			case PDP1144 -> new FakePdp1144(m_scheduler, random);
 			case PDP1144_V340C -> new FakePdp1144V340c(m_scheduler, random);
+			case M9312 -> new FakePdp11M9312(m_scheduler, random);
+			case M9301 -> new FakePdp11M9301(m_scheduler, random);
 		};
 		fake.powerOn();
 		//-- Give it the I/O page the loaded machine description declares, so the register windows
@@ -386,6 +413,8 @@ public final class ConnectionManager implements AutoCloseable {
 				OdtDialect.K1630, m_logger);
 			case PDP1144 -> new Pdp1144Console(m_groups, Pdp1144Firmware.CLASSIC, m_logger);
 			case PDP1144_V340C -> new Pdp1144Console(m_groups, Pdp1144Firmware.V340C, m_logger);
+			case M9312 -> new M9312Console(m_groups, BootRom.M9312, BootRom.M9312.getDefaultMonitorEntry(), m_logger);
+			case M9301 -> new M9312Console(m_groups, BootRom.M9301, BootRom.M9301.getDefaultMonitorEntry(), m_logger);
 		};
 	}
 

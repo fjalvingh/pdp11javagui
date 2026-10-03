@@ -170,9 +170,12 @@ public final class MmuPanel extends JPanel {
 	 * pairs' worth of UNKNOWN, drawn as a map, waiting for its button. Which is a different
 	 * answer to the same question the Register Group and Memory windows were answering two other
 	 * ways; there is one answer now, and this is it.</p>
+	 *
+	 * <p>Except on a console that a missing register would stop - an 11/04 has no MMU - see
+	 * {@code ConnectionManager.mayExamineUnasked()}. There it waits for Refresh.</p>
 	 */
 	public void examineIfConnected() {
-		if(m_context.getConnectionManager().isConnected() && mmu() != null)
+		if(m_context.getConnectionManager().mayExamineUnasked() && mmu() != null)
 			refresh();
 	}
 

@@ -36,7 +36,13 @@ public enum ConsoleProtocol {
 	PDP1144("PDP-11/44 console", MemoryAddressType.PHYSICAL22),
 
 	/** The same, running the undocumented V3.40C firmware. */
-	PDP1144_V340C("PDP-11/44 console, V3.40C firmware", MemoryAddressType.PHYSICAL22);
+	PDP1144_V340C("PDP-11/44 console, V3.40C firmware", MemoryAddressType.PHYSICAL22),
+
+	/** The console emulator in an M9312 boot ROM - an 11/04 or 11/34 without ODT. 16 bits only. */
+	M9312("PDP-11 M9312 boot ROM console", MemoryAddressType.PHYSICAL16),
+
+	/** The older M9301's console emulator: the M9312's, with a {@code $} prompt. */
+	M9301("PDP-11 M9301 boot ROM console", MemoryAddressType.PHYSICAL16);
 
 	private final String m_label;
 

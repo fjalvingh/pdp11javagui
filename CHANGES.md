@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Consoles
+
+- **Serial connections receive again - every one of them was deaf.** The serial transport put
+  jSerialComm into fully blocking reads, which return only once the whole 4 KB buffer is full, so
+  a console answering with a line or two was never heard and every handshake over a serial port
+  failed with nothing received. It now reads semi-blocking: wait for the first byte, return what
+  has arrived. Found connecting to a real PDP-11/05 with an M9312, which now connects and reads.
+- **The M9312 and M9301 boot ROM consoles can be connected to.** `M9312Console` drives the
+  console emulator in the boot ROM of an 11/04 or 11/34 without ODT: `L` to load an address, then
+  `E` and `D` with the ROM's own auto-increment, so a run of consecutive words costs one `L`.
+  The M9301 is the same console with a `$` prompt (`BootRom`). Both are new protocols in the
+  connection settings and in *Connect to simulated*, against the fakes ported in phase 3. It can
+  start a program and nothing else - no halt, step, reset or continue - and the M9312's monitor
+  entry address (`165020`) is reported for the disc image driver.
+- **This console dies on mistakes, so the driver refuses the ones it can see.** An odd address
+  and the CPU registers at `177700`-`177717` halt the ROM's emulator, and only the front panel
+  brings it back; examining a register answers "unknown" without asking, and depositing one, or
+  anything at an odd address, is refused before it is sent. A nonexistent address cannot be
+  foreseen, and when one stops the machine the error says that is what happened and that the
+  front panel is the way back, rather than reporting a missing prompt.
+- **Windows no longer read a machine on their own if reading could stop it.** The memory,
+  register group and MMU windows read when shown, when a machine connects and when the range
+  moves - except on a console that a nonexistent address would halt, where they wait for
+  *Examine all* or *Refresh*. The console decides this, through
+  `ConnectionManager.mayExamineUnasked()`, not each window: a register window opened on a device
+  an 11/04 does not have would otherwise halt it without anybody pressing anything.
+
 ### The microcode
 
 - **The PDP-11/05's branch microtest and B register mode are decoded as printed.** Both had been

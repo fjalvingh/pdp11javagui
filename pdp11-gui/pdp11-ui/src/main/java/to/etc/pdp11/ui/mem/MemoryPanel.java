@@ -210,9 +210,11 @@ public final class MemoryPanel extends JPanel {
 	 * anyway ({@code :211}), so the hazard is only half avoided and the cost is a memory window
 	 * that shows nothing until a second button is pressed. Examining the unknown cells only is
 	 * what makes the difference bearable either way: a range that has already been read costs
-	 * nothing to show again. <b>Revisit when the M9301/M9312 console lands</b> (deferred from
-	 * phase 4) - that console wants this to be a deliberate action, and the right answer then is
-	 * to ask the console rather than to ask the window.</p>
+	 * nothing to show again.</p>
+	 *
+	 * <p>The Pascal's reason still applies to the consoles it was written for, so the console is
+	 * asked, through {@link ConnectionManager#mayExamineUnasked()}: on an M9301 or M9312 the range
+	 * is read when the user presses Examine all, and not before.</p>
 	 */
 	private void applyRange(boolean examine) {
 		Address start;
@@ -240,7 +242,7 @@ public final class MemoryPanel extends JPanel {
 		m_blockSize.setText(String.valueOf(words));
 		m_startAddr.setText(start.toOctal());
 		m_grid.rebuild();
-		if(examine && m_context.getConnectionManager().isConnected())
+		if(examine && m_context.getConnectionManager().mayExamineUnasked())
 			m_grid.examineAll(true, owner());
 	}
 
@@ -397,10 +399,12 @@ public final class MemoryPanel extends JPanel {
 	 * Read what is not known yet when this window is shown, and again when a machine arrives.
 	 *
 	 * <p>Unknown cells only, which is what makes showing a window cheap: a range that has already
-	 * been read costs nothing to show again. Use Examine all to re-read what is already there.</p>
+	 * been read costs nothing to show again. Use Examine all to re-read what is already there.
+	 * Not at all on a console that a nonexistent address would stop; see
+	 * {@link ConnectionManager#mayExamineUnasked()}.</p>
 	 */
 	public void examineIfConnected() {
-		if(m_context.getConnectionManager().isConnected() && !m_group.isEmpty())
+		if(m_context.getConnectionManager().mayExamineUnasked() && !m_group.isEmpty())
 			m_grid.examineAll(true, owner());
 	}
 
