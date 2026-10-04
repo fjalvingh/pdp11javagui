@@ -36,25 +36,30 @@ import java.util.Set;
  */
 public final class DisassemblyListing {
 	/**
-	 * One line: where it is, the raw words behind it, and what they decode to.
+	 * One line: where it is, the raw words or bytes behind it, and what they decode to.
 	 *
+	 * @param length  how many bytes it covers: two to six for an instruction, any number for data
+	 * @param format  how it is laid out as data, or null when it is an instruction. See
+	 *                {@link DataMarks}.
 	 * @param atPc    whether the program counter is here
 	 * @param pending whether any of its words is an edit the machine does not hold yet - code
 	 *                loaded or assembled and not deposited, which the CPU would not execute
 	 * @param comment what the well-known addresses it names are, without the {@code ;}; empty
 	 *                when it names none. See {@link WellKnownAddresses}.
 	 */
-	public record Line(Address address, String words, String text, boolean atPc, boolean pending, String comment) {
+	public record Line(Address address, int length, DataMarks.Format format, String words, String text, boolean atPc,
+		boolean pending, String comment) {
 		/** The column a comment starts in, counted from the start of the instruction text. */
 		static final int COMMENT_COLUMN = 28;
 
-		public Line(Address address, String words, String text, boolean atPc, boolean pending) {
-			this(address, words, text, atPc, pending, "");
-		}
+		/** How wide the raw column is: three words, each with a space after it. */
+		static final int RAW_WIDTH = 3 * 7;
 
-		public Line(Address address, String words, String text, boolean atPc) {
-			this(address, words, text, atPc, false);
-		}
+		/** How many raw words a word-laid-out line shows. */
+		static final int RAW_WORDS = 3;
+
+		/** How many raw bytes a byte-laid-out line shows; a longer string shows its start. */
+		static final int RAW_BYTES = 5;
 
 		/**
 		 * The whole line, in the layout {@code Disas11} produces, and then the comment if there
@@ -70,6 +75,62 @@ public final class DisassemblyListing {
 				sb.append(' ');
 			} while(sb.length() < col);
 			return sb.append("; ").append(comment).toString();
+		}
+
+		/** Whether the raw column shows bytes rather than words. */
+		public boolean showsBytes() {
+			return format == DataMarks.Format.BYTES || format == DataMarks.Format.ASCIZ;
+		}
+
+		/** The first and the last word this line covers, as 16-bit virtual addresses. */
+		public int firstWord() {
+			return (int) address.val() & 0xFFFE;
+		}
+
+		public int lastWord() {
+			return (int) (address.val() + length - 1) & 0xFFFE;
+		}
+
+		/** Where the raw column starts in {@link #toDisplayString()}. */
+		private int rawColumn() {
+			return address.toOctal().length() + 2;
+		}
+
+		/**
+		 * Which word of memory is shown at this column of {@link #toDisplayString()}, or -1 when
+		 * the column is not on one of the raw words or bytes. A byte answers with its word.
+		 */
+		public int wordAtColumn(int column) {
+			int at = column - rawColumn();
+			if(at < 0 || at >= RAW_WIDTH)
+				return -1;
+			if(showsBytes()) {
+				int index = at / 4;
+				if(at % 4 == 3 || index >= Math.min(RAW_BYTES, length))
+					return -1;
+				return (int) (address.val() + index) & 0xFFFE;
+			}
+			int index = at / 7;
+			if(at % 7 == 6 || index >= Math.min(RAW_WORDS, length / 2))
+				return -1;
+			return (int) (address.val() + 2L * index) & 0xFFFE;
+		}
+
+		/**
+		 * The columns of {@link #toDisplayString()} that show this word, as {@code [first, end)},
+		 * or null when this line does not show it.
+		 */
+		public int[] columnsOfWord(int word) {
+			int first = -1;
+			int end = -1;
+			for(int c = rawColumn(); c < rawColumn() + RAW_WIDTH; c++) {
+				if(wordAtColumn(c) == (word & 0xFFFE)) {
+					if(first < 0)
+						first = c;
+					end = c + 1;
+				}
+			}
+			return first < 0 ? null : new int[]{first, end};
 		}
 
 		@Override
@@ -159,6 +220,18 @@ public final class DisassemblyListing {
 	 */
 	public static DisassemblyListing of(MemoryCellGroup group, Address start, Address end, Address pc,
 		int maxLines) {
+		return of(group, start, end, pc, maxLines, new DataMarks());
+	}
+
+	/**
+	 * The same, laying out the words {@code marks} says are data as data.
+	 *
+	 * <p>An instruction never reaches into data: one whose operand word is marked as data is
+	 * decoded as though that word had not been read, which makes it the bare {@code .WORD} it most
+	 * likely is.</p>
+	 */
+	public static DisassemblyListing of(MemoryCellGroup group, Address start, Address end, Address pc,
+		int maxLines, DataMarks marks) {
 		requireVirtual(start, "start");
 		requireVirtual(end, "end");
 		if(pc != null)
@@ -166,6 +239,7 @@ public final class DisassemblyListing {
 
 		Set<Integer> pending = new HashSet<>();
 		MemoryImage image = imageOf(group, start.val(), end.val(), pending);
+		Memory memory = new Memory(image, codeImageOf(image, start.val(), end.val(), marks), marks, pending);
 		//-- Only worth hunting for the PC when it is inside the range being shown at all. The
 		//-- Pascal instead loops until the start address reaches the PC, which for a PC outside
 		//-- the range walks the start past the end and leaves the window blank; scrolling away
@@ -174,7 +248,7 @@ public final class DisassemblyListing {
 		Address from = start;
 		DisassemblyListing asAsked = null;
 		for(;;) {
-			DisassemblyListing listing = build(image, pending, from, end, pc, maxLines);
+			DisassemblyListing listing = build(memory, from, end, pc, maxLines);
 			if(listing.m_pcLine >= 0 || !pcInRange)
 				return listing;
 			if(asAsked == null)
@@ -191,6 +265,20 @@ public final class DisassemblyListing {
 			//-- The PC is inside an instruction rather than at the start of one. Begin two bytes
 			//-- later and decode again; eventually the boundaries line up, or we reach the PC.
 			from = from.plus(2);
+		}
+	}
+
+	/**
+	 * What a listing is built from: memory, the same memory with the data left out for the
+	 * decoder, the marks, and which words are edits.
+	 */
+	private record Memory(MemoryImage image, MemoryImage code, DataMarks marks, Set<Integer> pending) {
+		boolean isPending(int addr, int length) {
+			for(int a = addr & 0xFFFE; a < addr + length; a += 2) {
+				if(pending.contains(a & 0xFFFF))
+					return true;
+			}
+			return false;
 		}
 	}
 
@@ -221,45 +309,193 @@ public final class DisassemblyListing {
 		return image;
 	}
 
-	private static DisassemblyListing build(MemoryImage image, Set<Integer> pending, Address start, Address end, Address pc,
-		int maxLines) {
+	/** The image as the decoder may see it: without the words marked as data. */
+	private static MemoryImage codeImageOf(MemoryImage image, long lo, long hi, DataMarks marks) {
+		MemoryImage code = new MemoryImage();
+		for(long a = lo & 0xFFFE; a <= hi; a += 2) {
+			int at = (int) (a & 0xFFFF);
+			if(image.isWordValid(at) && marks.formatAt(at) == null)
+				code.putWord(at, image.readWord(at));
+		}
+		return code;
+	}
+
+	private static DisassemblyListing build(Memory memory, Address start, Address end, Address pc, int maxLines) {
 		List<Line> lines = new ArrayList<>();
 		int pcLine = -1;
 		int addr = (int) (start.val() & 0xFFFF);
-		int last = (int) (end.val() & 0xFFFF);
+		//-- The last byte, not the last word: a string can end in the middle of a word, and the
+		//-- next one then begins at an odd address.
+		int last = (int) (end.val() & 0xFFFF) | 1;
 		int next = addr;
 		while(addr <= last && lines.size() < maxLines) {
-			if(!image.isWordValid(addr)) {
-				addr += 2;
-				continue;
+			DataMarks.Format format = memory.marks().formatAt(addr);
+			Line line;
+			if(format == null) {
+				if(!memory.code().isWordValid(addr)) {
+					addr = (addr + 2) & 0xFFFE;
+					continue;
+				}
+				DecodedInstruction di = Disassembler.disassemble(memory.code(), addr);
+				line = new Line(v(addr), di.words() * 2, null, wordsOf(memory.image(), addr, di.words()), di.text(),
+					false, memory.isPending(addr, di.words() * 2), WellKnownAddresses.builtin().comment(di));
+			} else {
+				if(!memory.image().isByteValid(addr)) {
+					addr = (addr + 2) & 0xFFFE;
+					continue;
+				}
+				line = dataLine(memory, addr, last, format, pc);
 			}
-			DecodedInstruction di = Disassembler.disassemble(image, addr);
 			boolean atPc = pc != null && pc.val() == addr;
-			if(atPc)
+			if(atPc) {
 				pcLine = lines.size();
-			boolean edited = false;
-			for(int w = 0; w < di.words(); w++) {
-				edited |= pending.contains((addr + 2 * w) & 0xFFFF);
+				line = new Line(line.address(), line.length(), line.format(), line.words(), line.text(), true,
+					line.pending(), line.comment());
 			}
-			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc, edited,
-				WellKnownAddresses.builtin().comment(di)));
-			addr += di.words() * 2;
+			lines.add(line);
+			addr += line.length();
 			//-- Not simply addr: a run of unread words at the end is not part of the listing, and
 			//-- the next page must not begin past the last instruction it actually showed.
 			next = addr;
 		}
-		return new DisassemblyListing(lines, pcLine, start,
-			Address.of(MemoryAddressType.VIRTUAL, next & 0xFFFF));
+		return new DisassemblyListing(lines, pcLine, start, v(next & 0xFFFF));
+	}
+
+	/** Most bytes of text on one line; a longer string carries on as {@code .ASCII} lines. */
+	static final int MAX_STRING_BYTES = 40;
+
+	private static final int BYTES_PER_LINE = 4;
+
+	private static final int WORDS_PER_LINE = 3;
+
+	/**
+	 * One line of data starting at {@code addr}, which is marked {@code format} and readable.
+	 * It runs as far as its format allows, and stops where the format changes, where memory was
+	 * not read, at the end of the range and at the PC - so the PC is always at the start of a line.
+	 */
+	private static Line dataLine(Memory memory, int addr, int last, DataMarks.Format format, Address pc) {
+		MemoryImage image = memory.image();
+		int max = switch(format) {
+			case BYTES -> BYTES_PER_LINE;
+			case WORDS -> WORDS_PER_LINE * 2;
+			case ASCIZ -> MAX_STRING_BYTES;
+		};
+		int length = 0;
+		while(length < max) {
+			int a = addr + length;
+			if(a > last || a > 0xFFFF || !image.isByteValid(a) || memory.marks().formatAt(a) != format)
+				break;
+			if(length > 0 && pc != null && pc.val() == a)
+				break;
+			length++;
+			if(format == DataMarks.Format.ASCIZ && image.readByte(a) == 0)
+				break;
+		}
+		if(format == DataMarks.Format.WORDS)
+			length = Math.max(2, length & ~1);
+		String text;
+		String words;
+		if(format == DataMarks.Format.WORDS) {
+			StringBuilder sb = new StringBuilder(".word   ");
+			for(int i = 0; i < length; i += 2) {
+				if(i > 0)
+					sb.append(',');
+				sb.append(Octal.word(image.readWord(addr + i)));
+			}
+			text = sb.toString();
+			words = wordsOf(image, addr, length / 2);
+		} else {
+			if(format == DataMarks.Format.BYTES) {
+				StringBuilder sb = new StringBuilder(".byte   ");
+				for(int i = 0; i < length; i++) {
+					if(i > 0)
+						sb.append(',');
+					sb.append(Octal.format(image.readByte(addr + i), 3));
+				}
+				text = sb.toString();
+			} else {
+				text = stringText(image, addr, length);
+			}
+			words = bytesOf(image, addr, length);
+		}
+		return new Line(v(addr), length, format, words, text, false, memory.isPending(addr, length), "");
+	}
+
+	/**
+	 * A string as MACRO-11 writes it: the printable runs between delimiters, everything else as
+	 * {@code <octal>}. {@code .ASCIZ} when it ends at its zero byte, which is then not shown,
+	 * {@code .ASCII} when it does not. A lone zero byte at an odd address is the padding
+	 * {@code .EVEN} puts after a string, and says so.
+	 */
+	static String stringText(MemoryImage image, int addr, int length) {
+		boolean terminated = image.readByte(addr + length - 1) == 0;
+		if(terminated && length == 1 && (addr & 1) != 0)
+			return ".even";
+		int textLength = terminated ? length - 1 : length;
+		StringBuilder printable = new StringBuilder();
+		for(int i = 0; i < textLength; i++) {
+			int b = image.readByte(addr + i);
+			if(isPrintable(b))
+				printable.append((char) b);
+		}
+		char delimiter = '/';
+		for(char c : new char[]{'/', '"', '|', '\'', '!', '#', '%'}) {
+			if(printable.indexOf(String.valueOf(c)) < 0) {
+				delimiter = c;
+				break;
+			}
+		}
+		StringBuilder sb = new StringBuilder(terminated ? ".asciz  " : ".ascii  ");
+		boolean inText = false;
+		for(int i = 0; i < textLength; i++) {
+			int b = image.readByte(addr + i);
+			if(isPrintable(b)) {
+				if(!inText)
+					sb.append(delimiter);
+				inText = true;
+				sb.append((char) b);
+			} else {
+				if(inText)
+					sb.append(delimiter);
+				inText = false;
+				sb.append('<').append(Integer.toOctalString(b)).append('>');
+			}
+		}
+		if(inText)
+			sb.append(delimiter);
+		else if(textLength == 0)
+			sb.append(delimiter).append(delimiter);
+		return sb.toString();
+	}
+
+	private static boolean isPrintable(int b) {
+		return b >= 040 && b < 0177;
+	}
+
+	private static Address v(int addr) {
+		return Address.of(MemoryAddressType.VIRTUAL, addr);
 	}
 
 	/** Up to three raw words, blank-padded, exactly as {@code Disas11}'s listing has them. */
-	private static String wordsOf(MemoryImage image, DecodedInstruction di) {
+	private static String wordsOf(MemoryImage image, int addr, int count) {
 		StringBuilder sb = new StringBuilder();
-		for(int i = 0; i < 3; i++) {
-			if(i < di.words())
-				sb.append(Octal.word(image.readWord(di.address() + i * 2))).append(' ');
+		for(int i = 0; i < Line.RAW_WORDS; i++) {
+			if(i < count)
+				sb.append(Octal.word(image.readWord(addr + i * 2))).append(' ');
 			else
 				sb.append("       ");
+		}
+		return sb.toString();
+	}
+
+	/** The first few raw bytes, the way a MACRO-11 listing shows bytes, padded to the raw column. */
+	private static String bytesOf(MemoryImage image, int addr, int count) {
+		StringBuilder sb = new StringBuilder();
+		for(int i = 0; i < Math.min(count, Line.RAW_BYTES); i++) {
+			sb.append(Octal.format(image.readByte(addr + i), 3)).append(' ');
+		}
+		while(sb.length() < Line.RAW_WIDTH) {
+			sb.append(' ');
 		}
 		return sb.toString();
 	}

@@ -1,5 +1,6 @@
 package to.etc.pdp11.ui;
 
+import to.etc.pdp11.common.disas.DataMarks;
 import to.etc.pdp11.core.bits.BitfieldsDefs;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
@@ -58,6 +59,9 @@ public final class AppContext {
 	private final MachineState m_machineState = new MachineState();
 
 	private final CellSelection m_cellSelection = new CellSelection();
+
+	/** Which words the disassembler lays out as data, for the session. */
+	private final DataMarks m_dataMarks = new DataMarks();
 
 	/**
 	 * The MACRO-11 program being written, shared because two windows assemble it.
@@ -186,6 +190,14 @@ public final class AppContext {
 	/** Which memory cell the user is looking at, for the windows that follow the selection. */
 	public CellSelection getCellSelection() {
 		return m_cellSelection;
+	}
+
+	/**
+	 * Which words are data rather than code, as the user marked them in a Disassembler window.
+	 * Kept for the session, until "Forget all".
+	 */
+	public DataMarks getDataMarks() {
+		return m_dataMarks;
 	}
 
 	/**

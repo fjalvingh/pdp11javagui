@@ -38,6 +38,14 @@
   address; an odd address is named as the high byte of its register. The table is
   `well-known-addresses.txt` in `pdp11-common`, one line per address. The Disassembler window
   now opens wider to leave room for the comments.
+- **Data can be marked as data.** Select lines in the Disassembler and right-click: the menu
+  marks them as **Words** (`.word`, three to a line), **Bytes** (`.byte`, four to a line),
+  **Strings** (`.asciz`, one string per line, packed as MACRO-11 packs them, control characters
+  written `<15><12>`) or as **Code** again. Clicking a single word in the raw column picks out just
+  that word - an operand that is really a table entry, say - and the same menu marks only it. An
+  instruction never takes an operand from a word marked as data. The menu ticks what the
+  selection already is, data is shown in its own colour, and the marks last the session, are
+  shared by every Disassembler window and are cleared by **Forget all**.
 
 ### Diagnostics
 

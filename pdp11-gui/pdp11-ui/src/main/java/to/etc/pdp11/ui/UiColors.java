@@ -43,6 +43,17 @@ public final class UiColors {
 	public static final Color PC_TEXT = new Color(0xF2, 0xDA, 0xDA);
 
 	/**
+	 * The one word picked out of a line in the Disassembler, laid over the line's own colours -
+	 * so translucent, and drawn with an outline in {@link #SELECTED_WORD_OUTLINE}.
+	 */
+	public static final Color SELECTED_WORD = new Color(0x7F, 0xC7, 0xFF, 0x50);
+
+	public static final Color SELECTED_WORD_OUTLINE = new Color(0x7F, 0xC7, 0xFF);
+
+	/** A line the user marked as data in the Disassembler. */
+	public static final Color DATA_TEXT = new Color(0x9F, 0xD6, 0xA8);
+
+	/**
 	 * The line an assembler error is on. {@code ColorCodeErrorBkGnd}, which is {@code clRed}.
 	 *
 	 * <p>Darkened rather than taken literally: a full red band behind a line of code in a dark

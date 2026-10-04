@@ -14,6 +14,9 @@ import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiRenderer;
 
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
+import java.awt.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -366,5 +369,112 @@ class DisassemblerPanelTest {
 		Edt.run(panel::updateDisplay);
 		Path file = UiRenderer.renderToFile(panel, 860, 440, Path.of("target", "ui-render", "disassembler-panel.png"));
 		assertTrue(Files.size(file) > 0);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Marking data
+	// -------------------------------------------------------------------------------------
+
+	/** The menu item with this text, clicked. */
+	private static void choose(JPopupMenu menu, String text) {
+		for(Component c : menu.getComponents()) {
+			if(c instanceof JMenuItem item && item.getText().equals(text)) {
+				item.doClick();
+				return;
+			}
+		}
+		throw new AssertionError("No menu item " + text);
+	}
+
+	private static boolean ticked(JPopupMenu menu, String text) {
+		for(Component c : menu.getComponents()) {
+			if(c instanceof JMenuItem item && item.getText().equals(text))
+				return item.isSelected();
+		}
+		throw new AssertionError("No menu item " + text);
+	}
+
+	@Test
+	void selectedLinesAreMarkedFromTheContextMenuAndCanBeMarkedBack(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		//-- Three words of table, then halt.
+		poke(panel, 0, 1, 2, 3, 0);
+		Edt.run(() -> {
+			panel.updateDisplay();
+			panel.getList().setSelectionInterval(0, 2);
+			JPopupMenu menu = panel.buildMarkMenu();
+			assertTrue(ticked(menu, "Code"), "what is there now is code");
+			choose(menu, "Words (.WORD)");
+			panel.updateDisplay();
+		});
+		List<String> lines = panel.getShownLines();
+		assertTrue(lines.get(0).endsWith(".word   000001,000002,000003"), lines.get(0));
+		assertTrue(lines.get(1).contains("halt"), lines.get(1));
+
+		//-- The selection survives decoding again, so the format can be changed straight away.
+		Edt.run(() -> {
+			assertEquals(List.of(0), java.util.Arrays.stream(panel.getList().getSelectedIndices()).boxed().toList());
+			JPopupMenu menu = panel.buildMarkMenu();
+			assertTrue(ticked(menu, "Words (.WORD)"));
+			choose(menu, "Bytes (.BYTE)");
+			panel.updateDisplay();
+		});
+		assertTrue(panel.getShownLines().get(0).endsWith(".byte   001,000,002,000"), panel.getShownLines().get(0));
+
+		Edt.run(() -> {
+			panel.getList().setSelectionInterval(0, 1);
+			choose(panel.buildMarkMenu(), "Code");
+			panel.updateDisplay();
+		});
+		assertTrue(panel.getShownLines().get(0).contains("wait"), "code again: " + panel.getShownLines().get(0));
+		assertTrue(ctx.getDataMarks().isEmpty());
+	}
+
+	/** Clicking one word in the raw column picks out that word, and the menu marks it alone. */
+	@Test
+	void aSingleWordOfAnInstructionCanBeMarked(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		//-- mov #200,r1, whose 200 is really a word of data that follows a one-word instruction.
+		poke(panel, 0, 012701, 0200, 0);
+		Edt.run(() -> {
+			panel.updateDisplay();
+			panel.selectWord(2);
+			JPopupMenu menu = panel.buildMarkMenu();
+			assertEquals("Mark Word 000002 as", ((JMenuItem) menu.getComponent(0)).getText());
+			choose(menu, "Words (.WORD)");
+			panel.updateDisplay();
+		});
+		List<String> lines = panel.getShownLines();
+		assertTrue(lines.get(1).startsWith("000002: 000200") && lines.get(1).endsWith(".word   000200"), lines.get(1));
+		assertEquals(null, ctx.getDataMarks().formatAt(0), "the instruction's own word is still code");
+		assertEquals(2, (int) Edt.call(panel::getSelectedWord), "the word is still picked out");
+	}
+
+	@Test
+	void forgetAllForgetsTheMarks(@TempDir Path dir) {
+		AppContext ctx = TestContext.create(dir);
+		ctx.getDataMarks().mark(0, 4, to.etc.pdp11.common.disas.DataMarks.Format.ASCIZ);
+		Edt.run(() -> to.etc.pdp11.ui.mem.SharedMemoryActions.forgetAll(ctx, null));
+		assertTrue(ctx.getDataMarks().isEmpty());
+	}
+
+	@Test
+	void renderMarkedDataToAFileForLookingAt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
+		//-- clr r0, a table of two words, "Hello" and a crlf, and halt.
+		poke(panel, 0, 005000, 1000, 2000, 'H' | 'e' << 8, 'l' | 'l' << 8, 'o' | 015 << 8, 012, 0);
+		ctx.getDataMarks().mark(2, 4, to.etc.pdp11.common.disas.DataMarks.Format.WORDS);
+		ctx.getDataMarks().mark(6, 014, to.etc.pdp11.common.disas.DataMarks.Format.ASCIZ);
+		Edt.run(() -> {
+			panel.updateDisplay();
+			panel.selectWord(4);
+		});
+		Path file = UiRenderer.renderToFile(panel, 860, 300, Path.of("target", "ui-render", "disassembler-data.png"));
+		assertTrue(Files.size(file) > 0);
+		List<String> lines = panel.getShownLines();
+		assertTrue(lines.get(2).endsWith(".asciz  /Hello/<15><12>"), lines.get(2));
 	}
 }

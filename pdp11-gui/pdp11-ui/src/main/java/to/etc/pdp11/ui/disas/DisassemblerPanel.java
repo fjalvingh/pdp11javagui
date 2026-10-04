@@ -4,6 +4,7 @@ import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionManager;
+import to.etc.pdp11.common.disas.DataMarks;
 import to.etc.pdp11.common.disas.DisassemblyListing;
 import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.ui.FieldStatus;
@@ -16,15 +17,28 @@ import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Insets;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Memory read back from the machine, shown as instructions, with the line the PC is on marked.
@@ -44,6 +58,14 @@ import java.awt.Window;
  * <p>The window that is not visible does not read memory - the Pascal is careful about this too
  * ({@code FormDisasU.pas:398-402}), and it matters: every stop would otherwise cost twenty-one
  * examines over a serial line for a window nobody is looking at.</p>
+ *
+ * <h2>Data</h2>
+ *
+ * <p>Every word decodes as something, so which words are tables and strings is the user's to say:
+ * select lines, or click one word in the raw column to select just that word, and the context
+ * menu marks them as words, bytes, strings or code again. The marks are {@link DataMarks} on the
+ * {@link AppContext}, so they last the session, are shared by every Disassembler window and go
+ * with "Forget all".</p>
  */
 public final class DisassemblerPanel extends JPanel {
 	/**
@@ -99,6 +121,16 @@ public final class DisassemblerPanel extends JPanel {
 
 	private final JLabel m_info = new JLabel();
 
+	private final DataMarks m_marks;
+
+	private final LineRenderer m_renderer = new LineRenderer();
+
+	/**
+	 * The one word picked out of a line by clicking it in the raw column, or -1. When there is
+	 * one, the context menu marks that word rather than the selected lines.
+	 */
+	private int m_selectedWord = -1;
+
 	/** The status line, and where a mistyped address is reported. See {@link FieldStatus}. */
 	private final FieldStatus m_status = new FieldStatus(m_info);
 
@@ -121,6 +153,7 @@ public final class DisassemblerPanel extends JPanel {
 	public DisassemblerPanel(AppContext context) {
 		super(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
 		m_context = context;
+		m_marks = context.getDataMarks();
 
 		//-- Virtual addresses: an instruction stream only means anything in the 64 KB a program
 		//-- can see, whatever the physical machine is.
@@ -134,7 +167,16 @@ public final class DisassemblerPanel extends JPanel {
 		m_end = endOf(m_start, pageWords(m_start, LINES_PER_PAGE));
 
 		m_list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, m_list.getFont().getSize()));
-		m_list.setCellRenderer(new LineRenderer());
+		m_list.setCellRenderer(m_renderer);
+		m_list.addMouseListener(new MarkMouse());
+		m_list.addListSelectionListener(e -> {
+			//-- Moving the selection anywhere else - the keyboard, a shift-click - is a selection
+			//-- of lines again.
+			if(m_selectedWord >= 0 && !selectionIsJustTheLineOf(m_selectedWord)) {
+				m_selectedWord = -1;
+				m_list.repaint();
+			}
+		});
 		add(buildControls(), "growx, wrap");
 		add(new JScrollPane(m_list), "grow, wrap");
 		add(m_info, "growx");
@@ -257,7 +299,7 @@ public final class DisassemblerPanel extends JPanel {
 				//-- from the cache: re-reading what this loop just read would be reading the same
 				//-- words twice for one listing.
 				reuse = true;
-				listing = DisassemblyListing.of(group, start, endOf(start, words), pc, want);
+				listing = DisassemblyListing.of(group, start, endOf(start, words), pc, want, m_marks);
 				int got = listing.getLines().size();
 				if(got >= want) {
 					//-- The page is full, but its last instruction may be one the end of the range
@@ -279,7 +321,7 @@ public final class DisassemblerPanel extends JPanel {
 			//-- The range as the listing actually used it, rather than the word or two over that
 			//-- was read to settle the last line. This is what "where the page ends" means, and
 			//-- both the status line and the next page quote it.
-			int used = (int) ((listing.nextAddress().val() - start.val()) / 2);
+			int used = (int) ((listing.nextAddress().val() - start.val() + 1) / 2);
 			Address end = endOf(start, Math.min(words, used));
 			AppContext.onUi(() -> {
 				m_end = end;
@@ -357,10 +399,30 @@ public final class DisassemblerPanel extends JPanel {
 	 * the screen, and a button that appears to do nothing is worse than one that is slow.</p>
 	 */
 	private void updateDisplay(int scrollTo) {
-		DisassemblyListing listing = DisassemblyListing.of(m_group, m_start, m_end, m_pc, m_maxLines);
+		DisassemblyListing listing = DisassemblyListing.of(m_group, m_start, m_end, m_pc, m_maxLines, m_marks);
+		//-- Decoding again - after marking, typically - must not lose what was selected: the lines
+		//-- over the same words are selected again, so a format can be changed straight away.
+		Set<Integer> selectedWords = new HashSet<>();
+		for(DisassemblyListing.Line line : m_list.getSelectedValuesList()) {
+			for(int w = line.firstWord(); w <= line.lastWord(); w += 2) {
+				selectedWords.add(w);
+			}
+		}
+		int word = m_selectedWord;
 		m_model.clear();
+		List<Integer> reselect = new ArrayList<>();
 		for(DisassemblyListing.Line line : listing.getLines()) {
+			if(selectedWords.contains(line.firstWord()) || selectedWords.contains(line.lastWord()))
+				reselect.add(m_model.size());
 			m_model.addElement(line);
+		}
+		m_list.setSelectedIndices(reselect.stream().mapToInt(Integer::intValue).toArray());
+		int wordLine = word < 0 ? -1 : lineShowing(word);
+		if(wordLine >= 0) {
+			m_list.setSelectedIndex(wordLine);
+			m_selectedWord = word;
+		} else {
+			m_selectedWord = -1;
 		}
 		if(listing.pcLine() >= 0) {
 			m_list.ensureIndexIsVisible(listing.pcLine());
@@ -446,6 +508,7 @@ public final class DisassemblerPanel extends JPanel {
 
 	public void attach() {
 		detach();
+		m_marks.addListener(m_pendingListener);
 		m_context.getMemoryCellGroups().getSharedMemory().addChangeListener(m_pendingListener);
 		m_context.getMachineState().addListener(m_machineListener);
 		m_context.getConnectionManager().addListener(m_connectionListener);
@@ -461,6 +524,7 @@ public final class DisassemblerPanel extends JPanel {
 	}
 
 	public void detach() {
+		m_marks.removeListener(m_pendingListener);
 		m_context.getMemoryCellGroups().getSharedMemory().removeChangeListener(m_pendingListener);
 		m_context.getMachineState().removeListener(m_machineListener);
 		m_context.getConnectionManager().removeListener(m_connectionListener);
@@ -470,6 +534,177 @@ public final class DisassemblerPanel extends JPanel {
 	public void dispose() {
 		detach();
 		m_context.getMemoryCellGroups().removeGroup(m_group);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Marking data
+	// -------------------------------------------------------------------------------------
+
+	/** The menu items, in order: what a word marked this way is, and how the menu says it. */
+	private static final DataMarks.Format[] MENU_FORMATS = {null, DataMarks.Format.WORDS, DataMarks.Format.BYTES,
+		DataMarks.Format.ASCIZ};
+
+	private static String menuText(DataMarks.Format format) {
+		if(format == null)
+			return "Code";
+		return switch(format) {
+			case WORDS -> "Words (.WORD)";
+			case BYTES -> "Bytes (.BYTE)";
+			case ASCIZ -> "Strings (.ASCIZ)";
+		};
+	}
+
+	/**
+	 * The words the context menu would mark, as inclusive {@code [first, last]} ranges: the one
+	 * word picked out, or every selected line's.
+	 */
+	private List<int[]> markTargets() {
+		List<int[]> ranges = new ArrayList<>();
+		if(m_selectedWord >= 0) {
+			ranges.add(new int[]{m_selectedWord, m_selectedWord});
+			return ranges;
+		}
+		for(DisassemblyListing.Line line : m_list.getSelectedValuesList()) {
+			ranges.add(new int[]{line.firstWord(), line.lastWord()});
+		}
+		return ranges;
+	}
+
+	/** Mark what is selected - the word picked out, or the selected lines - as {@code format}, or as code for null. */
+	public void markSelected(DataMarks.Format format) {
+		for(int[] r : markTargets()) {
+			m_marks.mark(r[0], r[1], format);
+		}
+	}
+
+	/**
+	 * The context menu for what is selected, or null when nothing is. The format everything
+	 * selected already has is ticked, so it shows what is there as well as what can be.
+	 */
+	JPopupMenu buildMarkMenu() {
+		List<int[]> targets = markTargets();
+		if(targets.isEmpty())
+			return null;
+		Set<DataMarks.Format> current = new HashSet<>();
+		boolean anyCode = false;
+		int words = 0;
+		for(int[] r : targets) {
+			for(int w = r[0]; w <= r[1]; w += 2) {
+				DataMarks.Format f = m_marks.formatAt(w);
+				if(f == null)
+					anyCode = true;
+				else
+					current.add(f);
+				words++;
+			}
+		}
+		JPopupMenu menu = new JPopupMenu();
+		String what = m_selectedWord >= 0
+			? "Word " + Address.of(MemoryAddressType.VIRTUAL, m_selectedWord).toOctal()
+			: words + (words == 1 ? " word" : " words") + " from "
+				+ Address.of(MemoryAddressType.VIRTUAL, targets.get(0)[0]).toOctal();
+		JMenuItem title = new JMenuItem("Mark " + what + " as");
+		title.setEnabled(false);
+		menu.add(title);
+		menu.addSeparator();
+		for(DataMarks.Format format : MENU_FORMATS) {
+			JCheckBoxMenuItem item = new JCheckBoxMenuItem(menuText(format));
+			boolean uniform = format == null ? current.isEmpty() : !anyCode && current.size() == 1 && current.contains(format);
+			item.setSelected(uniform);
+			item.addActionListener(e -> markSelected(format));
+			menu.add(item);
+		}
+		return menu;
+	}
+
+	/** Which line shows this word in its raw column, or -1. */
+	private int lineShowing(int word) {
+		for(int i = 0; i < m_model.size(); i++) {
+			if(m_model.get(i).columnsOfWord(word) != null)
+				return i;
+		}
+		return -1;
+	}
+
+	private boolean selectionIsJustTheLineOf(int word) {
+		int[] sel = m_list.getSelectedIndices();
+		return sel.length == 1 && m_model.get(sel[0]).columnsOfWord(word) != null;
+	}
+
+	/**
+	 * Pick out one word of a line, or none with -1: what clicking it in the raw column does. The
+	 * line it is on becomes the selection.
+	 */
+	public void selectWord(int word) {
+		int line = word < 0 ? -1 : lineShowing(word);
+		if(line < 0) {
+			m_selectedWord = -1;
+		} else {
+			m_list.setSelectedIndex(line);
+			m_selectedWord = word;
+		}
+		m_list.repaint();
+	}
+
+	/** The word picked out of a line, or -1 when it is lines that are selected. */
+	public int getSelectedWord() {
+		return m_selectedWord;
+	}
+
+	/**
+	 * A press on a word in the raw column picks out that word; a press anywhere else is an
+	 * ordinary line selection. A right-click outside the selection selects what it is on first,
+	 * so the menu is about what was clicked; inside it, the selection stays as it is.
+	 */
+	private final class MarkMouse extends MouseAdapter {
+		@Override
+		public void mousePressed(MouseEvent e) {
+			int index = indexAt(e.getPoint());
+			if(index >= 0) {
+				boolean right = SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger();
+				if(!right || !m_list.isSelectedIndex(index)) {
+					int word = e.isShiftDown() || e.isControlDown() ? -1 : wordAt(index, e.getPoint());
+					if(word >= 0) {
+						selectWord(word);
+					} else {
+						if(right)
+							m_list.setSelectedIndex(index);
+						if(m_selectedWord >= 0) {
+							m_selectedWord = -1;
+							m_list.repaint();
+						}
+					}
+				}
+			}
+			popup(e);
+		}
+
+		@Override
+		public void mouseReleased(MouseEvent e) {
+			popup(e);
+		}
+
+		private void popup(MouseEvent e) {
+			if(!e.isPopupTrigger())
+				return;
+			JPopupMenu menu = buildMarkMenu();
+			if(menu != null)
+				menu.show(m_list, e.getX(), e.getY());
+		}
+
+		private int indexAt(Point p) {
+			int index = m_list.locationToIndex(p);
+			if(index < 0)
+				return -1;
+			Rectangle bounds = m_list.getCellBounds(index, index);
+			return bounds != null && bounds.contains(p) ? index : -1;
+		}
+
+		private int wordAt(int index, Point p) {
+			Rectangle bounds = m_list.getCellBounds(index, index);
+			int column = m_renderer.columnAt(m_list, p.x - bounds.x);
+			return column < 0 ? -1 : m_model.get(index).wordAtColumn(column);
+		}
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -528,14 +763,31 @@ public final class DisassemblerPanel extends JPanel {
 		return l;
 	}
 
-	/** The line the PC is on, marked the way the Pascal marks it: pink, per {@code AuxU.pas:47}. */
-	private static final class LineRenderer extends DefaultListCellRenderer {
+	/**
+	 * The line the PC is on, marked the way the Pascal marks it: pink, per {@code AuxU.pas:47};
+	 * data in its own colour; and the word picked out of a line, boxed.
+	 */
+	private final class LineRenderer extends DefaultListCellRenderer {
+		/** The word to box on the line being painted, as columns {@code [first, end)}, or null. */
+		private int[] m_box;
+
+		/** Which column of the text this x, measured from the cell's left edge, is in; -1 before the text. */
+		int columnAt(JList<?> list, int x) {
+			getListCellRendererComponent(list, null, -1, false, false);
+			int left = getInsets().left;
+			int width = getFontMetrics(list.getFont()).charWidth('0');
+			return x < left || width <= 0 ? -1 : (x - left) / width;
+		}
+
 		@Override
 		public Component getListCellRendererComponent(JList<?> list, Object value, int index,
 			boolean selected, boolean focused) {
 			Component c = super.getListCellRendererComponent(list, value, index, selected, focused);
+			m_box = null;
 			if(value instanceof DisassemblyListing.Line line) {
 				setText(line.toDisplayString());
+				if(m_selectedWord >= 0)
+					m_box = line.columnsOfWord(m_selectedWord);
 				if(line.atPc()) {
 					c.setBackground(UiColors.PC_BACKGROUND);
 					c.setForeground(UiColors.PC_TEXT);
@@ -544,9 +796,26 @@ public final class DisassemblerPanel extends JPanel {
 					//-- would run is something else.
 					c.setBackground(UiColors.EDITED_BACKGROUND);
 					c.setForeground(UiColors.EDITED_TEXT);
+				} else if(line.format() != null && !selected) {
+					c.setForeground(UiColors.DATA_TEXT);
 				}
 			}
 			return c;
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			super.paintComponent(g);
+			if(m_box == null)
+				return;
+			Insets in = getInsets();
+			int width = getFontMetrics(getFont()).charWidth('0');
+			int x = in.left + m_box[0] * width - 1;
+			int w = (m_box[1] - m_box[0]) * width + 1;
+			g.setColor(UiColors.SELECTED_WORD);
+			g.fillRect(x, 0, w, getHeight() - 1);
+			g.setColor(UiColors.SELECTED_WORD_OUTLINE);
+			g.drawRect(x, 0, w, getHeight() - 1);
 		}
 	}
 }

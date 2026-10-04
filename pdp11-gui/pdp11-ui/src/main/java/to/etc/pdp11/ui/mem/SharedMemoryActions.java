@@ -68,7 +68,7 @@ public final class SharedMemoryActions {
 	}
 
 	/**
-	 * Start again: nothing read, nothing pending. Asks first if that throws anything away that
+	 * Start again: nothing read, nothing pending, nothing marked as data. Asks first if that throws anything away that
 	 * has not been deposited.
 	 */
 	public static void forgetAll(AppContext context, Component parent) {
@@ -82,6 +82,7 @@ public final class SharedMemoryActions {
 				return;
 		}
 		memory.forgetAll();
+		context.getDataMarks().clear();
 		context.getLogger().log(LogChannel.OTHER, "Forgot everything known about memory");
 	}
 
