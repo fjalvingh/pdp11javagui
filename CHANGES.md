@@ -156,6 +156,18 @@
 
 ### Consoles
 
+- **Large deposits on an M9312 console are about six times as fast.** A deposit of 128 or more
+  words of memory - a loaded diagnostic, an assembled program - first deposits a small loader
+  (about 60 words), starts it, and sends it the rest in binary blocks, with a checksum and an
+  answer for each. It then jumps back to the console emulator. At the 2400 baud an 11/05's
+  console line is limited to, the median XXDP diagnostic now takes about 40 seconds instead of 4
+  minutes. The loader goes into memory the deposit does not write, or failing that over the top
+  of the image, whose words are then deposited the usual way; what was in memory there is gone, and shows as
+  unknown. A garbled or lost character is recovered from and the block sent again. A console line
+  that does not carry the eighth bit is detected before any data is sent, and the deposit is
+  then done one word at a time as before. Not used on an M9301, whose console has no fixed entry
+  to come back to.
+
 - **An `.ASECT` program that calls a subroutine by name loads as written.** In an absolute
   section `macro11` lists a PC-relative operand - `JSR PC,SUB`, `MOV DATA,R0`, `JMP LOOP` - as
   the address it names, marked `'`, and leaves the subtraction to a linker. There is no linker

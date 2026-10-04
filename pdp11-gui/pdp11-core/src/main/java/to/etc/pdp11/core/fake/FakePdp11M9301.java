@@ -24,4 +24,10 @@ public final class FakePdp11M9301 extends FakePdp11M9312 {
 		super("Fake PDP-11 M9301", scheduler, random);
 		setPrompt("$\0");
 	}
+
+	/** Depends on the switches, so there is none to jump to; the fast loader is never used. */
+	@Override
+	protected int monitorEntry() {
+		return -1;
+	}
 }

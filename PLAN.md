@@ -386,6 +386,53 @@ The protocol layer is byte-oriented, not text — `curbyte := curbyte and $7f`
 (`SerialIoHubU.pas:843`). Keep `byte[]`/ISO-8859-1 throughout `pdp11-core` and never let a
 default-charset conversion near it.
 
+### Fast loading over the M9312 console
+
+The M9312's console emulator deposits one word per `D nnnnnn<CR>`, and cannot be sent the next
+command before its prompt: it does not read while it prints, and the console line holds one
+character. That is about twelve characters on the line and a round trip per word. On an 11/05,
+whose console line cannot be strapped above 2400 baud without an external clock, it comes to
+under twenty words a second: about 4 minutes for the median XXDP image in the diagnostic library
+(9 KB loaded, measured over 1,481 images) and 13 minutes at the 90th percentile.
+
+So `M9312Console.deposit(group, ...)` sends any deposit of 128 or more memory words through a
+loader (`FastLoader`, `fastload.mac`):
+
+- **The loader is MACRO-11 source, assembled at the address it is put** by the project's own
+  assembler, not shipped as words and relocated. It is about 60 words of code, deposited the slow
+  way, plus a 64-word receive buffer that is never deposited.
+- **It goes where nothing being deposited is**: the highest gap below the image's top address that
+  it fits in. Memory on a UNIBUS machine is contiguous from zero, so anything below a deposited
+  word exists; nothing above the top one is guessed at, because depositing into nonexistent memory
+  stops the console emulator for good. With no gap, it overlays the top of the image, and those
+  words are deposited the slow way after it has finished. What the application knew about the
+  memory it sat in is forgotten (`SharedMemory.forgetMachineValuesAt`).
+- **The protocol is binary, with a block checksum and an answer per block.** Two characters a
+  word, so about 120 words a second at 2400 baud: about 40 s instead of 4 minutes for the median
+  image. A block is received into the buffer and copied only once its checksum is right, so a
+  header garbled on the line cannot write anywhere. Recovery after a lost, garbled or doubled
+  character is a run of padding bytes, then a sync the loader acknowledges.
+- **Seven bits are a recoverable failure, not a dead machine.** The first block is a probe whose
+  bytes all have the eighth bit set. If it is refused, the padding, the sync and the exit are all
+  seven-bit characters, so the loader is sent back to the console emulator and the deposit
+  continues one word at a time.
+- **It returns to the console emulator through the ROM's monitor entry** (`165020` on an
+  M9312). The M9301's entry depends on its switches, so there is none, and an M9301 never uses the
+  loader. The register dump the emulator prints on re-entry is not reported as a program stop.
+- **Started with `S`, so the bus is reset.** I/O page words in the same deposit are written after
+  the loader, not before.
+- **Compression was considered and rejected.** A decoder small enough to deposit by hand gets
+  ×1.45 on the library (median); zlib gets ×2, with a decoder far too big for that. That is
+  about 12 s on a median image, against a loader twice the size and timing to worry about on
+  the slowest PDP-11 there is.
+
+The fake executes the loader rather than imitating it: `FakePdp11M9312` recognises it word for
+word when it is started and runs it through `Pdp11Interpreter` (the 11/05 basic instruction set)
+against its own memory and a DL11 at `177560`. Line faults (drop, corrupt, duplicate, seven
+bits) can be injected, and `M9312FastLoadTest` reads back every deposit through ordinary
+examines. What has **not** been checked yet is real hardware: what the M9312 prints on re-entry at
+`165020`, and whether an 11/05's console port passes the eighth bit (the probe finds out). See §7.
+
 ---
 
 ## 2. `pdp11-core` design
@@ -1826,3 +1873,11 @@ Run the app during development with
    (`AddressU.pas:134`, `FakePDP11GenericU.pas:123, 257-260`,
    `ConsolePDP11ODTU.pas:719-722, 760-764`). Every one sits on a human-timescale operation, so
    a real `IllegalArgumentException`/`IllegalStateException` costs nothing.
+
+9. **The M9312 fast loader has only run against the fake.** `FakePdp11M9312` executes the real
+   loader code, but the two things about the machine it depends on are taken from documentation:
+   that a jump to `165020` brings the console emulator back with its register dump and prompt,
+   and that the console port at `177560` delivers all eight bits. The second is detected and
+   falls back; the first, if wrong, would leave a loaded image and no prompt, and would show up as
+   "the fast loader did not return". Try it on the 11/05 with a large image before relying on
+   it, and `M9312Console.setFastLoad(false)` turns it off.

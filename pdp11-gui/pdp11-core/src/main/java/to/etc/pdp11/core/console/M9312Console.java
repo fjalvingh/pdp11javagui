@@ -13,9 +13,14 @@ import to.etc.pdp11.common.util.ProgressMonitor;
 import to.etc.pdp11.core.mmu.Pdp11Mmu;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Drives the console emulator in an M9312 or M9301 boot ROM: the console of an 11/04 or 11/34
@@ -55,6 +60,15 @@ import java.util.List;
  * and {@code D nnnnnn} use it - advancing it by two on the <i>second</i> examine or deposit in a
  * row, not the first. So a run of consecutive words costs one {@code L} and then one command per
  * word, which is what both bulk operations here arrange.</p>
+ *
+ * <h2>Big deposits</h2>
+ *
+ * <p>Even so a word costs about twelve characters on the line and a round trip, and on an 11/05,
+ * whose console line goes no faster than 2400 baud, that is under twenty words a second. So a
+ * deposit of more than {@link #FAST_LOAD_MIN_WORDS} words of memory deposits the
+ * {@link FastLoader} first, starts it, sends it the rest as binary blocks, and has it jump back
+ * to the console emulator at the ROM's monitor entry - about six times as fast, and falling back
+ * to the word-at-a-time way wherever it cannot be used. See {@link #fastLoad}.</p>
  */
 public final class M9312Console extends AbstractConsole {
 	public static final char CR = '\r';
@@ -70,6 +84,21 @@ public final class M9312Console extends AbstractConsole {
 
 	private static final long GLOBAL_REGISTER_BLOCKSIZE = 16;
 
+	/**
+	 * The fewest memory words worth the fast loader. Depositing it costs as much as about sixty
+	 * words, so below this it is not clearly a win.
+	 */
+	public static final int FAST_LOAD_MIN_WORDS = 128;
+
+	/** The loader answers its start at once; this is the line, not the machine. */
+	private static final long LOADER_START_TIMEOUT_MS = 2000;
+
+	/** How often one block is tried before the line is declared too noisy to use. */
+	private static final int BLOCK_ATTEMPTS = 4;
+
+	/** How often resynchronising with the loader is tried before it is declared lost. */
+	private static final int RESYNC_ATTEMPTS = 3;
+
 	private static final String DEAD_HINT = "a nonexistent address, or a program that halted, stops the "
 		+ "console emulator, and only a reboot from the front panel brings it back";
 
@@ -79,6 +108,21 @@ public final class M9312Console extends AbstractConsole {
 
 	private final Address m_monitorEntry;
 
+	/** What the console's memory is, so the loader's own footprint can be forgotten in it. */
+	private final MemoryCellGroups m_groups;
+
+	/** See {@link #setFastLoad}. */
+	private volatile boolean m_fastLoad = true;
+
+	/** Raw input is on, for the fast loader. Command thread only. */
+	private boolean m_rawActive;
+
+	/**
+	 * The next prompt is the console emulator coming back from the fast loader, and the register
+	 * dump in front of it is not a stop. Set on the command thread, read by the decoder.
+	 */
+	private volatile boolean m_reentering;
+
 	/**
 	 * @param monitorEntry where a program can jump to get back into the console emulator, or
 	 *                     {@code null}; see {@link BootRom#getDefaultMonitorEntry()}
@@ -87,6 +131,7 @@ public final class M9312Console extends AbstractConsole {
 		super(logger);
 		m_rom = rom;
 		m_monitorEntry = monitorEntry;
+		m_groups = groups;
 		setCommandTimeoutMillis(CMD_TIMEOUT_MS);
 		setMmu(new Pdp11Mmu(groups));
 	}
@@ -275,7 +320,9 @@ public final class M9312Console extends AbstractConsole {
 	/** A prompt, and with it the news that a register dump just before it was a stop. */
 	private AnswerPhrase makePrompt() {
 		AnswerPhrase.Halt halt = takeHaltAwaitingPrompt();
-		if(halt != null)
+		boolean reentering = m_reentering;
+		m_reentering = false;
+		if(halt != null && !reentering)
 			signalExecutionStop(halt.haltAddr());
 		else
 			clearExecutionStop();
@@ -379,42 +426,298 @@ public final class M9312Console extends AbstractConsole {
 	}
 
 	/**
-	 * Write a group, with one {@code L} per run of consecutive words.
+	 * Write a group: through the fast loader when it is big enough to be worth it, and with one
+	 * {@code L} per run of consecutive words for whatever is left.
 	 *
 	 * <p>The rules for which cells are written are {@link AbstractConsole#deposit(MemoryCellGroup,
 	 * boolean, ProgressMonitor)}'s, unchanged: unknown edit values are never sent, and with
-	 * {@code optimize} neither is a value the machine already holds. Only the address loading
-	 * differs.</p>
+	 * {@code optimize} neither is a value the machine already holds. Only how they get there
+	 * differs. See {@link FastLoader} for the loader, and {@link #fastLoad} for what it leaves.</p>
 	 */
 	@Override
 	public void deposit(MemoryCellGroup g, boolean optimize, ProgressMonitor pm) throws ConsoleException {
-		List<MemoryCell> cells = List.copyOf(g.getCells());
-		MemoryCellGroups owner = g.getOwner();
-		Address last = null;                                // what the emulator's address now is, after a D
-		pm.begin("Depositing ...", cells.size());
+		List<MemoryCell> todo = new ArrayList<>();
+		for(MemoryCell mc : g.getCells()) {
+			if(!mc.getEditValue().isKnown())
+				continue;
+			if(optimize && !mc.isEdited())
+				continue;
+			todo.add(mc);
+		}
+		pm.begin("Depositing ...", todo.size());
 		try {
-			for(MemoryCell mc : cells) {
-				pm.step(1);
-				if(pm.isCancelled())
-					break;
-				if(!mc.getEditValue().isKnown())
-					continue;
-				if(optimize && !mc.isEdited())
-					continue;
-				Address physical = toPhysical(mc.getAddr(), true);
-				requireDepositable(physical);
-				//-- After an L the next D does not advance; after a D it does. So a D straight
-				//-- after a D lands two further on, and needs no L if that is where it should go.
-				if(last == null || physical.val() != last.val() + 2)
-					loadAddress(physical);
-				depositLoaded(mc.getEditValue().word());
-				last = physical;
-				mc.setDeposited();
-				if(owner != null)
-					owner.syncMemoryCells(mc);
-			}
+			List<MemoryCell> rest = m_fastLoad ? fastLoad(todo, g.getOwner(), pm) : todo;
+			depositOneByOne(rest, g.getOwner(), pm);
 		} finally {
 			pm.done();
+		}
+	}
+
+	/** {@code L} when the address is not the one the last {@code D} advances to, then {@code D}. */
+	private void depositOneByOne(List<MemoryCell> cells, MemoryCellGroups owner, ProgressMonitor pm) throws ConsoleException {
+		Address last = null;                                // what the emulator's address now is, after a D
+		for(MemoryCell mc : cells) {
+			if(pm.isCancelled())
+				break;
+			Address physical = toPhysical(mc.getAddr(), true);
+			requireDepositable(physical);
+			//-- After an L the next D does not advance; after a D it does. So a D straight
+			//-- after a D lands two further on, and needs no L if that is where it should go.
+			if(last == null || physical.val() != last.val() + 2)
+				loadAddress(physical);
+			depositLoaded(mc.getEditValue().word());
+			last = physical;
+			mc.setDeposited();
+			if(owner != null)
+				owner.syncMemoryCells(mc);
+			pm.step(1);
+		}
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The fast loader
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Whether a big deposit may go through the {@link FastLoader}. On by default; it is used only
+	 * where it can be, and a deposit falls back to one word at a time where it cannot.
+	 */
+	public void setFastLoad(boolean fastLoad) {
+		m_fastLoad = fastLoad;
+	}
+
+	public boolean isFastLoad() {
+		return m_fastLoad;
+	}
+
+	/**
+	 * Deposit what can go through the loader, and answer what is left to deposit one at a time.
+	 *
+	 * <p>Only memory goes through it - words below the I/O page - and only when there are at least
+	 * {@link #FAST_LOAD_MIN_WORDS} of them and the ROM has an entry to come back to: an M9301's
+	 * depends on its switches, and without one a loader that has finished can only halt, which
+	 * this console does not survive. What is left over is the I/O page, the words the loader
+	 * itself sat on when it had to overlay the image (see {@link FastLoader#place}), and, if the
+	 * line turned out to drop the eighth bit, everything.</p>
+	 *
+	 * <p>Three things are true afterwards that a word-at-a-time deposit does not do. The machine
+	 * has been through a START, and so a bus reset: device registers are what a reset leaves,
+	 * which is why the I/O page is deposited after the loader rather than before. The memory the
+	 * loader sat in holds the loader, so what the application knew of it is forgotten. And the
+	 * loader's return to the console emulator prints the register dump that otherwise means a
+	 * program halted; it is not reported as one.</p>
+	 */
+	private List<MemoryCell> fastLoad(List<MemoryCell> todo, MemoryCellGroups owner, ProgressMonitor pm) throws ConsoleException {
+		if(m_monitorEntry == null)
+			return todo;
+		//-- What can go: memory, by address. Two cells at one address are one shared word.
+		TreeMap<Integer, List<MemoryCell>> memory = new TreeMap<>();
+		for(MemoryCell mc : todo) {
+			Address physical = toPhysical(mc.getAddr(), true);
+			long v = physical.val();
+			if((v & 1) == 0 && v < FastLoader.IOPAGE_BASE)
+				memory.computeIfAbsent((int) v, k -> new ArrayList<>()).add(mc);
+		}
+		if(memory.size() < FAST_LOAD_MIN_WORDS)
+			return todo;
+		int origin = FastLoader.place(memory.navigableKeySet(), FastLoader.SIZE);
+		if(origin < 0)
+			return todo;
+		FastLoader.Image image = FastLoader.assemble(origin, (int) m_monitorEntry.val());
+
+		TreeMap<Integer, Integer> words = new TreeMap<>();
+		Set<MemoryCell> sent = Collections.newSetFromMap(new IdentityHashMap<>());
+		for(Map.Entry<Integer, List<MemoryCell>> e : memory.entrySet()) {
+			if(image.covers(e.getKey()))
+				continue;                                   // under the loader: afterwards, slowly
+			words.put(e.getKey(), e.getValue().get(0).getEditValue().word());
+			sent.addAll(e.getValue());
+		}
+
+		getLogger().log(LogChannel.COMMAND, "Fast load: " + words.size() + " words through a loader at "
+			+ Octal.format(origin, 6) + ".." + Octal.format(image.end() - 2, 6));
+		pm.step(0, "Depositing the loader ...");
+		Address last = null;
+		for(FastLoader.Word w : image.code()) {
+			Address a = Address.of(MemoryAddressType.PHYSICAL16, w.address());
+			if(last == null || a.val() != last.val() + 2)
+				loadAddress(a);
+			depositLoaded(w.value());
+			last = a;
+		}
+		//-- From here the loader's words are in memory, whatever happens next.
+		forgetLoaderArea(image);
+
+		loadAddress(Address.of(MemoryAddressType.PHYSICAL16, origin));
+		beginRawInput();
+		m_rawActive = true;
+		boolean inLoader = false;
+		try {
+			clearExecutionStop();
+			writeToPdp("S" + CR);
+			if(!awaitRaw(FastLoader.READY, LOADER_START_TIMEOUT_MS))
+				throw new NoConsolePromptException("The fast loader at " + Octal.format(origin, 6)
+					+ " did not start - " + DEAD_HINT, "", List.of());
+			inLoader = true;
+
+			if(!sendBlock(FastLoader.probe(image), 2)) {
+				getLogger().log(LogChannel.OTHER, "Fast load abandoned: the console line does not carry the eighth bit"
+					+ " - strap the console port for 8 data bits to use it. Depositing one word at a time.");
+				exitLoader();
+				inLoader = false;
+				return todo;
+			}
+
+			pm.step(0, "Depositing ...");
+			for(FastLoader.Block b : FastLoader.blocks(words)) {
+				if(pm.isCancelled())
+					break;
+				if(!sendBlock(b, BLOCK_ATTEMPTS))
+					throw new ConsoleException("The fast loader refused the block at " + Octal.format(b.address(), 6)
+						+ " " + BLOCK_ATTEMPTS + " times; the line is too noisy. Everything before it was deposited.");
+				for(int i = 0; i < b.values().length; i++) {
+					for(MemoryCell mc : memory.get(b.addressOf(i))) {
+						mc.setDeposited();
+						if(owner != null)
+							owner.syncMemoryCells(mc);
+					}
+				}
+				pm.step(countCells(memory, b));
+			}
+			exitLoader();
+			inLoader = false;
+		} finally {
+			if(inLoader) {
+				//-- Leaving on an exception: try to get the console emulator back, quietly.
+				try {
+					resyncLoader();
+					exitLoader();
+				} catch(ConsoleException x) {
+					getLogger().log(LogChannel.OTHER, "Could not get out of the fast loader: " + x.getMessage());
+				}
+			}
+			endRawInputIfStill();
+		}
+		List<MemoryCell> rest = new ArrayList<>();
+		for(MemoryCell mc : todo) {
+			if(!sent.contains(mc))
+				rest.add(mc);
+		}
+		return rest;
+	}
+
+	private static int countCells(Map<Integer, List<MemoryCell>> memory, FastLoader.Block b) {
+		int n = 0;
+		for(int i = 0; i < b.values().length; i++) {
+			n += memory.get(b.addressOf(i)).size();
+		}
+		return n;
+	}
+
+	/** The loader now occupies memory the application may have known the value of. */
+	private void forgetLoaderArea(FastLoader.Image image) {
+		if(m_groups == null)
+			return;
+		List<Address> gone = new ArrayList<>();
+		for(int a = image.origin(); a < image.end(); a += 2) {
+			gone.add(Address.of(MemoryAddressType.PHYSICAL16, a).withWidth(MemoryAddressType.PHYSICAL22));
+		}
+		m_groups.getSharedMemory().forgetMachineValuesAt(gone);
+	}
+
+	/**
+	 * Send a block, until the loader takes it or {@code attempts} run out.
+	 *
+	 * @return whether it was taken
+	 */
+	private boolean sendBlock(FastLoader.Block b, int attempts) throws ConsoleException {
+		byte[] bytes = b.encode();
+		for(int n = 0; n < attempts; n++) {
+			writeRawToPdp(bytes);
+			int c = readReply(replyTimeout(bytes.length));
+			if(c == FastLoader.ACK)
+				return true;
+			getLogger().log(LogChannel.PROTOCOL, "Fast loader block at " + Octal.format(b.address(), 6) + ": "
+				+ (c < 0 ? "no answer" : "refused") + ", resynchronising");
+			resyncLoader();
+		}
+		return false;
+	}
+
+	/**
+	 * Get the loader back to waiting for a block, however far into one it thinks it is.
+	 *
+	 * <p>Padding finishes any block it is inside - which gets refused, and the refusal ignored -
+	 * and is ignored itself once it is between blocks. Then a sync, whose acknowledgement is the
+	 * first answer that can be trusted to be about something we sent: everything before it is
+	 * the dregs of the trouble. Padding and sync are both seven-bit, so this works on a line that
+	 * has lost the eighth bit, which is how the loader is got out of one.</p>
+	 */
+	private void resyncLoader() throws ConsoleException {
+		byte[] pad = FastLoader.padding();
+		for(int n = 0; n < RESYNC_ATTEMPTS; n++) {
+			writeRawToPdp(pad);
+			writeRawToPdp(new byte[] {(byte) FastLoader.SYNC});
+			if(awaitRaw(FastLoader.ACK, replyTimeout(pad.length + 1)))
+				return;
+		}
+		throw new ConsoleException("Lost contact with the fast loader - " + DEAD_HINT);
+	}
+
+	/** The next answer from the loader, skipping anything that is not one; -1 for none in time. */
+	private int readReply(long timeoutMillis) throws ConsoleException {
+		long end = System.currentTimeMillis() + timeoutMillis;
+		for(;;) {
+			long left = end - System.currentTimeMillis();
+			if(left <= 0)
+				return -1;
+			int c = readRaw(left);
+			if(c < 0 || c == FastLoader.ACK || c == FastLoader.NAK)
+				return c;
+		}
+	}
+
+	/** Wait for one particular character, ignoring everything else. */
+	private boolean awaitRaw(char wanted, long timeoutMillis) throws ConsoleException {
+		long end = System.currentTimeMillis() + timeoutMillis;
+		for(;;) {
+			long left = end - System.currentTimeMillis();
+			if(left <= 0)
+				return false;
+			int c = readRaw(left);
+			if(c < 0)
+				return false;
+			if(c == wanted)
+				return true;
+		}
+	}
+
+	/**
+	 * Long enough for {@code bytes} to cross a line at 300 baud, and then some: the console does
+	 * not know the line's speed, and this only matters when something has already gone wrong.
+	 */
+	private static long replyTimeout(int bytes) {
+		return 1000 + 35L * bytes;
+	}
+
+	/**
+	 * Tell the loader to jump back to the console emulator, and wait for its prompt.
+	 *
+	 * <p>The emulator announces itself with the register dump this console otherwise reads as a
+	 * stop; {@link #m_reentering} keeps that from being reported, since nothing halted.</p>
+	 */
+	private void exitLoader() throws ConsoleException {
+		endRawInputIfStill();
+		m_reentering = true;
+		clearAnswers();
+		writeRawToPdp(new byte[] {(byte) FastLoader.EXIT});
+		checkPrompt("the fast loader did not return to the " + name() + " at " + m_monitorEntry.toOctal());
+	}
+
+	private void endRawInputIfStill() {
+		if(m_rawActive) {
+			m_rawActive = false;
+			endRawInput();
 		}
 	}
 

@@ -292,6 +292,28 @@ class SharedMemoryTest {
 		assertEquals(CellValue.of(2), typed.getEditValue());
 	}
 
+	/** What a loader of ours overwrote is forgotten there and only there; an edit there stays. */
+	@Test
+	void forgettingMachineValuesAtSomeAddressesLeavesTheRest() {
+		MemoryCellGroup g = group("Memory");
+		g.add(01000, 3);
+		for(int i = 0; i < 3; i++) {
+			g.cell(i).setPdpValue(CellValue.of(i + 1));
+		}
+		g.cell(1).setEditValue(CellValue.of(7));
+		AtomicInteger told = new AtomicInteger();
+		m_image.addChangeListener(told::incrementAndGet);
+
+		m_image.forgetMachineValuesAt(List.of(Address.of(MemoryAddressType.PHYSICAL22, 01002),
+			Address.of(MemoryAddressType.PHYSICAL22, 01004)));
+
+		assertEquals(CellValue.of(1), g.cell(0).getPdpValue());
+		assertFalse(g.cell(1).getPdpValue().isKnown());
+		assertFalse(g.cell(2).getPdpValue().isKnown());
+		assertEquals(CellValue.of(7), g.cell(1).getEditValue());
+		assertEquals(1, told.get(), "once, for the lot");
+	}
+
 	@Test
 	void forgettingEverythingIsACleanSlate() {
 		MemoryCell read = group("Memory").add(01000);

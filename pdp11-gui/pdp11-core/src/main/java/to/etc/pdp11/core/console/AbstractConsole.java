@@ -13,8 +13,12 @@ import to.etc.pdp11.common.util.Logger;
 import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.common.util.ProgressMonitor;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * What every console dialect shares: the receive path, the answer collection, the prompt check,
@@ -75,6 +79,13 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 	private volatile Address m_executionStopPc;
 
 	private volatile boolean m_executionStopDetected;
+
+	/**
+	 * While a program of ours is talking on the console line instead of the console, what it
+	 * says goes here rather than to the decoder; {@code null} otherwise. Swapped under
+	 * {@link #m_decodeLock}. See {@link #beginRawInput()}.
+	 */
+	private BlockingQueue<Character> m_rawInput;
 
 	protected AbstractConsole(Logger logger) {
 		m_logger = logger;
@@ -162,11 +173,18 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 	@Override
 	public final void onSerialReceive(String data) {
 		synchronized(m_decodeLock) {
-			ConsoleScanner<?> scanner = getScanner();
-			scanner.moreInput(data);
 			if(m_logger.isEnabled(LogChannel.PROTOCOL))
 				m_logger.log(LogChannel.PROTOCOL,
 					"received \"" + NoConsolePromptException.printable(data) + "\"");
+			BlockingQueue<Character> raw = m_rawInput;
+			if(raw != null) {
+				for(int i = 0; i < data.length(); i++) {
+					raw.add(data.charAt(i));
+				}
+				return;
+			}
+			ConsoleScanner<?> scanner = getScanner();
+			scanner.moreInput(data);
 			//-- No ProcessMessages in here, unlike :424 - see the class comment.
 			while(decodeNextAnswerPhrase()) {
 				//-- Keep going while phrases keep coming out.
@@ -224,6 +242,54 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 			//-- part of it. This is the only thing that drops one unreported.
 			m_haltAwaitingPrompt = null;
 		}
+	}
+
+	/**
+	 * Stop decoding: from now on what arrives is not the console talking but a program of ours,
+	 * and {@link #readRaw} hands it over a character at a time.
+	 *
+	 * <p>For a loader the console starts: what it says is not the console's grammar, and fed to
+	 * the decoder it would sit in the scanner as an unfinished line. The terminal still sees all
+	 * of it, because that copy is taken before the console's.</p>
+	 */
+	protected final void beginRawInput() {
+		synchronized(m_decodeLock) {
+			getScanner().clear();
+			m_answers.clear();
+			m_rawInput = new LinkedBlockingQueue<>();
+		}
+	}
+
+	/** Back to decoding, with a clean scanner: whatever the program left is not the console's. */
+	protected final void endRawInput() {
+		synchronized(m_decodeLock) {
+			m_rawInput = null;
+		}
+		resetScanner();
+	}
+
+	/**
+	 * The next character since {@link #beginRawInput()}, or -1 if none came within the time.
+	 */
+	protected final int readRaw(long timeoutMillis) throws ConsoleException {
+		BlockingQueue<Character> raw;
+		synchronized(m_decodeLock) {
+			raw = m_rawInput;
+		}
+		if(raw == null)
+			throw new IllegalStateException("Not reading raw input");
+		try {
+			Character c = raw.poll(timeoutMillis, TimeUnit.MILLISECONDS);
+			return c == null ? -1 : c;
+		} catch(InterruptedException x) {
+			Thread.currentThread().interrupt();
+			throw new ConsoleException("Interrupted while waiting for the machine");
+		}
+	}
+
+	/** Send bytes as they are: for a program of ours, not for the console. */
+	protected void writeRawToPdp(byte[] bytes) throws ConsoleException {
+		writeToPdp(new String(bytes, StandardCharsets.ISO_8859_1));
 	}
 
 	// -------------------------------------------------------------------------------------

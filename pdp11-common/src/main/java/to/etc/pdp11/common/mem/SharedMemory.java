@@ -177,6 +177,30 @@ public final class SharedMemory {
 		}
 	}
 
+	/**
+	 * Forget what the machine said at these 22-bit physical addresses, keeping any edits there:
+	 * something other than a deposit has written them - a loader of ours, using them as space.
+	 */
+	public void forgetMachineValuesAt(java.util.Collection<Address> addresses) {
+		int[] batch = m_batch.get();
+		batch[0]++;
+		try {
+			synchronized(m_lock) {
+				for(Address a : addresses) {
+					MemoryWord w = m_words.get(a.withWidth(MemoryAddressType.PHYSICAL22).val());
+					if(w != null)
+						w.setMachine(CellValue.UNKNOWN);
+				}
+			}
+		} finally {
+			batch[0]--;
+		}
+		if(batch[0] == 0) {
+			batch[1] = 0;
+			fireChanged();
+		}
+	}
+
 	/** Undo every pending edit in shared memory. */
 	public void discardAllEdits() {
 		forEachWord(MemoryWord::discardEdit);

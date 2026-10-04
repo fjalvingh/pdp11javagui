@@ -1,0 +1,85 @@
+	.TITLE	FASTLD - load memory over the console line in binary
+;
+; Deposited by the M9312 console driver with L/D and started with S, so that a large deposit
+; costs two characters a word on the line instead of the console emulator's nine, and its
+; echo. See FastLoader.java for the host's half and PLAN.md for why.
+;
+; The host defines three symbols in front of this text:
+;	LDORG	where the loader is assembled, and deposited
+;	MONENT	where to jump when done: the console emulator's entry
+;	BLKMAX	the most data words one block may carry; at most 126
+;
+; It uses no stack, no interrupts and no memory outside itself, and it polls the console
+; line at 177560 - the line the console emulator was just talking on.
+;
+; The protocol. Everything the loader says is one printable character:
+;	'*'	started, and listening
+;	'.'	the block arrived intact and has been written
+;	'?'	the block did not, and nothing was written
+; Everything the host says is a block, which starts with a count byte:
+;	0	padding: ignored. The host sends a run of these to resynchronise after an error,
+;		which finishes whatever block the loader thinks it is in.
+;	1..BLKMAX	that many data words follow, as
+;		<address word> <data words> <checksum word>, each low byte first;
+;		the checksum makes count + address + data + checksum add up to zero.
+;	176	sync: answered '.' and nothing else. How the host finds out the loader is
+;		between blocks again, with a character that survives a seven-bit line.
+;	177	done: jump to MONENT. Seven bits, so it gets through a line that drops the eighth.
+; Anything else is answered '?'.
+;
+; A block is received into BUF and only copied to where it goes once its checksum is right,
+; so a header garbled on the line cannot send data anywhere.
+;
+	.ASECT
+	. = LDORG
+START:	MOV	#177560,R5	; RCSR; RBUF at 2(R5), XCSR at 4(R5), XBUF at 6(R5)
+	MOV	#'*,R0
+REPLY:	TSTB	4(R5)		; wait for the transmitter, then say R0
+	BPL	REPLY
+	MOVB	R0,6(R5)
+NEXT:	TSTB	(R5)		; wait for a count byte
+	BPL	NEXT
+	MOVB	2(R5),R1
+	BIC	#177400,R1	; MOVB into a register sign-extends
+	BEQ	NEXT		; padding
+	CMP	R1,#177
+	BEQ	EXIT
+	CMP	R1,#176
+	BEQ	ACK
+	CMP	R1,#BLKMAX
+	BHI	NAK		; not a count anything sends
+	MOV	R1,R4		; the checksum starts with the count
+	MOV	R1,R3		; bytes to come: address, data, checksum
+	ASL	R3
+	ADD	#4,R3
+	MOV	#BUF,R2
+RCV:	TSTB	(R5)
+	BPL	RCV
+	MOVB	2(R5),(R2)+	; MOVB into memory does not sign-extend
+	DEC	R3
+	BNE	RCV
+	MOV	#BUF,R2		; add up address, data and checksum
+	MOV	R1,R3
+	ADD	#2,R3
+SUM:	ADD	(R2)+,R4
+	DEC	R3
+	BNE	SUM
+	TST	R4
+	BNE	NAK
+	MOV	#BUF,R2
+	MOV	(R2)+,R0	; where the data goes
+COPY:	MOV	(R2)+,(R0)+
+	DEC	R1
+	BNE	COPY
+ACK:	MOV	#'.,R0
+	BR	REPLY
+NAK:	MOV	#'?,R0
+	BR	REPLY
+EXIT:	JMP	@#MONENT
+;
+; Nothing below here is deposited: it is only space.
+;
+BUF:	.BLKW	BLKMAX+2	; address, data, checksum
+PROBE:	.BLKW	2		; where the host's 8-bit test block goes
+LDEND:
+	.END

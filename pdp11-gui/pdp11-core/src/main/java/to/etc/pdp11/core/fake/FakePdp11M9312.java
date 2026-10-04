@@ -4,7 +4,9 @@ import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.common.util.Octal;
 import to.etc.pdp11.common.util.Scheduler;
+import to.etc.pdp11.core.console.FastLoader;
 
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
@@ -96,6 +98,49 @@ public class FakePdp11M9312 extends FakePdp11 {
 	 */
 	private char m_lastUse = 'X';
 
+	/** Where the console emulator can be re-entered by a program; see {@link #monitorEntry()}. */
+	private static final int MONITOR_ENTRY = 0165020;
+
+	/** The console line's registers, as a program sees them. */
+	private static final int RCSR = 0177560;
+
+	private static final int RBUF = 0177562;
+
+	private static final int XCSR = 0177564;
+
+	private static final int XBUF = 0177566;
+
+	/** More instructions than the loader executes for any one character: it has run away. */
+	private static final int RUNAWAY_STEPS = 1_000_000;
+
+	/** The fast loader, while it runs; {@code null} the rest of the time. */
+	private Pdp11Interpreter m_loader;
+
+	/** What has arrived on the console line for the loader and it has not read yet, eight bits each. */
+	private final ArrayDeque<Integer> m_rx = new ArrayDeque<>();
+
+	/** The loader looked for a character and there was none: it waits for the next one. */
+	private boolean m_starved;
+
+	/** Characters the loader has been sent, counting from 1, for {@link #injectLineFault}. */
+	private int m_rxCount;
+
+	private int m_faultAt;
+
+	private LineFault m_fault;
+
+	private boolean m_sevenBitLine;
+
+	/** What the line does wrong to one character on its way to the loader. */
+	public enum LineFault {
+		/** It never arrives. */
+		DROP,
+		/** It arrives with its bits inverted. */
+		CORRUPT,
+		/** It arrives twice. */
+		DUPLICATE
+	}
+
 	public FakePdp11M9312(Scheduler scheduler, Random random) {
 		this("Fake PDP-11 M9312", scheduler, random);
 	}
@@ -129,9 +174,39 @@ public class FakePdp11M9312 extends FakePdp11 {
 		reset();
 	}
 
+	/**
+	 * Where a program can jump to get back into the console emulator, or -1 for nowhere.
+	 *
+	 * <p>{@code 165020} on an M9312, as {@link to.etc.pdp11.core.console.BootRom} says; the M9301's
+	 * depends on its switches, and its fake has none.</p>
+	 */
+	protected int monitorEntry() {
+		return MONITOR_ENTRY;
+	}
+
+	/**
+	 * Lose the eighth bit of everything sent to a program on the console line, as a console port
+	 * strapped for seven data bits does. The console emulator masks it off anyway.
+	 */
+	public synchronized void setSevenBitLine(boolean sevenBitLine) {
+		m_sevenBitLine = sevenBitLine;
+	}
+
+	/** Do {@code fault} to the {@code n}th character sent to the fast loader, counting from 1. */
+	public synchronized void injectLineFault(int n, LineFault fault) {
+		m_faultAt = n;
+		m_fault = fault;
+	}
+
+	/** Whether the fast loader is running. */
+	public synchronized boolean isLoaderRunning() {
+		return m_loader != null;
+	}
+
 	/** The same as rebooting from the front panel, without wiping memory. */
 	@Override
 	public void reset() {
+		m_loader = null;
 		m_state = State.INIT;
 		clearInput();
 		m_loadedAddress = Address.of(getAddressType(), INITIAL_LOADED_ADDRESS);
@@ -161,7 +236,7 @@ public class FakePdp11M9312 extends FakePdp11 {
 	 */
 	protected void doPrompt(boolean withRegisters) {
 		clearInput();
-		if(m_state == State.HALTED || isRunning())
+		if(m_state == State.HALTED || isRunning() || m_loader != null)
 			return;
 		if(withRegisters) {
 			print(LONG_NEWLINE);
@@ -295,7 +370,149 @@ public class FakePdp11M9312 extends FakePdp11 {
 			doEmulatorErrorHalt("Start to invalid address");
 			return;
 		}
-		runToHalt(m_loadedAddress.val());
+		int pc = (int) m_loadedAddress.val();
+		if(isFastLoaderAt(pc)) {
+			startLoader(pc);
+			return;
+		}
+		runToHalt(pc);
+	}
+
+	// -------------------------------------------------------------------------------------
+	// The fast loader
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Whether memory at {@code pc} holds the {@link FastLoader}, assembled to run there.
+	 *
+	 * <p>This fake runs no programs - except this one, which it runs for real. The loader is code
+	 * this application deposits into a real machine and starts, and nothing else would execute it
+	 * before it got there; so where a started program is exactly the loader, word for word, it is
+	 * executed by {@link Pdp11Interpreter} against this fake's memory and console line. What the
+	 * loader does here is therefore what its instructions do, not what a model of it says. The
+	 * console line it polls is modelled from the DL11 the 11/05 and 11/04 build in, at
+	 * {@code 177560}; the {@code 165020} it returns to is the M9312's documented entry, and it
+	 * answers as a reboot does, with the register dump and the prompt.</p>
+	 */
+	private boolean isFastLoaderAt(int pc) {
+		if(monitorEntry() < 0)
+			return false;
+		FastLoader.Image image;
+		try {
+			image = FastLoader.assemble(pc, monitorEntry());
+		} catch(IllegalArgumentException x) {
+			return false;
+		}
+		for(FastLoader.Word w : image.code()) {
+			Address a = Address.of(getAddressType(), w.address());
+			if(!isImplemented(a) || getMem(a) != w.value())
+				return false;
+		}
+		return true;
+	}
+
+	private void startLoader(int pc) {
+		Pdp11Interpreter cpu = new Pdp11Interpreter(new Pdp11Interpreter.Bus() {
+			@Override
+			public int readWord(int address) {
+				return loaderRead(address);
+			}
+
+			@Override
+			public void writeWord(int address, int value) {
+				loaderWrite(address, value);
+			}
+		});
+		cpu.setPc(pc);
+		m_loader = cpu;
+		m_rx.clear();
+		m_rxCount = 0;
+		runLoader();
+	}
+
+	/** A character on the console line, for the loader, with whatever the line does to it. */
+	private void loaderReceive(int b) {
+		int c = m_sevenBitLine ? b & 0x7F : b & 0xFF;
+		m_rxCount++;
+		if(m_fault != null && m_rxCount == m_faultAt) {
+			LineFault f = m_fault;
+			m_fault = null;
+			switch(f) {
+				case DROP -> {
+					return;
+				}
+				case CORRUPT -> c ^= 0xFF;
+				case DUPLICATE -> m_rx.add(c);
+			}
+		}
+		m_rx.add(c);
+		runLoader();
+	}
+
+	/** Run the loader until it waits for a character, leaves, or dies. */
+	private void runLoader() {
+		Pdp11Interpreter cpu = m_loader;
+		m_starved = false;
+		int steps = 0;
+		while(!m_starved) {
+			if(cpu.getPc() == monitorEntry()) {
+				//-- Back into the console emulator, which greets it as it greets a reboot.
+				reset();
+				return;
+			}
+			try {
+				cpu.step();
+			} catch(Pdp11Interpreter.BusError | Pdp11Interpreter.Unsupported | FakePdp11Exception x) {
+				m_loader = null;
+				doEmulatorErrorHalt("fast loader: " + x.getMessage());
+				return;
+			}
+			if(cpu.isHalted()) {
+				m_loader = null;
+				doHalt();
+				return;
+			}
+			if(++steps > RUNAWAY_STEPS) {
+				m_loader = null;
+				doEmulatorErrorHalt("fast loader ran away at " + Integer.toOctalString(cpu.getPc()));
+				return;
+			}
+		}
+	}
+
+	private int loaderRead(int address) {
+		switch(address) {
+			case RCSR -> {
+				if(m_rx.isEmpty()) {
+					m_starved = true;
+					return 0;
+				}
+				return 0200;
+			}
+			case RBUF -> {
+				Integer c = m_rx.poll();
+				return c == null ? 0 : c;
+			}
+			case XCSR -> {
+				return 0200;                                // the transmitter is always ready
+			}
+			case XBUF -> {
+				return 0;
+			}
+			default -> {
+				return getMem(Address.of(getAddressType(), address));
+			}
+		}
+	}
+
+	private void loaderWrite(int address, int value) {
+		switch(address) {
+			case XBUF -> print((char) (value & 0x7F));
+			case RCSR, XCSR, RBUF -> {
+				//-- Interrupt enables, and a buffer that cannot be written: nothing to do.
+			}
+			default -> setMem(Address.of(getAddressType(), address), value);
+		}
 	}
 
 	/**
@@ -383,6 +600,10 @@ public class FakePdp11M9312 extends FakePdp11 {
 	 */
 	@Override
 	public void serialWriteByte(int b) {
+		if(m_loader != null) {
+			loaderReceive(b);
+			return;
+		}
 		//-- A running CPU means there is no console emulator: it is the program's machine now.
 		if(isRunning())
 			return;
