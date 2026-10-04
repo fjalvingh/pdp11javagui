@@ -33,6 +33,15 @@ public enum MemoryFileFormat {
 		List.of("Text file")),
 
 	/**
+	 * Octal words and nothing else: no addresses, so it is loaded where it is told to be.
+	 *
+	 * <p>Not in the Pascal. It is what comes out of a listing, a datasheet or a forum post once
+	 * the addresses are cut away - a column of words to be keyed in somewhere.</p>
+	 */
+	TEXT_WORDS_ONLY("Text file, octal words only, no addresses", true, false, false,
+		List.of("Text file")),
+
+	/**
 	 * DEC Standard Absolute Paper Tape Format, the thing a real PDP-11's absolute loader reads.
 	 *
 	 * <p>Blocks of {@code 01 00 <size> <start> <data...> <checksum>}, and a final zero-length
@@ -98,7 +107,7 @@ public enum MemoryFileFormat {
 	/** The extension to offer in a save dialog. */
 	public String getDefaultExtension() {
 		return switch(this) {
-			case TEXT_ONE_ADDR_PER_LINE -> "txt";
+			case TEXT_ONE_ADDR_PER_LINE, TEXT_WORDS_ONLY -> "txt";
 			case ABSOLUTE_PAPERTAPE -> "ptap";
 			default -> "bin";
 		};

@@ -23,9 +23,10 @@ import java.util.List;
  * file says what the memory <i>should</i> contain, the machine has not been told yet, and the
  * grid shows every word as changed until it has been.</p>
  *
- * <h2>Two formats carry their own addresses and two do not</h2>
+ * <h2>Some formats carry their own addresses and some do not</h2>
  *
- * <p>A byte stream is bytes; it has to be told where to load. A text listing and a paper tape
+ * <p>A byte stream is bytes, and a text file of bare words is words; both have to be told where
+ * to load. A text listing and a paper tape
  * image say where each word goes, and a start address typed beside them is ignored - see
  * {@link MemoryFileFormat#definesOwnAddresses()}.</p>
  */
@@ -62,6 +63,7 @@ public final class MemoryFileLoader {
 			case BYTE_STREAM -> loadByteStream(group, files.get(0), startAddr);
 			case LOW_HIGH_BYTE_FILES -> loadSplitBytes(group, files.get(0), files.get(1), startAddr);
 			case TEXT_ONE_ADDR_PER_LINE -> loadText(group, files.get(0), startAddr);
+			case TEXT_WORDS_ONLY -> loadWords(group, files.get(0), startAddr);
 			case ABSOLUTE_PAPERTAPE -> loadPaperTape(group, files.get(0), startAddr);
 		};
 		//-- In address order, because that is how a grid lays cells out, and nothing about a file
@@ -206,6 +208,59 @@ public final class MemoryFileLoader {
 		if(loaded == 0)
 			throw new IOException("No octal address and value lines were found in " + file.getFileName());
 		return new Result(loaded, null, warnings);
+	}
+
+	/**
+	 * {@code "012701 000200 005000"} - octal words, laid down one after the other from
+	 * {@code startAddr}.
+	 *
+	 * <p>As forgiving as {@link #loadText}: a line that does not begin with an octal digit is a
+	 * header or a comment and is skipped, and within a line everything that is not an octal digit
+	 * separates values. How many words a line holds does not matter.</p>
+	 */
+	private static Result loadWords(MemoryCellGroup group, Path file, Address startAddr) throws IOException {
+		List<String> lines = Files.readAllLines(file, StandardCharsets.ISO_8859_1);
+		List<String> warnings = new ArrayList<>();
+		List<Integer> values = new ArrayList<>();
+		int skipped = 0;
+		int masked = 0;
+		for(String raw : lines) {
+			String line = raw.strip();
+			if(line.isEmpty() || !isOctalDigit(line.charAt(0))) {
+				if(!line.isEmpty())
+					skipped++;
+				continue;
+			}
+			StringBuilder sb = new StringBuilder(line.length());
+			for(int i = 0; i < line.length(); i++) {
+				sb.append(isOctalDigit(line.charAt(i)) ? line.charAt(i) : ' ');
+			}
+			for(String part : sb.toString().trim().split("\\s+")) {
+				try {
+					long v = Octal.parse(part);
+					if(v > 0xFFFF)
+						masked++;
+					values.add((int) (v & 0xFFFF));
+				} catch(NumberFormatException x) {
+					warnings.add("Ignored \"" + part + "\", which is not an octal value");
+				}
+			}
+		}
+		if(skipped > 0)
+			warnings.add(skipped + " line" + (skipped == 1 ? "" : "s") + " did not start with an octal value");
+		if(masked > 0)
+			warnings.add(masked + " value" + (masked == 1 ? " was" : "s were") + " wider than 16 bits and "
+				+ (masked == 1 ? "was" : "were") + " truncated to a word");
+		if(values.isEmpty())
+			throw new IOException("No octal values were found in " + file.getFileName());
+		int words = limitToAddressSpace(values.size(), startAddr, warnings);
+
+		group.clear();
+		group.shiftRange(startAddr, words, false);
+		for(int i = 0; i < words; i++) {
+			group.cell(i).setEditValue(CellValue.of(values.get(i)));
+		}
+		return new Result(words, null, warnings);
 	}
 
 	private static boolean isOctalDigit(char c) {

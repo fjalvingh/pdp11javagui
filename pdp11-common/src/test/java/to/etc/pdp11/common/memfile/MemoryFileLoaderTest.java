@@ -179,6 +179,49 @@ class MemoryFileLoaderTest {
 	}
 
 	@Test
+	void aWordsOnlyFileIsLaidDownFromTheStartAddress(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("w.txt");
+		Files.writeString(file, """
+			; bootstrap, keyed in from the manual
+			012700 177406
+			  005010,000001
+			1234567
+			""", StandardCharsets.US_ASCII);
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.TEXT_WORDS_ONLY, g, List.of(file),
+			at(02000));
+		assertEquals(5, r.wordsLoaded());
+		assertEquals(02000, g.cell(0).getAddr().val());
+		assertEquals(012700, g.cell(0).getEditValue().word());
+		assertEquals(0177406, g.cell(1).getEditValue().word());
+		assertEquals(005010, g.cell(2).getEditValue().word());
+		assertEquals(02006, g.cell(3).getAddr().val());
+		assertEquals(034567, g.cell(4).getEditValue().word(), "truncated to a word");
+		assertTrue(r.warnings().stream().anyMatch(w -> w.contains("did not start")), r.warnings().toString());
+		assertTrue(r.warnings().stream().anyMatch(w -> w.contains("truncated")), r.warnings().toString());
+		assertFalse(MemoryFileFormat.TEXT_WORDS_ONLY.definesOwnAddresses(), "it has to be told where to load");
+	}
+
+	@Test
+	void aWordsOnlyFileRunningOffTheTopOfMemoryLoadsWhatFits(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("w.txt");
+		Files.writeString(file, "1 2 3 4\n", StandardCharsets.US_ASCII);
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.TEXT_WORDS_ONLY, g, List.of(file),
+			at(0177774));
+		assertEquals(2, r.wordsLoaded());
+		assertEquals(1, r.warnings().size(), r.warnings().toString());
+	}
+
+	@Test
+	void aWordsOnlyFileWithNoValuesIsRefused(@TempDir Path dir) throws Exception {
+		Path file = dir.resolve("w.txt");
+		Files.writeString(file, "nothing here\n", StandardCharsets.US_ASCII);
+		assertThrows(IOException.class, () -> MemoryFileLoader.load(MemoryFileFormat.TEXT_WORDS_ONLY,
+			emptyGroup(), List.of(file), at(0)));
+	}
+
+	@Test
 	void aTextFileWithNothingUsableInItIsRefusedWithAReason(@TempDir Path dir) throws Exception {
 		Path file = dir.resolve("t.txt");
 		Files.writeString(file, "nothing here\nnor here\n", StandardCharsets.US_ASCII);

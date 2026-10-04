@@ -207,6 +207,12 @@
 
 ### Changes
 
+- **The Memory Loader and Dumper read and write a text file of bare octal words**, with no
+  addresses: "Text file, octal words only". Loading one asks where to put it, as a byte stream
+  does; any number of words to a line, separated by anything that is not an octal digit, and a
+  line that does not start with one is skipped as a comment. A dump writes eight to a line, and a
+  word that was never read is written as zero and counted.
+
 - **Double-clicking the next address in the microcode window goes there.** Either the decoded
   **Next microword** row or the raw next-address field, as the Next instruction button does, and
   Back comes back.

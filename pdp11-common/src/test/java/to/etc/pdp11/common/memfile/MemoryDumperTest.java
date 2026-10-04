@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Writing memory out in each of the four file formats.
+ * Writing memory out in each of the file formats.
  *
  * <p>These are file formats other programs and real hardware read: a ROM burner, a PDP-11's own
  * absolute loader. The bytes are the contract, so the tests assert bytes.</p>
@@ -137,6 +137,22 @@ class MemoryDumperTest {
 		//-- It can be left out because the format carries its addresses - and leaving it out is
 		//-- what makes the next value start a new line.
 		assertEquals("001000: 000001\n001004: 000003\n", r.text());
+		assertEquals(1, r.result().unknownWords());
+	}
+
+	@Test
+	void theWordsOnlyFormatIsEightValuesALineAndNoAddresses(@TempDir Path dir) throws Exception {
+		Result r = save(MemoryFileFormat.TEXT_WORDS_ONLY, group(01000, 1, 2, 3, 4, 5, 6, 7, 8, 9), dir, null);
+		assertEquals("000001 000002 000003 000004 000005 000006 000007 000010\n000011\n", r.text());
+	}
+
+	/** No addresses means a word's place is its address, so an unknown one cannot be left out. */
+	@Test
+	void aWordThatWasNeverReadIsZeroInTheWordsOnlyFormatAndIsCounted(@TempDir Path dir) throws Exception {
+		MemoryCellGroup g = group(01000, 1, 2, 3);
+		g.cell(1).setEditValue(CellValue.UNKNOWN);
+		Result r = save(MemoryFileFormat.TEXT_WORDS_ONLY, g, dir, null);
+		assertEquals("000001 000000 000003\n", r.text());
 		assertEquals(1, r.result().unknownWords());
 	}
 

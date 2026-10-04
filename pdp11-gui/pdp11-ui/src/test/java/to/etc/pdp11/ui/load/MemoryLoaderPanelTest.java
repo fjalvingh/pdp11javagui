@@ -93,6 +93,11 @@ class MemoryLoaderPanelTest {
 		Edt.run(() -> panel.getFormatCombo().setSelectedItem(MemoryFileFormat.ABSOLUTE_PAPERTAPE));
 		assertFalse(panel.getStartField().isVisible());
 		assertTrue(panel.getEntryField().isVisible());
+
+		//-- Bare words are text, but carry no addresses either.
+		Edt.run(() -> panel.getFormatCombo().setSelectedItem(MemoryFileFormat.TEXT_WORDS_ONLY));
+		assertTrue(panel.getStartField().isVisible());
+		assertFalse(panel.getEntryField().isVisible());
 	}
 
 	@Test

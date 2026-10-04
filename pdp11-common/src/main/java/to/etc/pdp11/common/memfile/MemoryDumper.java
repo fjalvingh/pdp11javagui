@@ -73,6 +73,7 @@ public final class MemoryDumper {
 			case BYTE_STREAM -> saveByteStream(group, files.get(0));
 			case LOW_HIGH_BYTE_FILES -> saveSplitBytes(group, files.get(0), files.get(1));
 			case TEXT_ONE_ADDR_PER_LINE -> saveText(group, files.get(0));
+			case TEXT_WORDS_ONLY -> saveWords(group, files.get(0));
 			case ABSOLUTE_PAPERTAPE -> savePaperTape(group, files.get(0), entry);
 		};
 	}
@@ -162,6 +163,33 @@ public final class MemoryDumper {
 		flush(out, line);
 		Files.writeString(file, out.toString(), StandardCharsets.US_ASCII);
 		return new Result(written, unknown, 1);
+	}
+
+	/**
+	 * Every word in octal, eight to a line, and no addresses.
+	 *
+	 * <p>Positional, like the byte stream: a word's place in the file is its address, so an
+	 * unknown word cannot be left out and is written as zero, and counted.</p>
+	 */
+	private static Result saveWords(MemoryCellGroup group, Path file) throws IOException {
+		StringBuilder out = new StringBuilder();
+		StringBuilder line = new StringBuilder();
+		int unknown = 0;
+		int onLine = 0;
+		for(MemoryCell mc : group.getCells()) {
+			if(!mc.getEditValue().isKnown())
+				unknown++;
+			if(onLine > 0)
+				line.append(' ');
+			line.append(Octal.word(mc.getEditValue().wordOr(0)));
+			if(++onLine == TEXT_VALUES_PER_LINE) {
+				flush(out, line);
+				onLine = 0;
+			}
+		}
+		flush(out, line);
+		Files.writeString(file, out.toString(), StandardCharsets.US_ASCII);
+		return new Result(group.size(), unknown, 1);
 	}
 
 	/** {@code putln}: a line that has nothing on it is not written at all ({@code :477-483}). */
