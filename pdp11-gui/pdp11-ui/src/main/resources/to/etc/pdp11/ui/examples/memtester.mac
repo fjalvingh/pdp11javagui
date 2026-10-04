@@ -1,0 +1,648 @@
+	.TITLE	MEMTESTER - MEMORY SIZER AND TESTER FOR A BARE PDP-11
+;
+; Finds where memory is installed, reports each block by address and
+; size, and then tests all of it, pass after pass, until you stop it
+; with the HALT switch.  No operating system is needed.
+;
+; Runs on anything from an 11/05 up: it uses only the basic instruction
+; set (no SOB, XOR, MUL or DIV) and polls the console DL11 at 177560.
+;
+; Load it, then start at 1000. On an M9312 console:  L 1000  then  S
+;
+; How much memory it can see depends on the machine:
+;
+;  - without memory management, the 28K words below the I/O page at
+;    160000 - all an 11/05 or 11/03 can address;
+;  - with memory management, everything below the I/O page: 760000 on an
+;    18-bit machine, 17760000 on a 22-bit one (11/23, 11/24, 11/44, 11/70,
+;    11/73 and up).  The program runs in kernel mode with pages 0-5
+;    mapped onto themselves, and slides page 6 (140000-157777) over
+;    physical memory 8 KB at a time to reach the rest.
+;
+; FINDING THE MEMORY.  Every 1 KB it reads one word.  If nothing answers,
+; the bus times out and traps to 4; the trap handler sets the carry and
+; returns, so a probe is just "TST (R0)" followed by "BCS".
+;
+; Before that it checks that the high address lines are really there.  A
+; 22-bit processor in an 18-bit backplane, or an 18-bit one in a 16-bit
+; Q-bus, sees its low memory again at every multiple of 256 KB or 64 KB,
+; and would report that one board many times over.  So for each address
+; bit from 16 up it writes two patterns to a word of this program and
+; reads the same word with that bit set; if both come back, the bit is
+; not connected and the search stops below it.
+;
+; TESTING IT.  Each pass fills all of the memory with a pattern and then
+; reads all of it back, for five patterns:
+;
+;  ADDRESS  each word holds its own word address, modulo 177777.  The
+;	    residue keeps changing above 64K words, so a dead address
+;	    line - two addresses landing on one word - shows up wherever
+;	    it is.  It is made by adding 1 in one's complement (ADD #1 and
+;	    ADC), and the first value of a stretch is its 64-byte block
+;	    number rotated left five places, which is the same thing.
+;  INVERSE  the complement of that, so every bit is tried both ways.
+;  ZEROS, ONES, CHECKER (125252 and 052525 in turn).
+;
+; Each bad word is reported with its address, what was written, what was
+; read and which bits differ - the last is what points at a stuck data
+; line or a dead chip.  Only the first ten are shown in each pass; all
+; are counted.  The memory below the end of this program, which holds the
+; vectors, the stack and the program itself, is not tested.
+;
+; If the machine has a cache, bits 2 and 3 of the cache control register
+; at 177746 are set to force misses (11/70, 11/44, the J-11), so that the
+; reads below come from memory and not from the cache.
+
+TPS	= 177564		; console printer status: bit 7 = ready to print
+TPB	= 177566		; console printer buffer
+
+MMR0	= 177572		; memory management register 0: bit 0 = on
+MMR3	= 172516		; memory management register 3: bit 4 = 22-bit
+KISD0	= 172300		; kernel page descriptor registers 0-7
+KISA0	= 172340		; kernel page address registers 0-7
+KISA6	= KISA0+14		; the one for the window
+CCR	= 177746		; cache control register
+
+WINDOW	= 140000		; where page 6 starts: the sliding window
+CHUNK	= 200			; 64-byte blocks in the window: 8 KB
+STEP	= 20			; 64-byte blocks between probes: 1 KB
+MAXBLK	= 20.			; most memory blocks it keeps track of
+MAXERR	= 10.			; most bad words shown in one pass
+
+SPACE	= 40
+
+	.ASECT
+	.=1000
+
+START:	MOV	#START,SP	; stack grows down from 1000
+	MOV	#340,-(SP)	; priority 7, so no interrupt gets in - the
+	MOV	#10$,-(SP)	; 11/03's line clock has no enable bit.  RTI
+	RTI			; sets the PS on every model; MTPS does not
+10$:	MOV	#BUSERR,@#4	; bus time-out: comes back with the carry set
+	MOV	#340,@#6
+	MOV	#MSGHDR,R0
+	JSR	PC,PUTS
+
+; ---------------------------------------------------------------------
+; How are addresses made?
+; ---------------------------------------------------------------------
+
+	CLR	MODE
+	MOV	#1600,LIMIT	; 160000 in 64-byte blocks
+	TST	@#MMR0
+	BCS	3$		; no memory management
+	CLR	@#MMR0		; off while it is set up; a restart may find it on
+
+	MOV	#KISA0,R0	; pages 0-6 onto physical 0-157777
+	MOV	#KISD0,R1
+	CLR	R2
+1$:	MOV	R2,(R0)+
+	MOV	#77406,(R1)+	; 8 KB, read and write
+	ADD	#200,R2
+	CMP	R0,#KISA6+2
+	BLO	1$
+	MOV	#77406,(R1)	; page 7: the I/O page
+	MOV	#7600,(R0)
+	MOV	#1,MODE
+	MOV	#7600,LIMIT	; 760000
+
+	TST	@#MMR3
+	BCS	2$		; no MMR3: 18-bit (11/34, 11/40)
+	MOV	#20,@#MMR3	; ask for 22-bit addresses
+	BIT	#20,@#MMR3
+	BEQ	2$		; it did not take: 18-bit (11/45, 11/55)
+	MOV	#177600,(R0)	; page 7 to the 22-bit I/O page
+	MOV	#2,MODE
+	MOV	#177600,LIMIT	; 17760000
+2$:	MOV	#1,@#MMR0	; memory management on
+
+3$:	TST	@#CCR
+	BCS	4$		; no cache
+	BIS	#14,@#CCR	; force misses: test the memory, not the cache
+4$:
+
+; ---------------------------------------------------------------------
+; Are the high address lines connected?
+; ---------------------------------------------------------------------
+
+FOLDCK:	TST	MODE
+	BEQ	7$		; 16 bits: nothing to check
+	MOV	#2000,R1	; 200000, address bit 16, in 64-byte blocks
+5$:	CMP	R1,LIMIT
+	BHIS	7$
+	JSR	PC,FOLDS
+	BCS	6$
+	ASL	R1		; the next address bit
+	BCC	5$
+	BR	7$
+6$:	MOV	R1,LIMIT	; look no higher than the first one missing
+
+7$:	MOV	MODE,R0
+	ASL	R0
+	MOV	MODMSG(R0),R0
+	JSR	PC,PUTS
+	MOV	LIMIT,R0
+	CLR	R1
+	JSR	PC,PUTPA
+	JSR	PC,CRLF
+
+; ---------------------------------------------------------------------
+; Find the memory: one probe every 1 KB, contiguous answers make a block
+; ---------------------------------------------------------------------
+
+SIZE:	MOV	#BLKTAB,R4	; next free entry
+	MOV	#-1,R5		; start of the block being found, -1 if none
+	CLR	R1
+1$:	CMP	R1,LIMIT
+	BHIS	4$
+	JSR	PC,MAP
+	TST	(R0)
+	BCS	2$		; nothing there
+	CMP	R5,#-1
+	BNE	3$
+	MOV	R1,R5		; a block starts here
+	BR	3$
+2$:	CMP	R5,#-1
+	BEQ	3$
+	JSR	PC,ADDBLK	; and ends here
+3$:	ADD	#STEP,R1
+	BR	1$
+4$:	CMP	R5,#-1
+	BEQ	5$
+	JSR	PC,ADDBLK	; runs up to the limit
+5$:	MOV	R4,BLKTOP
+
+	MOV	#MSGFND,R0
+	JSR	PC,PUTS
+	MOV	#BLKTAB,R4
+6$:	CMP	R4,BLKTOP
+	BHIS	7$
+	MOV	(R4)+,R1
+	MOV	(R4)+,R2
+	JSR	PC,SHOBLK
+	BR	6$
+
+7$:	MOV	#PRGEND+77,R0	; the first 64-byte block clear of this program
+	JSR	PC,SHR6
+	MOV	R0,PROT
+	MOV	#MSGTST,R0
+	JSR	PC,PUTS
+	MOV	PROT,R0
+	CLR	R1
+	JSR	PC,PUTPA
+	MOV	#MSGTS2,R0
+	JSR	PC,PUTS
+
+; ---------------------------------------------------------------------
+; Test it, for ever
+; ---------------------------------------------------------------------
+
+	CLR	PASSNO
+	CLR	ERRCNT
+PASS:	INC	PASSNO
+	CLR	PERRS
+	MOV	#MSGPAS,R0
+	JSR	PC,PUTS
+	MOV	PASSNO,R0
+	JSR	PC,PUTDEC
+	MOV	#':,R0
+	JSR	PC,PUTC
+	MOV	#TESTS,R5
+1$:	MOV	(R5)+,STFN	; how the test starts a stretch
+	BEQ	2$
+	MOV	(R5)+,NXFN	; and goes from one word to the next
+	CLR	BOL		; mid-line now
+	MOV	#SPACE,R0
+	JSR	PC,PUTC
+	MOV	(R5)+,R0	; its name
+	JSR	PC,PUTS
+	MOV	R5,-(SP)
+	MOV	#FILL,R5
+	JSR	PC,WALK
+	MOV	#CHECK,R5
+	JSR	PC,WALK
+	MOV	(SP)+,R5
+	BR	1$
+
+2$:	MOV	#MSGERR,R0
+	JSR	PC,PUTS
+	MOV	PERRS,R0
+	JSR	PC,PUTDEC
+	MOV	#MSGALL,R0
+	JSR	PC,PUTS
+	MOV	ERRCNT,R0
+	JSR	PC,PUTDEC
+	JSR	PC,CRLF
+	BR	PASS
+
+; ---------------------------------------------------------------------
+; The tests: start, next, name.  A start routine puts the first value
+; for the stretch beginning at 64-byte block R1 in R3; a next routine
+; turns R3 into the value for the word after.  Both use only R3.
+; ---------------------------------------------------------------------
+
+TESTS:	.WORD	STADR,NXADR,TNADR
+	.WORD	STINV,NXINV,TNINV
+	.WORD	STZER,NXSAM,TNZER
+	.WORD	STONE,NXSAM,TNONE
+	.WORD	STCHK,NXFLP,TNCHK
+	.WORD	0
+
+STADR:	MOV	R1,R3		; R1 * 32 modulo 177777: rotate left 5
+	ASL	R3
+	ADC	R3
+	ASL	R3
+	ADC	R3
+	ASL	R3
+	ADC	R3
+	ASL	R3
+	ADC	R3
+	ASL	R3
+	ADC	R3
+	RTS	PC
+NXADR:	ADD	#1,R3		; add 1 in one's complement
+	ADC	R3
+	RTS	PC
+
+STINV:	JSR	PC,STADR
+	COM	R3
+	RTS	PC
+NXINV:	SUB	#1,R3		; the complement of adding 1
+	SBC	R3
+	RTS	PC
+
+STZER:	CLR	R3
+	RTS	PC
+STONE:	MOV	#177777,R3
+	RTS	PC
+NXSAM:	RTS	PC
+
+STCHK:	MOV	#125252,R3	; every stretch is a whole number of
+	RTS	PC		; words in pairs, so this lines up
+NXFLP:	COM	R3
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; WALK - call the routine at R5 for each stretch of the memory under
+; test, at most 8 KB: R1 = its first 64-byte block, R0 = the virtual
+; address it is at, R2 = its length in words.  The routine may change
+; R0-R4.
+; ---------------------------------------------------------------------
+
+WALK:	MOV	#BLKTAB,R4
+1$:	CMP	R4,BLKTOP
+	BHIS	9$
+	MOV	(R4)+,R1	; the block's start
+	MOV	(R4)+,R3	; and its end
+	CMP	R1,PROT
+	BHIS	2$
+	MOV	PROT,R1		; not over this program
+2$:	CMP	R1,R3
+	BHIS	1$		; nothing of this block is left to test
+3$:	MOV	R3,R2
+	SUB	R1,R2		; what is left of it
+	CMP	R2,#CHUNK
+	BLOS	4$
+	MOV	#CHUNK,R2	; no more than fits in the window
+4$:	MOV	R2,-(SP)
+	MOV	R1,-(SP)
+	MOV	R3,-(SP)
+	MOV	R4,-(SP)
+	JSR	PC,MAP
+	ASL	R2		; 64-byte blocks to words: times 32
+	ASL	R2
+	ASL	R2
+	ASL	R2
+	ASL	R2
+	JSR	PC,(R5)
+	MOV	(SP)+,R4
+	MOV	(SP)+,R3
+	MOV	(SP)+,R1
+	ADD	(SP)+,R1	; the next stretch
+	CMP	R1,R3
+	BLO	3$
+	BR	1$
+9$:	RTS	PC
+
+; FILL - write the test's values over one stretch.
+FILL:	JSR	PC,@STFN
+1$:	MOV	R3,(R0)+
+	JSR	PC,@NXFN
+	DEC	R2
+	BNE	1$
+	RTS	PC
+
+; CHECK - read one stretch back and report every word that differs.
+CHECK:	JSR	PC,@STFN
+1$:	MOV	(R0)+,R4
+	CMP	R4,R3
+	BNE	3$
+2$:	JSR	PC,@NXFN
+	DEC	R2
+	BNE	1$
+	RTS	PC
+3$:	JSR	PC,BAD
+	BR	2$
+
+; BAD - count a bad word and, if few enough have been shown, show it.
+; R0 = just past it, R1 = the stretch's first 64-byte block,
+; R3 = what was written, R4 = what was read.  Keeps all registers.
+BAD:	INC	ERRCNT		; both counts stop at 65535 rather than
+	BNE	1$		; going round to 0
+	DEC	ERRCNT
+1$:	INC	PERRS
+	BNE	2$
+	DEC	PERRS
+2$:	CMP	PERRS,#MAXERR
+	BLOS	3$
+	RTS	PC
+3$:	MOV	R0,-(SP)
+	MOV	R1,-(SP)
+	MOV	R2,-(SP)
+	MOV	R0,R2
+	JSR	PC,MAP		; R0 = where the stretch starts
+	SUB	R0,R2
+	SUB	#2,R2		; the bad word's offset in the stretch
+	MOV	R2,R0
+	JSR	PC,SHR6
+	ADD	R0,R1		; its 64-byte block
+	BIC	#177700,R2	; and where in that
+	TST	BOL
+	BNE	4$
+	JSR	PC,CRLF		; off the line of test names
+4$:	MOV	#MSGBAD,R0
+	JSR	PC,PUTS
+	MOV	R1,R0
+	MOV	R2,R1
+	JSR	PC,PUTPA
+	MOV	#MSGWR,R0
+	JSR	PC,PUTS
+	MOV	R3,R0
+	JSR	PC,PUTO6
+	MOV	#MSGRD,R0
+	JSR	PC,PUTS
+	MOV	R4,R0
+	JSR	PC,PUTO6
+	MOV	#MSGBIT,R0
+	JSR	PC,PUTS
+	MOV	R3,R0		; the bits that differ, without XOR:
+	BIS	R4,R0		; (written OR read)
+	MOV	R4,R1
+	COM	R1
+	MOV	R3,R2
+	BIC	R1,R2		; minus (written AND read)
+	BIC	R2,R0
+	JSR	PC,PUTO6
+	JSR	PC,CRLF
+	MOV	#1,BOL
+	MOV	(SP)+,R2
+	MOV	(SP)+,R1
+	MOV	(SP)+,R0
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; Addressing
+; ---------------------------------------------------------------------
+
+; MAP - R0 = a virtual address for the 64-byte block R1, valid for the
+; 8 KB from there.  With memory management that is the window, moved
+; onto it; without, the address is simply the block number times 64.
+MAP:	TST	MODE
+	BEQ	1$
+	MOV	R1,@#KISA6
+	MOV	#WINDOW,R0
+	RTS	PC
+1$:	MOV	R1,R0
+	ASL	R0
+	ASL	R0
+	ASL	R0
+	ASL	R0
+	ASL	R0
+	ASL	R0
+	RTS	PC
+
+; FOLDS - is the address bit worth R1 64-byte blocks not connected?
+; Sets the carry if the word FOLD reads back at its own address plus
+; that.  Uses R0 and R2.
+FOLDS:	MOV	R1,-(SP)
+	MOV	#FOLD,R0	; this program's own addresses are physical
+	MOV	R0,R2
+	BIC	#177700,R2	; its place in its 64-byte block
+	JSR	PC,SHR6
+	ADD	R0,R1
+	JSR	PC,MAP
+	ADD	R0,R2		; R2 = the same word with the bit set
+	MOV	(SP)+,R1
+	TST	(R2)
+	BCS	2$		; no memory there at all
+	MOV	#125252,FOLD
+	CMP	(R2),#125252
+	BNE	2$
+	MOV	#052525,FOLD
+	CMP	(R2),#052525
+	BNE	2$
+	SEC			; both followed: it is the same word
+	RTS	PC
+2$:	CLC
+	RTS	PC
+
+; SHR6 - shift R0, which must be positive, right six places.
+SHR6:	ASR	R0
+	ASR	R0
+	ASR	R0
+	ASR	R0
+	ASR	R0
+	ASR	R0
+	RTS	PC
+
+; ADDBLK - add the block from R5 to R1 (64-byte blocks) to the table
+; at R4, if it has room, and set R5 to -1.
+ADDBLK:	CMP	R4,#BLKTAB+<MAXBLK*4>
+	BHIS	1$
+	MOV	R5,(R4)+
+	MOV	R1,(R4)+
+1$:	MOV	#-1,R5
+	RTS	PC
+
+; BUSERR - vector 4: nothing answered.  Return with the carry set.
+BUSERR:	BIS	#1,2(SP)
+	RTI
+
+; ---------------------------------------------------------------------
+; Printing
+; ---------------------------------------------------------------------
+
+; SHOBLK - print the block from R1 to R2 (64-byte blocks, R2 just past
+; its end) as "  first - last  size KB".  Uses R0-R2.
+SHOBLK:	MOV	#MSGIND,R0
+	JSR	PC,PUTS
+	MOV	R2,-(SP)
+	MOV	R1,-(SP)
+	MOV	R1,R0
+	CLR	R1
+	JSR	PC,PUTPA
+	MOV	#MSGTO,R0
+	JSR	PC,PUTS
+	MOV	2(SP),R0	; the last byte is the end less one
+	DEC	R0
+	MOV	#77,R1
+	JSR	PC,PUTPA
+	MOV	(SP)+,R1
+	MOV	(SP)+,R0
+	SUB	R1,R0		; 64-byte blocks, divided by 16
+	CLC
+	ROR	R0
+	ASR	R0
+	ASR	R0
+	ASR	R0
+	JSR	PC,PUTDEC
+	MOV	#MSGKB,R0
+	JSR	PC,PUTS
+	RTS	PC
+
+; PUTPA - print the physical address of byte R1 (0-77) of 64-byte block
+; R0, as eight octal digits: the block number, then R1 in two.
+PUTPA:	MOV	R1,-(SP)
+	JSR	PC,PUTO6
+	MOV	(SP),R0
+	ASR	R0
+	ASR	R0
+	ASR	R0
+	ADD	#'0,R0
+	JSR	PC,PUTC
+	MOV	(SP)+,R0
+	BIC	#177770,R0
+	ADD	#'0,R0
+	JSR	PC,PUTC
+	RTS	PC
+
+; PUTO6 - print R0 as six octal digits.
+PUTO6:	MOV	R1,-(SP)
+	MOV	R2,-(SP)
+	MOV	R0,R1
+	CLR	R0
+	ASL	R1		; the first digit is the top bit alone
+	ROL	R0
+	MOV	#6,R2
+	BR	2$
+1$:	CLR	R0
+	ASL	R1
+	ROL	R0
+	ASL	R1
+	ROL	R0
+	ASL	R1
+	ROL	R0
+2$:	ADD	#'0,R0
+	JSR	PC,PUTC
+	DEC	R2
+	BNE	1$
+	MOV	(SP)+,R2
+	MOV	(SP)+,R1
+	RTS	PC
+
+; PUTDEC - print R0, unsigned, in decimal, right-aligned in five places.
+PUTDEC:	MOV	R1,-(SP)
+	MOV	R2,-(SP)
+	MOV	R3,-(SP)
+	MOV	R0,R1
+	MOV	#TENS,R2
+	CLR	R3		; set once a digit has been printed
+1$:	MOV	#'0,R0
+2$:	CMP	R1,(R2)		; subtract this power of ten while it goes
+	BLO	3$
+	SUB	(R2),R1
+	INC	R0
+	BR	2$
+3$:	CMP	R0,#'0
+	BNE	4$
+	TST	R3
+	BNE	5$
+	CMP	(R2),#1		; the units are shown even when 0
+	BEQ	5$
+	MOV	#SPACE,R0	; a leading zero
+	BR	5$
+4$:	INC	R3
+5$:	JSR	PC,PUTC
+	CMP	(R2)+,#1
+	BNE	1$
+	MOV	(SP)+,R3
+	MOV	(SP)+,R2
+	MOV	(SP)+,R1
+	RTS	PC
+
+; PUTC - print the character in R0.
+PUTC:	TSTB	@#TPS
+	BPL	PUTC
+	MOVB	R0,@#TPB
+	RTS	PC
+
+; CRLF - start a new line.
+CRLF:	MOV	#15,R0
+	JSR	PC,PUTC
+	MOV	#12,R0
+	JSR	PC,PUTC
+	RTS	PC
+
+; PUTS - print the zero-terminated string at R0.  Keeps R1.
+PUTS:	MOV	R1,-(SP)
+	MOV	R0,R1
+1$:	MOVB	(R1)+,R0
+	BEQ	2$
+	JSR	PC,PUTC
+	BR	1$
+2$:	MOV	(SP)+,R1
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; Data
+; ---------------------------------------------------------------------
+
+MODE:	.WORD	0		; 0 = no memory management, 1 = 18-bit, 2 = 22-bit
+LIMIT:	.WORD	0		; where to stop looking, in 64-byte blocks
+PROT:	.WORD	0		; the first 64-byte block clear of this program
+STFN:	.WORD	0		; the current test's start routine
+NXFN:	.WORD	0		; and its next routine
+PASSNO:	.WORD	0
+PERRS:	.WORD	0		; bad words this pass
+ERRCNT:	.WORD	0		; bad words since the start
+BOL:	.WORD	0		; set when the printing is at the start of a line
+FOLD:	.WORD	0		; written to see whether an address bit is there
+BLKTOP:	.WORD	0		; just past the last block in the table
+BLKTAB:	.BLKW	MAXBLK*2	; first and just-past-last 64-byte block of each
+
+TENS:	.WORD	10000.,1000.,100.,10.,1
+
+MODMSG:	.WORD	MSG16,MSG18,MSG22
+
+MSGHDR:	.BYTE	15,12
+	.ASCII	/MEMTESTER - FINDS THE MEMORY, THEN TESTS IT UNTIL HALTED./
+	.BYTE	15,12,0
+MSG16:	.ASCIZ	/NO MEMORY MANAGEMENT. LOOKING BELOW /
+MSG18:	.ASCIZ	/18-BIT MEMORY MANAGEMENT. LOOKING BELOW /
+MSG22:	.ASCIZ	/22-BIT MEMORY MANAGEMENT. LOOKING BELOW /
+MSGFND:	.ASCII	/MEMORY FOUND:/
+	.BYTE	15,12,0
+MSGIND:	.ASCIZ	/  /
+MSGTO:	.ASCIZ	/ - /
+MSGKB:	.ASCII	/ KB/
+	.BYTE	15,12,0
+MSGTST:	.ASCIZ	/TESTING ALL OF IT FROM /
+MSGTS2:	.ASCII	/ UP; BELOW THAT IS THIS PROGRAM./
+	.BYTE	15,12,0
+MSGPAS:	.ASCIZ	/PASS/
+MSGERR:	.ASCIZ	/  ERRORS:/
+MSGALL:	.ASCIZ	/, IN ALL:/
+MSGBAD:	.ASCIZ	/  BAD WORD AT /
+MSGWR:	.ASCIZ	/  WROTE /
+MSGRD:	.ASCIZ	/  READ /
+MSGBIT:	.ASCIZ	/  BITS /
+TNADR:	.ASCIZ	/ADDRESS/
+TNINV:	.ASCIZ	/INVERSE/
+TNZER:	.ASCIZ	/ZEROS/
+TNONE:	.ASCIZ	/ONES/
+TNCHK:	.ASCIZ	/CHECKER/
+	.EVEN
+
+PRGEND:				; everything from here up is tested
+
+	.END	START

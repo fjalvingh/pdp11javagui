@@ -53,6 +53,17 @@ bring it back. Quitting with unsaved changes asks first.
 it in this window, ready for **Compile**. The first is a game of tic-tac-toe on the console
 terminal. It needs no operating system and runs on anything from an 11/05 up; start it at `1000`.
 
+The second, the memory tester, finds where memory is installed, lists each block by address and
+size, and then tests all of it in an endless loop of passes until you halt the machine. Every pass
+writes and reads back five patterns: each word's own address, its complement, all zeros, all ones
+and a checkerboard. A bad word is reported with its address, what was written, what was read and
+which bits differ. Only the first ten in each pass are shown, but every one is counted. It also
+starts at `1000`, and needs nothing but the console terminal. Without memory management it sees
+the 28K words below `160000`. With memory management it sees everything below the I/O page,
+18-bit or 22-bit, and first checks that the high address lines are really connected, so that a
+22-bit processor in an 18-bit backplane does not report one board many times over. The memory
+below the end of the program, which holds the vectors and the program itself, is not tested.
+
 The example is copied into `examples/` in the [data directory](17-settings-and-files.md) and
 opened from there, because MACRO-11 needs a file it can write a listing beside. That copy is
 yours to change and save. Load the same example again later and your changed copy is not

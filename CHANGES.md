@@ -11,6 +11,14 @@
   needs a file to write its listing beside, and a copy the user has changed is never overwritten
   without asking. A test checks that the index names exactly the packaged files and that every
   example assembles without a problem.
+- **A memory tester among the examples.** It probes every 1 KB through the bus time-out trap,
+  reports each block of memory by address and size, and then tests it pass after pass with
+  address, inverse-address, zeros, ones and checkerboard patterns. Each bad word is shown with
+  the bits that differ. It runs from an 11/03 or 11/05 without memory management up to 22-bit
+  machines, where it slides one kernel page over all of physical memory, and it checks for
+  unconnected high address lines before trusting what answers above them. It was checked in
+  SimH on the 11/03, 11/05, 11/23, 11/34, 11/40, 11/45, 11/70 and 11/73, with injected bad words
+  and with a forced fold of address bit 16.
 
 ### Consoles
 

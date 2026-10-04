@@ -2,3 +2,4 @@
 # One per line: the file name in this directory, a tab, and the title the menu shows.
 # ExampleProgramsTest checks that this names exactly the files packaged beside it.
 tictac.mac	Tic-tac-toe
+memtester.mac	Memory tester
