@@ -47,6 +47,17 @@ program.
 **Your edits survive closing the window.** Closing hides it; the text is still there when you
 bring it back. Quitting with unsaved changes asks first.
 
+## Example programs
+
+**File → Load examples** lists the example programs that come with PDP11GUI. Choosing one opens
+it in this window, ready for **Compile**. The first is a game of tic-tac-toe on the console
+terminal. It needs no operating system and runs on anything from an 11/05 up; start it at `1000`.
+
+The example is copied into `examples/` in the [data directory](17-settings-and-files.md) and
+opened from there, because MACRO-11 needs a file it can write a listing beside. That copy is
+yours to change and save. Load the same example again later and your changed copy is not
+overwritten without asking: **Yes** puts the original back, **No** opens your copy.
+
 ## Listing tab
 
 | Button | What it does |

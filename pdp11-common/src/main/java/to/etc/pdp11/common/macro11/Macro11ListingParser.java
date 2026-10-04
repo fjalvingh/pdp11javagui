@@ -57,7 +57,8 @@ import java.util.Map;
  *       three cells across two listing lines, the last one half filled.</li>
  *   <li><b>Suffixes.</b> {@code 000000G} is a value with an unresolved global in it, which the
  *       assembler does not call an error but which means the program will not run;
- *       {@code 000000'} marks a relocatable value and is fine.</li>
+ *       {@code 001234'} is a PC-relative operand listed as its target address, which has to be
+ *       made into an offset - see {@link #displace}.</li>
  *   <li><b>An error line is not indented.</b> Every listing line starts with spaces, so a line
  *       that does not is MACRO-11 talking. Its format is {@code file:line: message}, and the
  *       file may contain colons of its own - a Windows drive letter, which is why the search for
@@ -325,6 +326,7 @@ public final class Macro11ListingParser {
 			if(digits.isEmpty())
 				break;                                       // the source text has begun
 			String suffix = word.substring(digits.length());
+			Address at = addr;
 			addr = fillValue(words, type, addr, digits, listingLine);
 			switch(suffix) {
 				case "" -> {
@@ -339,16 +341,38 @@ public final class Macro11ListingParser {
 							"Unresolved global symbol"));
 					}
 				}
-				case "'" -> {
-					//-- A relocatable value. Nothing to do: the listing's own address is what
-					//-- this program will be loaded at.
-				}
+				case "'" -> displace(words, at, digits);
 				default -> problems.add(new Problem(ProblemKind.UNKNOWN_SUFFIX, "", sourceLine, listingLine,
 					"Unknown suffix \"" + suffix + "\" in value \"" + word + "\""));
 			}
 			if(addr == null)
 				break;                                       // ran off the top of the address space
 		}
+	}
+
+	/**
+	 * Turn a {@code '} word from the address it names into the offset the CPU needs.
+	 *
+	 * <p>This MACRO-11 prints {@code '} in exactly one place, {@code store_displaced_word}
+	 * ({@code assemble_aux.c}): a PC-relative operand - {@code JSR PC,SUB}, {@code MOV X,R0} -
+	 * whose target is an absolute address, which in an {@code .ASECT} is every label. It lists the
+	 * <b>target</b> and leaves the subtraction to the linker as an "internal displaced"
+	 * relocation, and there is no linker between this listing and the machine. The CPU adds the
+	 * word to the address after it, so the word is {@code target - (address + 2)}.</p>
+	 *
+	 * <p>DEC's MACRO-11 uses {@code '} for "relocatable", which is what the comment here used to
+	 * say, and the Pascal's guessed at the truth ({@code FormMacro11ListingU.pas:488-489}, "called
+	 * PC-relative 'displaced' in the macro11 sources?") - and both loaded the target as it stood.
+	 * In this assembler a relocatable value has no suffix at all. So any {@code .ASECT} program
+	 * that called a subroutine by name loaded as a jump to somewhere else.</p>
+	 */
+	private static void displace(Words words, Address at, String digits) {
+		if(digits.length() <= 3 || (at.val() & 1) != 0)
+			return;                                         // a displacement is always a whole word
+		Word w = words.find(at.val());
+		if(w == null || !w.m_value.isKnown())
+			return;
+		w.m_value = CellValue.of((int) ((w.m_value.word() - (at.val() + 2)) & 0xFFFF));
 	}
 
 	/**

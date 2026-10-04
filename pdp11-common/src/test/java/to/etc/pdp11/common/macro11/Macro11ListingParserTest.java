@@ -188,14 +188,32 @@ class Macro11ListingParserTest {
 		assertEquals(1, r.getProblems().size());
 	}
 
-	/** A relocatable value is marked and is otherwise ordinary. */
+	/**
+	 * {@code '} is a PC-relative operand, listed as the address it names. The CPU wants the
+	 * distance from the word after it, which a linker would have worked out and nothing here
+	 * links. These lines are what {@code macro11} prints for {@code JSR PC,PUTS} in an
+	 * {@code .ASECT}, with {@code PUTS} at {@code 2014}.
+	 */
 	@Test
-	void aRelocatableValueIsNotAProblem() {
+	void anApostropheWordIsMadeIntoAnOffsetFromTheWordAfterIt() {
 		MemoryCellGroup g = group();
 		Macro11Listing r = Macro11ListingParser.parse(List.of(
-			"       3 000004 000000'                 \t.word\tstart"), g);
+			"      40 001030 004767  002014'         \tJSR\tPC,PUTS",
+			"     258 002014 010146                  PUTS:\tMOV\tR1,-(SP)"), g);
+		assertTrue(r.isOk(), () -> r.getProblems().toString());
+		assertEquals(0004767, wordAt(g, 001030), "the instruction itself is untouched");
+		assertEquals(0000760, wordAt(g, 001032), "2014 - 1034");
+	}
+
+	/** Backwards is a negative offset, and wraps in sixteen bits. */
+	@Test
+	void aBackwardReferenceIsANegativeOffset() {
+		MemoryCellGroup g = group();
+		Macro11Listing r = Macro11ListingParser.parse(List.of(
+			"      12 001200 004767  001000'         \tJSR\tPC,START"), g);
 		assertTrue(r.isOk());
-		assertEquals(0, wordAt(g, 4));
+		assertEquals((001000 - 001204) & 0xFFFF, wordAt(g, 001202));
+		assertEquals(0177574, wordAt(g, 001202));
 	}
 
 	/**

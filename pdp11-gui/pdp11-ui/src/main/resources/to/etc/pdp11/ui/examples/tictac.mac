@@ -1,0 +1,303 @@
+	.TITLE	TICTAC - TIC-TAC-TOE FOR A BARE PDP-11
+;
+; Tic-tac-toe on the console terminal, with no operating system.
+; You are X and move first; the machine is O.
+;
+; Runs on anything from an 11/05 up: it uses only the basic instruction
+; set (no SOB, XOR, SXT, MUL or DIV) and polls the console DL11 at
+; 177560 directly, with interrupts left off.
+;
+; Load it, then start at 1000. On an M9312 console:  L 1000  then  S
+; It plays game after game; stop it with the HALT switch.
+;
+; The machine's strategy, in order: win if it can; block a line you are
+; about to complete; otherwise take the centre, then a corner, then a side.
+; That is enough that it never loses to a careless player - and you can
+; still beat it with a fork.
+
+TKS	= 177560		; console keyboard status: bit 7 = character ready
+TKB	= 177562		; console keyboard buffer
+TPS	= 177564		; console printer status: bit 7 = ready to print
+TPB	= 177566		; console printer buffer
+
+SPACE	= 40			; an empty square
+
+	.ASECT
+	.=1000
+
+START:	MOV	#START,SP	; stack grows down from 1000
+
+; ---------------------------------------------------------------------
+; One game
+; ---------------------------------------------------------------------
+
+NEWGAM:	MOV	#BOARD,R0	; empty every square
+	MOV	#9.,R1
+1$:	MOVB	#SPACE,(R0)+
+	DEC	R1
+	BNE	1$
+	MOV	#MSGHDR,R0
+	JSR	PC,PUTS
+
+TURN:	JSR	PC,SHOW
+
+; --- Your move -------------------------------------------------------
+
+ASK:	MOV	#MSGMOV,R0
+	JSR	PC,PUTS
+	JSR	PC,GETC		; R0 = the key, already echoed
+	CMPB	R0,#'1
+	BLO	BADKEY
+	CMPB	R0,#'9
+	BHI	BADKEY
+	SUB	#'1,R0		; '1'..'9' -> square 0..8
+	CMPB	BOARD(R0),#SPACE
+	BNE	TAKEN
+	MOVB	#'X,BOARD(R0)
+	JSR	PC,CRLF
+
+	MOV	#'X,R2
+	JSR	PC,CHKWIN
+	TST	R0
+	BNE	YOUWIN
+	JSR	PC,FULL
+	TST	R0
+	BNE	DRAW
+
+; --- The machine's move ----------------------------------------------
+
+	JSR	PC,THINK	; R1 = the square it picks
+	MOVB	#'O,BOARD(R1)
+	MOV	#MSGME,R0
+	JSR	PC,PUTS
+	MOV	R1,R0
+	ADD	#'1,R0
+	JSR	PC,PUTC
+	JSR	PC,CRLF
+
+	MOV	#'O,R2
+	JSR	PC,CHKWIN
+	TST	R0
+	BNE	IWIN
+	JSR	PC,FULL
+	TST	R0
+	BNE	DRAW
+	BR	TURN
+
+BADKEY:	MOV	#MSGBAD,R0
+	JSR	PC,PUTS
+	BR	ASK
+TAKEN:	MOV	#MSGTKN,R0
+	JSR	PC,PUTS
+	BR	ASK
+
+; --- The end of a game -----------------------------------------------
+
+YOUWIN:	MOV	#MSGYOU,R0
+	BR	OVER
+IWIN:	MOV	#MSGIWN,R0
+	BR	OVER
+DRAW:	MOV	#MSGDRW,R0
+OVER:	MOV	R0,-(SP)
+	JSR	PC,SHOW
+	MOV	(SP)+,R0
+	JSR	PC,PUTS
+	MOV	#MSGAGN,R0
+	JSR	PC,PUTS
+	JSR	PC,GETC
+	JSR	PC,CRLF
+	JMP	NEWGAM
+
+; ---------------------------------------------------------------------
+; THINK - choose the machine's square.  Returns it in R1.
+; ---------------------------------------------------------------------
+
+THINK:	MOV	#'O,R2		; can O win right now?
+	JSR	PC,TRYALL
+	TST	R1
+	BPL	9$
+	MOV	#'X,R2		; can X win next move? then block it
+	JSR	PC,TRYALL
+	TST	R1
+	BPL	9$
+	MOV	#ORDER,R3	; otherwise the best free square
+1$:	MOVB	(R3)+,R1
+	CMPB	BOARD(R1),#SPACE
+	BNE	1$		; FULL said one is free, so this ends
+9$:	RTS	PC
+
+; TRYALL - is there a square where R2 completes a line?
+; Tries R2 in each empty square in turn and takes it back.
+; Returns the square in R1, or -1.
+
+TRYALL:	CLR	R1
+1$:	CMPB	BOARD(R1),#SPACE
+	BNE	2$
+	MOVB	R2,BOARD(R1)	; try it
+	JSR	PC,CHKWIN
+	MOVB	#SPACE,BOARD(R1) ; and take it back
+	TST	R0
+	BNE	9$
+2$:	INC	R1
+	CMP	R1,#9.
+	BLO	1$
+	MOV	#-1,R1
+9$:	RTS	PC
+
+; ---------------------------------------------------------------------
+; CHKWIN - does the mark in R2 hold a whole line?
+; Returns R0 = 1 if so, 0 if not.  Uses R3 and R4; R1 and R2 are kept.
+; ---------------------------------------------------------------------
+
+CHKWIN:	MOV	#LINES,R3
+1$:	MOVB	(R3)+,R4	; first square of the line, or -1 at the end
+	BMI	8$
+	CMPB	BOARD(R4),R2
+	BNE	3$
+	MOVB	(R3)+,R4
+	CMPB	BOARD(R4),R2
+	BNE	4$
+	MOVB	(R3)+,R4
+	CMPB	BOARD(R4),R2
+	BNE	1$
+	MOV	#1,R0		; all three
+	RTS	PC
+3$:	INC	R3		; skip the rest of this line
+4$:	INC	R3
+	BR	1$
+8$:	CLR	R0
+	RTS	PC
+
+; FULL - R0 = 1 if no square is free, 0 if one is.
+
+FULL:	MOV	#BOARD,R0
+	MOV	#9.,R4
+1$:	CMPB	(R0)+,#SPACE
+	BEQ	2$
+	DEC	R4
+	BNE	1$
+	MOV	#1,R0
+	RTS	PC
+2$:	CLR	R0
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; SHOW - print the board.  A free square shows its own number, so you
+; can see what to type.
+;
+;	  X | 2 | O
+;	 ---+---+---
+;	  4 | X | 6
+; ---------------------------------------------------------------------
+
+SHOW:	MOV	R1,-(SP)
+	MOV	R2,-(SP)
+	MOV	R3,-(SP)
+	JSR	PC,CRLF
+	CLR	R1		; square number
+	MOV	#3,R3		; rows to go
+1$:	MOV	#3,R2		; columns to go in this row
+2$:	MOV	#SPACE,R0
+	JSR	PC,PUTC
+	MOVB	BOARD(R1),R0
+	CMPB	R0,#SPACE
+	BNE	3$
+	MOV	R1,R0		; free: show its number
+	ADD	#'1,R0
+3$:	JSR	PC,PUTC
+	MOV	#SPACE,R0
+	JSR	PC,PUTC
+	INC	R1
+	DEC	R2
+	BEQ	4$
+	MOV	#'|,R0
+	JSR	PC,PUTC
+	BR	2$
+4$:	JSR	PC,CRLF
+	DEC	R3
+	BEQ	5$
+	MOV	#MSGSEP,R0
+	JSR	PC,PUTS
+	BR	1$
+5$:	MOV	(SP)+,R3
+	MOV	(SP)+,R2
+	MOV	(SP)+,R1
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; Console I/O, by polling
+; ---------------------------------------------------------------------
+
+; PUTC - print the character in R0.
+PUTC:	TSTB	@#TPS
+	BPL	PUTC
+	MOVB	R0,@#TPB
+	RTS	PC
+
+; GETC - wait for a key, echo it, return it in R0 without the parity bit.
+GETC:	TSTB	@#TKS
+	BPL	GETC
+	MOVB	@#TKB,R0
+	BIC	#177600,R0
+	JSR	PC,PUTC
+	RTS	PC
+
+; CRLF - start a new line.
+CRLF:	MOV	#15,R0
+	JSR	PC,PUTC
+	MOV	#12,R0
+	JSR	PC,PUTC
+	RTS	PC
+
+; PUTS - print the zero-terminated string at R0.  Keeps R1.
+PUTS:	MOV	R1,-(SP)
+	MOV	R0,R1
+1$:	MOVB	(R1)+,R0
+	BEQ	2$
+	JSR	PC,PUTC
+	BR	1$
+2$:	MOV	(SP)+,R1
+	RTS	PC
+
+; ---------------------------------------------------------------------
+; Data
+; ---------------------------------------------------------------------
+
+; The eight lines, three squares each, ended by -1.
+LINES:	.BYTE	0,1,2, 3,4,5, 6,7,8.		; rows
+	.BYTE	0,3,6, 1,4,7, 2,5,8.		; columns
+	.BYTE	0,4,8., 2,4,6			; diagonals
+	.BYTE	-1
+
+; Which free square to prefer: centre, corners, sides.
+ORDER:	.BYTE	4, 0,2,6,8., 1,3,5,7
+
+BOARD:	.BLKB	9.
+
+MSGHDR:	.BYTE	15,12
+	.ASCII	/TIC-TAC-TOE.  YOU ARE X, I AM O.  YOU GO FIRST./
+	.BYTE	15,12
+	.ASCII	/TYPE THE NUMBER OF A FREE SQUARE TO MOVE THERE./
+	.BYTE	15,12,0
+MSGMOV:	.BYTE	15,12
+	.ASCIZ	/YOUR MOVE (1-9): /
+MSGBAD:	.BYTE	15,12
+	.ASCIZ	/PLEASE TYPE A DIGIT FROM 1 TO 9./
+MSGTKN:	.BYTE	15,12
+	.ASCIZ	/THAT SQUARE IS TAKEN./
+MSGME:	.ASCIZ	/I TAKE /
+MSGSEP:	.ASCII	/---+---+---/
+	.BYTE	15,12,0
+MSGYOU:	.BYTE	15,12
+	.ASCII	/YOU WIN.  WELL PLAYED!/
+	.BYTE	15,12,0
+MSGIWN:	.BYTE	15,12
+	.ASCII	/I WIN./
+	.BYTE	15,12,0
+MSGDRW:	.BYTE	15,12
+	.ASCII	/A DRAW./
+	.BYTE	15,12,0
+MSGAGN:	.ASCIZ	/PRESS ANY KEY FOR ANOTHER GAME. /
+	.EVEN
+
+	.END	START

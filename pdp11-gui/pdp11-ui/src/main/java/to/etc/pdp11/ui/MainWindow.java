@@ -9,6 +9,7 @@ import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.TerminalProfile;
 import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.ui.macro11.ExamplePrograms;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
@@ -62,6 +63,8 @@ public final class MainWindow extends JFrame {
 	private JMenuItem m_connectItem;
 
 	private JMenu m_connectToMenu;
+
+	private JMenu m_examplesMenu;
 
 	private JMenuItem m_disconnectItem;
 
@@ -129,6 +132,10 @@ public final class MainWindow extends JFrame {
 	}
 
 	/** The "Connect to simulated" submenu, so a test can pick a machine the way the user does. */
+	public JMenu getExamplesMenu() {
+		return m_examplesMenu;
+	}
+
 	public JMenu getConnectToSimulatedMenu() {
 		return m_connectToMenu;
 	}
@@ -186,6 +193,9 @@ public final class MainWindow extends JFrame {
 		file.add(m_connectToMenu);
 		file.add(disconnect);
 		file.addSeparator();
+		m_examplesMenu = buildExamplesMenu();
+		file.add(m_examplesMenu);
+		file.addSeparator();
 		file.add(quit);
 
 		//-- Rebuilt when it opens rather than kept in step by a timer. The Pascal runs a 100 ms
@@ -225,6 +235,57 @@ public final class MainWindow extends JFrame {
 		bar.add(m_windowsMenu);
 		bar.add(help);
 		return bar;
+	}
+
+	/**
+	 * One entry per example program packaged in the jar, in the order its index gives.
+	 *
+	 * <p>Built once: the examples are part of the build, so the list cannot change while the
+	 * application runs.</p>
+	 */
+	private JMenu buildExamplesMenu() {
+		JMenu menu = new JMenu("Load examples");
+		java.util.List<ExamplePrograms.Example> examples = ExamplePrograms.list();
+		if(examples.isEmpty()) {
+			JMenuItem none = new JMenuItem("No examples packaged");
+			none.setEnabled(false);
+			menu.add(none);
+		}
+		for(ExamplePrograms.Example example : examples) {
+			JMenuItem item = new JMenuItem(example.title());
+			item.setToolTipText(example.fileName());
+			item.addActionListener(e -> loadExample(example));
+			menu.add(item);
+		}
+		return menu;
+	}
+
+	/**
+	 * Put an example into the Assembler window, ready to compile, deposit and run.
+	 *
+	 * <p>Asks first if the program already there has unsaved changes, like New and Open do. The
+	 * example is copied to the data directory because MACRO-11 assembles a file and writes its
+	 * listing beside it; see {@link ExamplePrograms}.</p>
+	 */
+	public void loadExample(ExamplePrograms.Example example) {
+		if(!m_context.getAssembler().confirmDiscard("load the example \"" + example.title() + "\""))
+			return;
+		prepareExample(example, false);
+	}
+
+	private void prepareExample(ExamplePrograms.Example example, boolean replaceChanged) {
+		m_context.onFile("Could not load the example \"" + example.title() + "\"",
+			() -> ExamplePrograms.prepare(example, m_context.getDataDir(), replaceChanged),
+			prepared -> {
+				if(prepared.state() == ExamplePrograms.CopyState.CHANGED && m_context.confirmDiscard(
+					"Your copy of " + prepared.file() + " has been changed.\n\n"
+						+ "Yes replaces it with the original example; No opens your copy.")) {
+					prepareExample(example, true);
+					return;
+				}
+				m_context.getAssembler().installSource(prepared.file(), prepared.text());
+				m_context.getWindowManager().open(WindowType.ASSEMBLER);
+			}, null);
 	}
 
 	/**

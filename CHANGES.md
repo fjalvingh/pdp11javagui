@@ -2,8 +2,25 @@
 
 ## Unreleased
 
+### The assembler
+
+- **File → Load examples opens an example program in the Assembler window, ready to compile.**
+  The examples are packaged in the jar, listed by `examples/index.txt`; the first is
+  tic-tac-toe on the console terminal, for anything from an 11/05 up, started at `1000`. An
+  example is copied into `examples/` in the data directory before it is opened, because MACRO-11
+  needs a file to write its listing beside, and a copy the user has changed is never overwritten
+  without asking. A test checks that the index names exactly the packaged files and that every
+  example assembles without a problem.
+
 ### Consoles
 
+- **An `.ASECT` program that calls a subroutine by name loads as written.** In an absolute
+  section `macro11` lists a PC-relative operand - `JSR PC,SUB`, `MOV DATA,R0`, `JMP LOOP` - as
+  the address it names, marked `'`, and leaves the subtraction to a linker. There is no linker
+  between the listing and the machine, and the listing loader took the `'` for DEC's
+  "relocatable" and loaded the target as it stood, so every such word jumped somewhere else. It
+  now loads `target - (address + 2)`, as the CPU needs; the Pascal had the same fault. A test
+  assembles one program both absolute and relocatable and checks the two load identically.
 - **Serial connections receive again - every one of them was deaf.** The serial transport put
   jSerialComm into fully blocking reads, which return only once the whole 4 KB buffer is full, so
   a console answering with a line or two was never heard and every handshake over a serial port

@@ -43,6 +43,7 @@ would simply grey out, which on its own looks like the program broke.
 | **Connection settings …** | | Open [the connection dialog](03-connecting.md) |
 | **Connect to simulated ▸** | | One entry per console protocol, connecting to a machine simulated inside this program |
 | **Disconnect** | | Close the connection |
+| **Load examples ▸** | | One entry per example program that comes with PDP11GUI; see [the assembler](09-assembler.md#example-programs) |
 | **Quit** | Ctrl/Cmd+Q | Save everything and go |
 
 **Connect** stays available while connected — connecting again is how you move to another machine.

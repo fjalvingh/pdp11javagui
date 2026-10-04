@@ -1,0 +1,4 @@
+# The example programs offered by File > Load examples, in menu order.
+# One per line: the file name in this directory, a tab, and the title the menu shows.
+# ExampleProgramsTest checks that this names exactly the files packaged beside it.
+tictac.mac	Tic-tac-toe

@@ -488,6 +488,47 @@ class WindowsBuildTest {
 	}
 
 	/** The Windows menu as the user would read it, rebuilt as opening it would rebuild it. */
+	/**
+	 * File > Load examples lists what is packaged, and choosing one puts it in the Assembler
+	 * window as a file on disk - which is what lets Compile work on it straight away.
+	 */
+	@Test
+	void choosingAnExampleOpensItInTheAssemblerReadyToCompile(@TempDir Path dir) throws Exception {
+		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
+		AppContext ctx = context(dir);
+		AssemblerWindow.register(ctx);
+		MainWindow w = onEdt(() -> new MainWindow(ctx));
+		try {
+			javax.swing.JMenu examples = w.getExamplesMenu();
+			assertEquals("Load examples", examples.getText());
+			assertEquals("Tic-tac-toe", examples.getItem(0).getText());
+
+			onEdt(() -> {
+				examples.getItem(0).doClick();
+				return null;
+			});
+			//-- The copy is made on the file thread and installed back on this one.
+			long deadline = System.currentTimeMillis() + 10_000;
+			while(onEdt(() -> ctx.getAssembler().getSourceFile()) == null && System.currentTimeMillis() < deadline)
+				Thread.sleep(20);
+
+			Path file = onEdt(() -> ctx.getAssembler().getSourceFile());
+			assertEquals(ctx.getDataDir().resolve("examples").resolve("tictac.mac").toAbsolutePath(), file);
+			assertTrue(Files.isRegularFile(file));
+			assertTrue(onEdt(() -> ctx.getAssembler().getSourceText()).contains("TIC-TAC-TOE"));
+			assertFalse(onEdt(() -> ctx.getAssembler().isChanged()), "loaded, not edited");
+			assertTrue(onEdt(() -> ctx.getAssembler().canAssemble()), "ready for Compile");
+			assertTrue(onEdt(() -> ctx.getWindowManager().windowsOfType(WindowType.ASSEMBLER).stream()
+				.anyMatch(ToolWindow::isVisible)), "the Assembler window is open");
+		} finally {
+			onEdt(() -> {
+				ctx.getWindowManager().closeAll();
+				w.dispose();
+				return null;
+			});
+		}
+	}
+
 	private static List<String> menuItemTexts(MainWindow w) {
 		List<String> l = new ArrayList<>();
 		javax.swing.JMenu menu = w.getWindowsMenuRebuilt();

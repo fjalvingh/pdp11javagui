@@ -76,6 +76,51 @@ class Macro11IT {
 		assertEquals("001000", listing.getStartAddress().toOctal());
 	}
 
+	/** References forwards and backwards, by call, by jump and by data reference. */
+	private static final String CALLS = """
+		start:\tjsr\tpc,sub
+		\tmov\tdata,r0
+		\tjmp\tstart
+		sub:\tjsr\tpc,start
+		\trts\tpc
+		data:\t.word\t123
+		\t.end\tstart
+		""";
+
+	/**
+	 * A program in an {@code .ASECT} loads as the same program in a relocatable section.
+	 *
+	 * <p>In a relocatable section {@code macro11} computes every PC-relative offset itself and the
+	 * listing holds the real word. In an absolute one it lists the target with a {@code '} and
+	 * leaves the subtraction to a linker, which this application does not have - so the parser
+	 * does it, and this is the check that it does the same arithmetic the assembler would.</p>
+	 */
+	@Test
+	void anAbsoluteSectionLoadsTheSameWordsAsARelocatableOne(@TempDir Path dir) throws Exception {
+		assumeTrue(Macro11.isAvailable(), "macro11 is not on the PATH");
+		Path abs = source(dir, "abs.mac", "\t.asect\n\t.=1000\n" + CALLS);
+		Path rel = source(dir, "rel.mac", "\t.=.+1000\n" + CALLS);
+
+		MemoryCellGroup a = new MemoryCellGroups().addGroup(MemoryAddressType.VIRTUAL, "abs");
+		MemoryCellGroup r = new MemoryCellGroups().addGroup(MemoryAddressType.VIRTUAL, "rel");
+		Macro11Listing la = Macro11ListingParser.parse(Macro11.assemble(abs, Logger.NULL).listing(), a);
+		Macro11Listing lr = Macro11ListingParser.parse(Macro11.assemble(rel, Logger.NULL).listing(), r);
+		assertTrue(la.isOk(), () -> "unexpected: " + la.getProblems());
+		assertTrue(lr.isOk(), () -> "unexpected: " + lr.getProblems());
+
+		//-- The listing really does mark them, or this test proves nothing.
+		assertTrue(Files.readString(Macro11.assemble(abs, Logger.NULL).listing()).contains("'"),
+			"the absolute listing should have PC-relative words marked with '");
+
+		assertEquals(la.getWordCount(), lr.getWordCount());
+		for(MemoryCell mc : r.getCells()) {
+			long addr = mc.getAddr().val();
+			assertEquals(mc.getEditValue().word(), wordAt(a, addr), "word at 0" + Long.toOctalString(addr));
+		}
+		//-- And one of them by hand: JSR PC,SUB at 1000, SUB at 1014, so 1014 - 1004.
+		assertEquals(0000010, wordAt(a, 01002));
+	}
+
 	/**
 	 * A source with an error still exits 0 - which is the whole reason the listing is parsed
 	 * for errors rather than the status being checked.
