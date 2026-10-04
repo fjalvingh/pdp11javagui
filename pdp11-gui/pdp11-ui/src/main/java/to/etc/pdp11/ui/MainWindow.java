@@ -71,6 +71,8 @@ public final class MainWindow extends JFrame {
 	/** The Help menu's manual entry, so a test can press what the user presses. */
 	private JMenuItem m_manualItem;
 
+	private JMenuItem m_diagnosticsItem;
+
 	/**
 	 * Whether a connect <i>or a disconnect</i> worker is running. Read and written on the event
 	 * thread only: the state change arrives a moment later than the click, and a second click
@@ -151,6 +153,10 @@ public final class MainWindow extends JFrame {
 	}
 
 	/** The Help menu's User manual item. */
+	public JMenuItem getDiagnosticsItem() {
+		return m_diagnosticsItem;
+	}
+
 	public JMenuItem getManualItem() {
 		return m_manualItem;
 	}
@@ -195,6 +201,11 @@ public final class MainWindow extends JFrame {
 		file.addSeparator();
 		m_examplesMenu = buildExamplesMenu();
 		file.add(m_examplesMenu);
+		JMenuItem diagnostics = new JMenuItem("Collect diagnostics ...");
+		diagnostics.setToolTipText("Find XXDP and MAINDEC diagnostics on the Internet and keep them on this machine");
+		diagnostics.addActionListener(e -> m_context.getWindowManager().open(WindowType.DIAGNOSTICS));
+		m_diagnosticsItem = diagnostics;
+		file.add(diagnostics);
 		file.addSeparator();
 		file.add(quit);
 

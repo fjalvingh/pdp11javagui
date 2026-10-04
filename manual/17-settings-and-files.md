@@ -29,6 +29,17 @@ It holds one file, `settings.json`. **Help → About** shows the exact path.
 It holds `machines/` — [the machine descriptions](16-machine-descriptions.md) — and working files
 such as the SimH configuration the program generates.
 
+### Library
+
+| Platform | Directory |
+|---|---|
+| Linux | `$XDG_DATA_HOME/pdp11gui`, or `~/.local/share/pdp11gui` |
+| macOS | `~/Library/Application Support/pdp11gui/library` |
+| Windows | `%APPDATA%\pdp11gui\library` |
+
+It holds `diagnostics/`, the [diagnostics you collected](20-diagnostics.md#where-it-is-kept). It is
+kept apart from the data directory because it took a download to fill.
+
 To run against a throwaway configuration on Linux, point `XDG_CONFIG_HOME` somewhere else.
 
 ## What is remembered
@@ -40,7 +51,8 @@ To run against a throwaway configuration on Linux, point `XDG_CONFIG_HOME` somew
 * **saved connection profiles**, and which one to offer next time;
 * the **MACRO-11 source file** the assembler had open;
 * which **microcode** the [Microcode window](13-microcode.md) was showing, and any listing files
-  you opened for each.
+  you opened for each;
+* which [diagnostic sources](20-diagnostics.md) are ticked.
 
 It is written when you quit, and at a few points in between. Writes go through a temporary file
 and an atomic rename, so an interrupted write loses the *new* settings rather than the old ones.
@@ -65,6 +77,7 @@ and a window whose remembered position is off-screen is placed somewhere sensibl
 | [Memory files](10-load-and-dump.md) | Wherever you choose; the suggested extensions are `.bin`, `.txt` and `.ptap` |
 | SimH `DO` script export | Wherever you choose, from the memory window's right-click menu |
 | Machine descriptions | The data directory, as `.ini` and `.modules` |
+| Collected diagnostics | The library directory, under `diagnostics/` |
 
 ---
 

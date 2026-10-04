@@ -40,6 +40,8 @@ program with a machine (or no machine at all) to hand.
 * **[I/O page scanner](12-io-page-scanner.md)** — find out what is actually plugged in.
 * **[Microcode](13-microcode.md)** — the PDP-11/44's and the PDP-11/05's microcode, microword by
   microword.
+* **[Collecting diagnostics](20-diagnostics.md)** — fetch DEC's XXDP and MAINDEC diagnostics and
+  keep them, sorted by what they test.
 
 ## Everything else
 

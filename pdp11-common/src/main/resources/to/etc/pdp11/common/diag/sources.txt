@@ -1,0 +1,83 @@
+# Where PDP-11 diagnostics can be found, for File > Collect diagnostics.
+#
+# Each block is one web directory. Its index page is read, the links that stay inside it are
+# followed (into subdirectories only with recurse = yes), and every file whose name matches an
+# include pattern is offered. "mirror" lines are tried, in order, when "url" does not answer.
+# See DiagnosticSource for the format; a test reads this file and fails on a mistake in it.
+#
+# Nothing here is shipped with the application. These are other people's archives, and the
+# application only fetches from them when the person running it asks it to.
+
+[bitsavers-rl02]
+title   = XXDP V2.2 and V2.5 distributions (RL02)
+url     = https://www.bitsavers.org/bits/DEC/pdp11/discimages/rl02/
+mirror  = https://bitsavers.trailing-edge.com/bits/DEC/pdp11/discimages/rl02/
+include = *.rl02.gz
+recurse = no
+default = yes
+note    = The two complete XXDP+ distributions, from 1983 and 1989: monitors, drivers and
+note    = about 700 diagnostics each. If you take only one source, take this one.
+
+[bitsavers-rk05]
+title   = RKDP and XXDP on RK05
+url     = https://www.bitsavers.org/bits/DEC/pdp11/discimages/rk05/diagnostic/
+mirror  = https://bitsavers.trailing-edge.com/bits/DEC/pdp11/discimages/rk05/diagnostic/
+include = *.dsk.gz *.rk.gz
+recurse = no
+default = yes
+note    = The 1977 RKDP disk packs and an XXDP RK05 pack, with older revisions of many tests.
+
+[bitsavers-diagnostics]
+title   = XXDP floppies and hard disks
+url     = https://www.bitsavers.org/bits/DEC/pdp11/Diagnostics/
+mirror  = https://bitsavers.trailing-edge.com/bits/DEC/pdp11/Diagnostics/
+include = *.dsk *.img *.imd
+recurse = yes
+default = yes
+note    = RXDP (RX01) and DYDP (RX02) diagnostic floppies from 1976 to 1980, and XXDP RL02 and
+note    = RK05 disks.
+
+[bitsavers-magtapes]
+title   = MMDP and MSDP magnetic tapes
+url     = https://www.bitsavers.org/bits/DEC/pdp11/Diagnostics/Magtape/
+mirror  = https://bitsavers.trailing-edge.com/bits/DEC/pdp11/Diagnostics/Magtape/
+include = *.tap.gz *.zip
+recurse = no
+default = yes
+note    = DEC's diagnostic distribution tapes from 1982 to 1990, the last and largest collections
+note    = there are. About 25 MB.
+
+[bitsavers-dectape]
+title   = 1972 DECtape diagnostic package
+url     = https://www.bitsavers.org/bits/DEC/pdp11/dectape/dectapeDiagnosticPackage/
+mirror  = https://bitsavers.trailing-edge.com/bits/DEC/pdp11/dectape/dectapeDiagnosticPackage/
+include = *.dta.gz
+recurse = no
+default = yes
+note    = MAINDEC-11-DZQDD: the early tests for the PDP-11/20 generation, on four DECtapes.
+
+[ak6dn-tu58]
+title   = AK6DN's bootable XXDP TU58 images
+url     = https://ak6dn.github.io/PDP-11/TU58/
+include = *.DSK
+recurse = no
+default = yes
+note    = XXDP V2.5 sets for the 11/04, 11/23, 11/34, 11/44 and the rest, each bootable from a
+note    = TU58 or a TU58 emulator.
+
+[ak6dn-rx02]
+title   = AK6DN's bootable XXDP RX02 images
+url     = https://ak6dn.github.io/PDP-11/RX02/
+include = *.RX2
+recurse = no
+default = no
+note    = The same sets as the TU58 images, as RX02 floppies. Only worth having for an RX02.
+
+[ak6dn-diagnostics]
+title   = AK6DN's own diagnostics
+url     = https://ak6dn.github.io/PDP-11/DIAGNOSTICS/
+include = *.bin *.bic *.lst
+recurse = no
+default = yes
+note    = Small tests Don North wrote himself - console, memory, EIS, CIS, MSCP, RX02, TU58 - with
+note    = their listings. Not DEC's.

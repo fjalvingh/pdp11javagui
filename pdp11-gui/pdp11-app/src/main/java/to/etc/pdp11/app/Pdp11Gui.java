@@ -6,6 +6,7 @@ import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.AppIcon;
 import to.etc.pdp11.ui.MainWindow;
+import to.etc.pdp11.ui.diag.DiagnosticsWindow;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
@@ -97,6 +98,7 @@ public final class Pdp11Gui {
 		MmuWindow.register(context);
 		MicrocodeWindow.register(context);
 		NumberConverterWindow.register(context);
+		DiagnosticsWindow.register(context);
 	}
 
 	/**

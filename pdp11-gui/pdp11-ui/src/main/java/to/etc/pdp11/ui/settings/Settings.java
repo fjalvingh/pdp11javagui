@@ -90,6 +90,28 @@ public final class Settings {
 	 */
 	private Map<String, String> microcodeListings;
 
+	/**
+	 * Which diagnostic sources are ticked in the Diagnostics window, by source id; null in a file
+	 * written before there was one.
+	 *
+	 * <p>Only the ones the user changed are here. A source that is not - including any added in a
+	 * later version - comes up as its own default says, which is what makes adding a source to
+	 * {@code sources.txt} reach people who already have a settings file.</p>
+	 */
+	private Map<String, Boolean> diagnosticSources;
+
+	/** Whether a source is ticked: what the user last said, or {@code byDefault}. */
+	public boolean isDiagnosticSourceChosen(String id, boolean byDefault) {
+		Boolean b = diagnosticSources == null ? null : diagnosticSources.get(id);
+		return b == null ? byDefault : b;
+	}
+
+	public void setDiagnosticSourceChosen(String id, boolean chosen) {
+		if(diagnosticSources == null)
+			diagnosticSources = new LinkedHashMap<>();
+		diagnosticSources.put(id, chosen);
+	}
+
 	public String getMicrocodeSelection() {
 		return microcodeSelection;
 	}

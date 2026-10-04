@@ -32,7 +32,14 @@ public enum WindowType {
 	 * {@code FormSimhRemoteLogU} showed a transcript of the {@code sim>} protocol - which is all
 	 * that is left to have a window of its own.</p>
 	 */
-	SIMH_CONSOLE("SimH console");
+	SIMH_CONSOLE("SimH console"),
+	/**
+	 * Collecting XXDP and MAINDEC diagnostics from the Internet, and the library of them.
+	 *
+	 * <p>Needs no machine, like the number converter: a library is built before there is anything
+	 * to run it on.</p>
+	 */
+	DIAGNOSTICS("Diagnostics");
 
 	//-- There is no TERMINAL. The emulated machine's console is the main window's own terminal,
 	//-- which is not a tool window and has no factory; the constant existed, was registered

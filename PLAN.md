@@ -38,7 +38,7 @@ reference implementation throughout the port.
 | 4 — Console layer | **Done** | Threading model, `AnswerPhrase`, `ConsoleScanner`, `ConsoleConnection`, and all four console families: SimH direct (with bulk examine and run control, verified by `SimhConsoleIT` against a real SimH), ODT in both dialects, the 11/44 in both firmwares, and the M9312/M9301 boot-ROM console, which came last, after phase 6 had started. |
 | 5 — First usable app | **Done** | `AppContext` first, as this section insists; settings as versioned JSON in the platform config dir; `WindowKey`/`ToolWindow`/`WindowManager` with multi-monitor clamping; `ConnectionProfile`/`ConnectionManager`; terminal behind a `TerminalView` interface; main window, Log, Settings, Memory view (unlimited), Execution Control and Disassembler. The "done when" is met and tested end to end against a simulated machine, with no display: connect, examine, deposit, run, single-step, disassemble. 393 tests. |
 | 6 — Assembler and tools | **Started** | The second reusable frame (`MemoryCellGroupList`), machine descriptions installed to the data dir and loaded on the way up, the register-group windows the description creates — 17 from the shipped `pdp11.ini` — plus Bitfields, the I/O Page Scanner, the memory Test, Dumper and Loader, and the Assembler: source, listing and code merged into one window, `macro11` run as a child process, and the Execution window's "New program: compile, load and reset"; and the SimH Console — one window where the Pascal has two, interactive, opened by a SimH connection — with the main window's terminal re-pointed at the machine's own console; the MMU window, which shows any mode's map rather than only the current one; and the Number Converter, at a chosen width rather than always 32 bits; and the Microcode window, which ships DEC's 11/44 listing and both revisions of the PDP-11/05's KD11-B control store rather than asking for any of them, collects what it cannot read instead of refusing to load, and can walk backwards - and which on the 11/05 is a debugger rather than a reference, because the KM11 puts that machine's µPC on the lights. 649 tests. Still to do: the Blinkenlight Execution window. |
-| 7 — Disc images | | |
+| 7 — Disc images | **Started** | Not the Pascal's disc-image transfer yet, but what it will stand on: reading XXDP+ and DOS-11 file systems off RL, RK, RX, TU58 and DECtape images, DOS-11 tapes and ImageDisk files (`common.diag.media`), and the diagnostics collector built on them - see "Diagnostics collector" under phase 7. |
 | 8 — Packaging | | |
 
 Each phase's entry below carries its own "done when" and, once finished, what it actually
@@ -1560,6 +1560,37 @@ paper tape. Note `TMediaImage_TapeController_TM11` (`MediaImageDevicesU.pas:481-
 unfinished scaffolding — commented out, with `_` and `??` placeholders, and its
 `driver/pdp11gui_tm11.mac` does not exist. Do not port it; drop TM11 or implement it fresh
 if tape support is wanted. *Large.*
+
+**Diagnostics collector (added to phase 7).** Running XXDP and MAINDEC diagnostics is one of
+the main reasons anybody connects this program to a machine, and the diagnostics often need more
+than one file off an image - the monitor, the drivers, the Diagnostic Runtime Services - so they
+have to be got at file by file. They cannot be shipped (they are DEC's), so the application
+collects them, on request, from the archives that keep them. Decisions, and what was found:
+
+- **All of it is in `pdp11-common` (`to.etc.pdp11.common.diag`)**, because none of it needs a
+  machine: the web application can list a library or read an image with the same classes. The
+  window is a view over `DiagnosticCollector`, `DiagnosticLibrary` and `LibraryListing`.
+- **The catalog is DEC's own index, verbatim.** `AH-FG66P-MC` (1990), on bitsavers, lists every
+  diagnostic by package with revision and title, tab-separated; it is a resource, parsed on first
+  use. It names about 1,150 diagnostics. The first letter of a diagnostic's four-letter name is its
+  family (F = 11/34, K = 11/44, Z = any processor...), worked out from the titles under each letter.
+  XXDP V2.5's renamed monitors and drivers are mapped by a short alias file.
+- **Sources are web directories plus patterns, not file lists**, so an archive that grows is
+  followed without a release. bitsavers refuses Java's default user agent (403) and its
+  http-to-https redirect decodes `%23`, so the fetcher sends its own agent and the sources are
+  https.
+- **A disk is recognised by its directory, never by its name or size.** Each block mapping is
+  tried and the one with the most sensible directory entries wins: bitsavers has RX01 images both
+  physical (256,256 bytes, interleaved, track 0 skipped) and logical (252,928).
+- **Two copies are the same program when they agree up to where the absolute loader stops** - the
+  slack in the last block differs between media. Tape files are disk blocks with their link words,
+  so a file off an MMDP tape is byte for byte the file off an RL02.
+- **The reader is tested by round trip against a test-only writer, and pinned to reality by
+  `RealMediaIT`**, which reads real downloaded media when `PDP11_DIAG_SAMPLES` points at them and
+  skips otherwise - the repository cannot hold them.
+- Not done: booting or loading a collected diagnostic from the library (the media are kept ready
+  for SimH, and a `.BIN` can be loaded with the Memory Loader); a source list the user can edit;
+  recovering files from an image whose directory is overwritten (one RKDP pack on bitsavers).
 
 **Phase 8 — Packaging.** `jpackage` installers per platform, signing/notarization as needed.
 

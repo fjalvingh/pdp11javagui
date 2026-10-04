@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Diagnostics
+
+- **File → Collect diagnostics … fetches XXDP and MAINDEC diagnostics and keeps them on this
+  machine.** PDP11GUI cannot ship DEC's diagnostics, but it knows where they are archived:
+  bitsavers' XXDP V2.2 and V2.5 RL02 distributions, the RKDP packs, the RXDP and DYDP floppies, the
+  MMDP and MSDP tapes and the 1972 DECtapes, and AK6DN's bootable TU58 and RX02 sets and his own
+  tests. **Find diagnostics** reads those archives' pages and lists what they offer, new or already
+  collected; **Collect** downloads what is new, in the background, with a Cancel that keeps
+  everything fetched before it. The sources are a resource (`sources.txt`) of web directories and
+  file patterns rather than a list of files, so files added to an archive later are found too, and
+  bitsavers' mirror is tried when bitsavers does not answer.
+- **Every program is taken off every medium.** XXDP+ and DOS-11 file systems on RL01/02, RK05,
+  RK06/07, TU58, RX01 and RX02 (physical images through the interleave, and logical ones), the 1972
+  DECtape layout with its contiguous files, DOS-11 magnetic tapes in SimH format, ImageDisk files -
+  including ones whose imaging stopped part way - gzip and zip. A file whose block chain breaks is
+  kept but marked damaged, and a whole copy found later takes its place. Checked against 91 real
+  media: the 727 files of XXDP V2.5, a 1986 tape that agrees byte for byte with the V2.5 disk on 313
+  programs, and the TU58 and RX02 copies of the same set.
+- **The library says what each program is.** DEC's own 1990 *PDP-11 Diagnostic Index*
+  (AH-FG66P-MC), about 1,150 diagnostics, is built in; each program gets DEC's title, every
+  revision and the kits it shipped on, and is filed under what it tests - PDP-11/34, 11/44, the
+  KDJ11 machines, peripherals and the rest - from the first letter of its name. The Library tab
+  lists them by family, finds by any words in name, number or title, and says where each came from.
+  A program found on many media is stored once; a different program under a name already taken is
+  kept beside it.
+- **Kept where a person can use it without PDP11GUI**: `~/.local/share/pdp11gui/diagnostics` on
+  Linux, with every program under its own name in `files/` and every medium, uncompressed and
+  ready to attach to SimH, in `media/`. New manual chapter: *Collecting diagnostics*.
+
 ### The assembler
 
 - **MACRO-11 is assembled inside the application; `macro11` no longer has to be installed.**

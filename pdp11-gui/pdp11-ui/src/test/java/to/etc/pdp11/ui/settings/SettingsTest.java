@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -54,6 +55,27 @@ class SettingsTest {
 		//-- Blank is the same as unset; an exported-but-empty variable is a common accident.
 		assertEquals(Path.of("/home/jal/.config/pdp11gui"),
 			ConfigDir.config("Linux", Map.of("XDG_CONFIG_HOME", ""), "/home/jal"));
+	}
+
+	@Test
+	void theLibraryIsKeptWhereCollectedDataBelongs() {
+		assertEquals(Path.of("/home/jal/.local/share/pdp11gui"), ConfigDir.library("Linux", Map.of(), "/home/jal"));
+		assertEquals(Path.of("/tmp/share/pdp11gui"), ConfigDir.library("Linux", Map.of("XDG_DATA_HOME", "/tmp/share"), "/home/jal"));
+		assertEquals(Path.of("/home/jal/Library/Application Support/pdp11gui/library"),
+			ConfigDir.library("Mac OS X", Map.of(), "/home/jal"));
+		assertEquals(Path.of("C:/Users/jal/AppData/Roaming/pdp11gui/library"),
+			ConfigDir.library("Windows 11", Map.of("APPDATA", "C:/Users/jal/AppData/Roaming"), "C:/Users/jal"));
+		//-- Not the state directory, which is for things that may be thrown away.
+		assertNotEquals(ConfigDir.data("Linux", Map.of(), "/home/jal"), ConfigDir.library("Linux", Map.of(), "/home/jal"));
+	}
+
+	@Test
+	void aDiagnosticSourceIsAsItsDefaultSaysUntilTheUserChangesIt() {
+		Settings s = new Settings();
+		assertTrue(s.isDiagnosticSourceChosen("bitsavers-rl02", true));
+		assertFalse(s.isDiagnosticSourceChosen("ak6dn-rx02", false));
+		s.setDiagnosticSourceChosen("bitsavers-rl02", false);
+		assertFalse(s.isDiagnosticSourceChosen("bitsavers-rl02", true));
 	}
 
 	@Test

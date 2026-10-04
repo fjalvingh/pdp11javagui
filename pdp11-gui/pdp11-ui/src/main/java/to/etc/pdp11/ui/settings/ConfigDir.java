@@ -64,6 +64,27 @@ public final class ConfigDir {
 		return data(System.getProperty("os.name", ""), System.getenv(), System.getProperty("user.home", "."));
 	}
 
+	/**
+	 * Where what the application collects is kept - the diagnostics library.
+	 *
+	 * <p>Not the data directory: that one is "worth deleting", and a library that took a quarter of
+	 * an hour to download is not. On Linux this is the XDG data directory, which is the one meant
+	 * for exactly this; elsewhere it is beside the settings, as everything else is.</p>
+	 */
+	public static Path library() {
+		return library(System.getProperty("os.name", ""), System.getenv(), System.getProperty("user.home", "."));
+	}
+
+	public static Path library(String osName, java.util.Map<String, String> env, String userHome) {
+		String os = osName.toLowerCase(Locale.ROOT);
+		if(os.contains("win") || os.contains("mac") || os.contains("darwin"))
+			return config(osName, env, userHome).resolve("library");
+		String xdg = env.get("XDG_DATA_HOME");
+		if(xdg != null && !xdg.isBlank())
+			return Path.of(xdg, APP_DIR);
+		return Path.of(userHome, ".local", "share", APP_DIR);
+	}
+
 	public static Path data(String osName, java.util.Map<String, String> env, String userHome) {
 		String os = osName.toLowerCase(Locale.ROOT);
 		if(os.contains("win") || os.contains("mac") || os.contains("darwin"))

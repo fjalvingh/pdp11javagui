@@ -1,0 +1,31 @@
+# XXDP files whose names are not their diagnostic numbers, and the number each one is.
+#
+# XXDP V2.5 renamed its monitors, drivers and utilities to plain words, so XXDPXM.SYS is the
+# file DEC's index calls HMXM, "XXDP V2 EXTENDED MON". The pairs were made by matching each name
+# to the index title that says the same thing; the drivers are HDxx, "XXDP V2 xx DRVR/BOOT".
+#
+# file name     diagnostic
+XXDPXM.SYS      HMXM
+XXDPSM.SYS      HMSM
+DRSXM.SYS       HSAX
+DRSSM.SYS       HSAA
+DIR.SYS         HUDI
+DATE.SYS        HUDA
+DUSZ.SYS        HZDU
+UPDAT.BIC       HUP2
+XTECO.BIC       HUTE
+SETUP.BIC       HUSU
+PATCH.BIC       HUPA
+DXCL.BIN        HUXC
+HELP.TXT        HQHL
+DB.SYS          HDDB
+DD.SYS          HDDD
+DL.SYS          HDDL
+DM.SYS          HDDM
+DR.SYS          HDDR
+DU.SYS          HDDU
+DY.SYS          HDDY
+LP.SYS          HDLP
+MM.SYS          HDMM
+MS.SYS          HDMS
+MU.SYS          HDMU

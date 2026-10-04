@@ -1,6 +1,6 @@
 # Glossary
 
-[← Troubleshooting](18-troubleshooting.md) · [Manual index](README.md)
+[← Troubleshooting](18-troubleshooting.md) · [Manual index](README.md) · [Next: Collecting diagnostics →](20-diagnostics.md)
 
 ---
 
@@ -97,4 +97,4 @@ so that disagreements colour themselves. Distinct from Examine, which replaces b
 
 ---
 
-[← Troubleshooting](18-troubleshooting.md) · [Manual index](README.md)
+[← Troubleshooting](18-troubleshooting.md) · [Manual index](README.md) · [Next: Collecting diagnostics →](20-diagnostics.md)

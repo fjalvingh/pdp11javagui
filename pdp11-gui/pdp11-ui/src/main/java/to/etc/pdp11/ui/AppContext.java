@@ -69,6 +69,9 @@ public final class AppContext {
 
 	private final Path m_dataDir;
 
+	/** Where collected things are kept: see {@link ConfigDir#library()}. */
+	private final Path m_libraryDir;
+
 	/** Set once a machine description has been loaded. Null before that, and after unloading. */
 	private MachineDescription m_machineDescription;
 
@@ -92,9 +95,21 @@ public final class AppContext {
 	 */
 	private DiscardConfirmer m_discardConfirmer = question -> true;
 
+	/**
+	 * A context whose library is inside its data directory, which is what a test wants: nothing it
+	 * collects lands in the real one.
+	 */
 	public AppContext(SettingsStore settingsStore, Logger logger, MemoryCellGroups memoryCellGroups,
 		BitfieldsDefs bitfieldDefs, ConnectionManager connectionManager, WindowManager windowManager,
 		Scheduler scheduler, Path dataDir) {
+		this(settingsStore, logger, memoryCellGroups, bitfieldDefs, connectionManager, windowManager, scheduler, dataDir,
+			dataDir.resolve("library"));
+	}
+
+	public AppContext(SettingsStore settingsStore, Logger logger, MemoryCellGroups memoryCellGroups,
+		BitfieldsDefs bitfieldDefs, ConnectionManager connectionManager, WindowManager windowManager,
+		Scheduler scheduler, Path dataDir, Path libraryDir) {
+		m_libraryDir = libraryDir;
 		m_settingsStore = settingsStore;
 		m_logger = logger;
 		m_memoryCellGroups = memoryCellGroups;
@@ -122,7 +137,8 @@ public final class AppContext {
 		Path dataDir = ConfigDir.data();
 		ConnectionManager connections = new ConnectionManager(groups, logger, scheduler, dataDir);
 		WindowManager windows = new WindowManager(store);
-		AppContext ctx = new AppContext(store, logger, groups, bitfields, connections, windows, scheduler, dataDir);
+		AppContext ctx = new AppContext(store, logger, groups, bitfields, connections, windows, scheduler, dataDir,
+			ConfigDir.library());
 		windows.setContext(ctx);
 		String problem = store.getLastProblem();
 		if(problem != null)
@@ -186,6 +202,11 @@ public final class AppContext {
 	/** Where working files go: SimH's generated configuration, temporary listings. */
 	public Path getDataDir() {
 		return m_dataDir;
+	}
+
+	/** Where collected things are kept: the diagnostics library is {@code diagnostics/} under it. */
+	public Path getLibraryDir() {
+		return m_libraryDir;
 	}
 
 	public MachineDescription getMachineDescription() {

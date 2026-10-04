@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
+import to.etc.pdp11.ui.diag.DiagnosticsWindow;
 import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.dump.MemoryDumperWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
@@ -743,7 +744,7 @@ class WindowsBuildTest {
 		WindowType.LOG, WindowType.MEMORY, WindowType.EXECUTION, WindowType.DISASSEMBLER,
 		WindowType.ASSEMBLER, WindowType.SIMH_CONSOLE, WindowType.MMU, WindowType.MICROCODE,
 		WindowType.NUMBER_CONVERTER, WindowType.BITFIELDS, WindowType.MEMORY_TEST,
-		WindowType.MEMORY_DUMPER, WindowType.MEMORY_LOADER, WindowType.IO_PAGE_SCANNER};
+		WindowType.MEMORY_DUMPER, WindowType.MEMORY_LOADER, WindowType.IO_PAGE_SCANNER, WindowType.DIAGNOSTICS};
 
 	private static void registerSelfContainedWindows(AppContext ctx) {
 		LogWindow.register(ctx);
@@ -760,6 +761,7 @@ class WindowsBuildTest {
 		MemoryDumperWindow.register(ctx);
 		MemoryLoaderWindow.register(ctx);
 		IoPageScannerWindow.register(ctx);
+		DiagnosticsWindow.register(ctx);
 	}
 
 	@Test
