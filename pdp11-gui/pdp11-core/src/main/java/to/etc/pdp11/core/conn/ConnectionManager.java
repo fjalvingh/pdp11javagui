@@ -1,5 +1,7 @@
 package to.etc.pdp11.core.conn;
 
+import to.etc.pdp11.core.mmu.Pdp11Mmu;
+import to.etc.pdp11.core.mmu.TranslationResult;
 import to.etc.pdp11.core.console.AbstractConsole;
 import to.etc.pdp11.core.console.BootRom;
 import to.etc.pdp11.core.console.Console;
@@ -348,6 +350,7 @@ public final class ConnectionManager implements AutoCloseable {
 				m_connection = cc;
 				published = true;
 			}
+			adoptMemory(c);
 			setState(generation, State.CONNECTED, profile.describe());
 		} catch(IOException x) {
 			setState(generation, State.FAILED, x.getMessage());
@@ -629,6 +632,25 @@ public final class ConnectionManager implements AutoCloseable {
 		setState(generation, State.DISCONNECTED, "");
 	}
 
+	/**
+	 * Point shared memory at a machine that has just arrived.
+	 *
+	 * <p>Nothing read from whatever was there before is known to be true of this one, so every
+	 * machine value goes; what was loaded or typed and not deposited stays, because it is what
+	 * the user wants in memory and not a fact about a machine. And virtual addresses find their
+	 * physical word through this console's MMU from now on - through the data map, because that
+	 * is the map an examine of a virtual address reads through, and it is examines that fill
+	 * shared memory in.</p>
+	 */
+	private void adoptMemory(Console console) {
+		m_groups.getSharedMemory().forgetMachineValues();
+		Pdp11Mmu mmu = console.getMmu();
+		m_groups.setVirtualResolver(mmu == null ? null : virtual -> {
+			TranslationResult tr = mmu.translateData(virtual);
+			return tr.isValid() ? tr.address() : null;
+		});
+	}
+
 	/** Close and forget the published connection. The caller holds {@link #m_connectionLock}. */
 	private void closeCurrent() {
 		ConsoleConnection connection = m_connection;
@@ -644,6 +666,14 @@ public final class ConnectionManager implements AutoCloseable {
 		m_separateMachineConsole = false;
 		m_protocolIsMachineConsole = false;
 		closeParts(connection, consoleChannel, drain, transport, console);
+		if(console != null) {
+			//-- No machine: nothing it said can be vouched for any more, but it is still the last
+			//-- thing it said - a dump read a moment ago is still a dump, and can still be written.
+			//-- Stale, then, not forgotten; the next connection forgets, in adoptMemory. And there
+			//-- is no MMU to translate with.
+			m_groups.getSharedMemory().markRun();
+			m_groups.setVirtualResolver(null);
+		}
 	}
 
 	/**

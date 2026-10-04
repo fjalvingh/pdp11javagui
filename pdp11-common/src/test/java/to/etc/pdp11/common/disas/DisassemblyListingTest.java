@@ -8,6 +8,7 @@ import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.common.mem.MemoryCellGroups;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -57,12 +58,46 @@ class DisassemblyListingTest {
 		assertEquals(v(01002), l.getLines().get(0).address());
 	}
 
+	/**
+	 * What should be in memory is what is disassembled - a program loaded or assembled can be
+	 * read before it goes to the machine - but it is not what the processor would execute, and
+	 * the line says so.
+	 */
 	@Test
-	void anEditedValueIsNotWhatTheProcessorWouldExecute() {
-		MemoryCellGroup g = code(01000, 010001);
-		g.cell(0).setEditValue(CellValue.of(0));                    // typed, not deposited
-		DisassemblyListing l = DisassemblyListing.of(g, v(01000), v(01000), null);
-		assertEquals("mov     r0,r1", l.getLines().get(0).text().stripTrailing());
+	void anEditedValueIsShownAndMarkedAsNotOnTheMachine() {
+		MemoryCellGroup g = code(01000, 010001, 010203);
+		g.cell(0).setEditValue(CellValue.of(0240));                 // typed, not deposited
+		DisassemblyListing l = DisassemblyListing.of(g, v(01000), v(01002), null);
+
+		assertEquals("nop", l.getLines().get(0).text().stripTrailing());
+		assertTrue(l.getLines().get(0).pending());
+		assertFalse(l.getLines().get(1).pending(), "the machine holds this one");
+	}
+
+	/** An operand word not deposited makes its whole instruction something the CPU would not run. */
+	@Test
+	void anEditedOperandMarksTheInstructionItBelongsTo() {
+		MemoryCellGroup g = code(01000, 012700, 0);                 // mov #0,r0
+		g.cell(1).setEditValue(CellValue.of(0123));
+		DisassemblyListing l = DisassemblyListing.of(g, v(01000), v(01002), null);
+
+		assertEquals(1, l.getLines().size());
+		assertTrue(l.getLines().get(0).pending());
+	}
+
+	/** And with nothing read, a program loaded from a file is still there to read. */
+	@Test
+	void aProgramNeverDepositedCanBeDisassembled() {
+		MemoryCellGroups groups = new MemoryCellGroups();
+		MemoryCellGroup loaded = groups.addGroup(MemoryAddressType.PHYSICAL22, "Loader");
+		loaded.add(01000).setEditValue(CellValue.of(0240));
+		MemoryCellGroup disassembly = groups.addGroup(MemoryAddressType.VIRTUAL, "Disassembly");
+		disassembly.shiftRange(v(01000), 1, true);
+
+		DisassemblyListing l = DisassemblyListing.of(disassembly, v(01000), v(01000), null);
+
+		assertEquals("nop", l.getLines().get(0).text().stripTrailing());
+		assertTrue(l.getLines().get(0).pending());
 	}
 
 	@Test

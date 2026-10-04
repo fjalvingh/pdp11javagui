@@ -848,7 +848,7 @@ public final class SimhConsole extends AbstractConsole {
 					break;
 				if(!mc.getEditValue().isKnown())
 					continue;
-				if(optimize && mc.getEditValue().equals(mc.getPdpValue()))
+				if(optimize && !mc.isEdited())
 					continue;
 				Address physical = toPhysical(mc.getAddr());
 				if(addrToRegName(physical) != null) {
@@ -923,7 +923,7 @@ public final class SimhConsole extends AbstractConsole {
 		List<ExamineItem> memory = new ArrayList<>();
 		List<ExamineItem> registers = new ArrayList<>();
 		for(MemoryCell mc : List.copyOf(g.getCells())) {
-			if(unknownOnly && mc.getPdpValue().isKnown())
+			if(unknownOnly && mc.isMachineValueCurrent())
 				continue;
 			Address physical = toPhysical(mc.getAddr());
 			String regname = addrToRegName(physical);

@@ -368,7 +368,7 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 					break;
 				if(!mc.getEditValue().isKnown())
 					continue;
-				if(optimize && mc.getEditValue().equals(mc.getPdpValue()))
+				if(optimize && !mc.isEdited())
 					continue;
 				deposit(mc.getAddr(), mc.getEditValue().word());
 				mc.setDeposited();

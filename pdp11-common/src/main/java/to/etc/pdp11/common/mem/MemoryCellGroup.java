@@ -23,6 +23,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * addresses silently clobbers values the user has typed and not yet deposited. It is one of
  * the three things PLAN.md §2 says must be preserved exactly.</p>
  *
+ * <p>It only means anything for cells with values of their own - the I/O page, and groups
+ * that {@linkplain #setSharingMemory do not share}. A cell over shared memory cannot be
+ * clobbered: an examine there sets the machine value and never the edit.</p>
+ *
+ * <h2>Sharing memory</h2>
+ *
+ * <p>By default a cell at a word of memory is a view on the {@link SharedMemory}'s word, which
+ * every other window's cell at that word also is. A group that writes values it does not mean
+ * as edits - the memory test's patterns - turns that off and keeps its own; what it reads still
+ * reaches the image through the propagation bus.</p>
+ *
  * <h2>The listener list</h2>
  *
  * <p>A real list, not the Pascal's single delegate. See {@link MemoryCellListener}.</p>
@@ -63,6 +74,8 @@ public final class MemoryCellGroup {
 	 * windows the user edits in.
 	 */
 	private volatile boolean m_pdpOverwritesEdit = true;
+
+	private volatile boolean m_sharingMemory = true;
 
 	private final List<MemoryCellListener> m_listeners = new CopyOnWriteArrayList<>();
 
@@ -111,6 +124,32 @@ public final class MemoryCellGroup {
 
 	public void setPdpOverwritesEdit(boolean pdpOverwritesEdit) {
 		m_pdpOverwritesEdit = pdpOverwritesEdit;
+	}
+
+	public boolean isSharingMemory() {
+		return m_sharingMemory;
+	}
+
+	/**
+	 * Whether cells made from now on at a word of memory share the image's word. Set it before
+	 * adding cells; cells already made keep what they were made over.
+	 */
+	public void setSharingMemory(boolean sharingMemory) {
+		m_sharingMemory = sharingMemory;
+	}
+
+	/** How many edits made in this group are still waiting to be deposited. */
+	public int getPendingEditCount() {
+		return m_owner.getSharedMemory().getPendingCountOwnedBy(this);
+	}
+
+	/**
+	 * Undo every edit this group made that is still waiting to be deposited, in the image as a
+	 * whole - including at words this group no longer shows. What another window has since
+	 * typed over is that window's, and stays.
+	 */
+	public void discardOwnedEdits() {
+		m_owner.getSharedMemory().discardEditsOwnedBy(this);
 	}
 
 	public AddressRange getRange() {
@@ -198,7 +237,7 @@ public final class MemoryCellGroup {
 		synchronized(m_owner.lock()) {
 			if(addr.type() != m_type)
 				throw new IllegalArgumentException("Cell address " + addr + " does not match this group's " + m_type);
-			MemoryCell mc = new MemoryCell(this, addr);
+			MemoryCell mc = m_owner.newCell(this, addr);
 			m_cells.add(mc);
 			m_byAddress.putIfAbsent(addr.val(), mc);
 			m_range = m_range.extend(addr.val());
@@ -302,7 +341,10 @@ public final class MemoryCellGroup {
 	 * @param count how many words. Negative means "as many as there are now", matching the
 	 *              Pascal's {@code newsize < 0}.
 	 * @param optimize whether to keep the values of addresses that survive the move. False
-	 *                 discards everything, which is what a "reload, trust nothing" wants.
+	 *                 discards everything, which is what a "reload, trust nothing" wants - for
+	 *                 cells with values of their own. A word of shared memory is what the
+	 *                 application knows about that word, not this group's to throw away; the
+	 *                 caller rereads it if it does not trust it.
 	 */
 	public void shiftRange(Address start, int count, boolean optimize) {
 		if(start == null)
@@ -330,9 +372,10 @@ public final class MemoryCellGroup {
 				MemoryCell old = previous.get(mc.getAddr().val());
 				if(old == null)
 					continue;
-				//-- Everything but the address, which is the one thing that just changed.
-				mc.setPdpValue(old.getPdpValue());
-				mc.setEditValue(old.getEditValue());
+				//-- Everything but the address, which is the one thing that just changed. A cell
+				//-- over the image already has its values - they are the word's, not the cell's.
+				if(!mc.isShared() && !old.isShared())
+					mc.copyValuesFrom(old);
 				mc.setName(old.getName());
 				mc.setInfo(old.getInfo());
 				mc.setListingLineNr(old.getListingLineNr());

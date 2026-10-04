@@ -30,6 +30,12 @@ public final class MemoryWindow extends ToolWindow {
 		return m_panel;
 	}
 
+	/** Edits made here and not deposited outlive the window; ask what to do with them. */
+	@Override
+	protected boolean mayClose() {
+		return SharedMemoryActions.mayClose(this, m_panel.getGroup());
+	}
+
 	@Override
 	protected void onShowing() {
 		m_panel.attach();

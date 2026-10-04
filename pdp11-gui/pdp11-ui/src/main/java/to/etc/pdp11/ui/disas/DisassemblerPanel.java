@@ -126,8 +126,9 @@ public final class DisassemblerPanel extends JPanel {
 		//-- can see, whatever the physical machine is.
 		m_group = context.getMemoryCellGroups().addGroup(MemoryAddressType.VIRTUAL, "Disassembly");
 		m_group.setUsageTag("disassembler");
-		//-- Code being examined is never edited here, so nothing needs protecting from incoming
-		//-- values; the whole point of this window is to show what the machine actually holds.
+		//-- Code is never edited here, so nothing needs protecting from incoming values. What it
+		//-- shows is what should be in memory: what the machine holds, or what was loaded or
+		//-- assembled over it and not deposited yet, which is marked as such.
 		m_group.setPdpOverwritesEdit(true);
 		m_group.shiftRange(m_start, pageWords(m_start, LINES_PER_PAGE), false);
 		m_end = endOf(m_start, pageWords(m_start, LINES_PER_PAGE));
@@ -423,16 +424,29 @@ public final class DisassemblerPanel extends JPanel {
 	};
 
 	private final ConnectionManager.Listener m_connectionListener = (manager, state) -> AppContext.onUi(() -> {
-		if(state != ConnectionManager.State.CONNECTED) {
-			//-- Nothing read from the old machine can be trusted about the new one. Through the
-			//-- accessor: a lambda in a field initializer may not read a blank final directly.
-			getGroup().invalidate();
-		}
+		//-- What a machine going or coming means for what was read from it is shared memory's
+		//-- business, and ConnectionManager sees to it for every window at once.
 		updateDisplay();
 	});
 
+	/**
+	 * Something was loaded, typed, deposited or discarded somewhere in shared memory - perhaps
+	 * in this range. Decoding a page is cheap, so it is simply done again, once per burst.
+	 */
+	private final java.util.concurrent.atomic.AtomicBoolean m_redecodeQueued = new java.util.concurrent.atomic.AtomicBoolean();
+
+	private final Runnable m_pendingListener = () -> {
+		if(m_redecodeQueued.compareAndSet(false, true)) {
+			AppContext.onUi(() -> {
+				m_redecodeQueued.set(false);
+				updateDisplay();
+			});
+		}
+	};
+
 	public void attach() {
 		detach();
+		m_context.getMemoryCellGroups().getSharedMemory().addChangeListener(m_pendingListener);
 		m_context.getMachineState().addListener(m_machineListener);
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		//-- Opened after the machine stopped, which is the ordinary case: catch up rather than
@@ -447,6 +461,7 @@ public final class DisassemblerPanel extends JPanel {
 	}
 
 	public void detach() {
+		m_context.getMemoryCellGroups().getSharedMemory().removeChangeListener(m_pendingListener);
 		m_context.getMachineState().removeListener(m_machineListener);
 		m_context.getConnectionManager().removeListener(m_connectionListener);
 	}
@@ -524,6 +539,11 @@ public final class DisassemblerPanel extends JPanel {
 				if(line.atPc()) {
 					c.setBackground(UiColors.PC_BACKGROUND);
 					c.setForeground(UiColors.PC_TEXT);
+				} else if(line.pending() && !selected) {
+					//-- Code that is loaded or assembled and not deposited: what the machine
+					//-- would run is something else.
+					c.setBackground(UiColors.EDITED_BACKGROUND);
+					c.setForeground(UiColors.EDITED_TEXT);
 				}
 			}
 			return c;

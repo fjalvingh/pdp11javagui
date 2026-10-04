@@ -64,6 +64,12 @@ public final class UiColors {
 	/** A value the machine has never been asked for. */
 	public static final Color UNKNOWN_TEXT = new Color(0x80, 0x80, 0x82);
 
+	/**
+	 * A word read before the machine last ran: still shown, because it is the best there is,
+	 * but the program may have changed it since. Between unknown and plain text, and cooler.
+	 */
+	public static final Color STALE_TEXT = new Color(0x8C, 0x9C, 0xB4);
+
 	/** Detail beside something else: a status bar's second half, an explanatory line. */
 	public static final Color SECONDARY_TEXT = new Color(0x9A, 0x9A, 0x9C);
 

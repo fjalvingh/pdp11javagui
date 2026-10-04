@@ -118,7 +118,7 @@ public final class AppContext {
 		m_windowManager = windowManager;
 		m_scheduler = scheduler;
 		m_dataDir = dataDir;
-		m_machineState.bind(connectionManager);
+		m_machineState.bind(connectionManager, memoryCellGroups.getSharedMemory());
 		m_assembler = new AssemblerModel(this);
 	}
 

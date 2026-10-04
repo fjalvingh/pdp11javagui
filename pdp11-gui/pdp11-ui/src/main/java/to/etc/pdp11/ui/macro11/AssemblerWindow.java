@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.macro11;
 
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.mem.SharedMemoryActions;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowKey;
 import to.etc.pdp11.ui.window.WindowType;
@@ -39,6 +40,16 @@ public final class AssemblerWindow extends ToolWindow {
 	@Override
 	protected void onFirstShow() {
 		m_panel.loadLastSource();
+	}
+
+	/**
+	 * Assembled code not yet deposited outlives the window; ask what to do with it. Not asked
+	 * when nothing has been assembled - asking for the group would make one.
+	 */
+	@Override
+	protected boolean mayClose() {
+		AssemblerModel model = context().getAssembler();
+		return SharedMemoryActions.mayClose(this, model.hasCode() ? model.getGroup() : null);
 	}
 
 	@Override

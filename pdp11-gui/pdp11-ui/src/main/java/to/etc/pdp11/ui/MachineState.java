@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui;
 
 import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.mem.SharedMemory;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 
@@ -49,6 +50,9 @@ public final class MachineState {
 	/** Where the machine stopped, as a virtual address, or null if nothing has said. */
 	private volatile Address m_pc;
 
+	/** Told when the machine runs, so it can mark what was read before as stale. */
+	private volatile SharedMemory m_memory;
+
 	/**
 	 * Where a program that has just been loaded starts, or null.
 	 *
@@ -84,14 +88,20 @@ public final class MachineState {
 	 * whether or not anybody has that window open, and a PC learned while it was shut is still
 	 * the PC.</p>
 	 */
-	public void bind(ConnectionManager manager) {
+	public void bind(ConnectionManager manager, SharedMemory memory) {
+		m_memory = memory;
 		manager.addListener((m, state) -> {
 			Console console = m.getConsole();
 			if(state == ConnectionManager.State.CONNECTED && console != null) {
 				//-- A fresh connection knows nothing about the machine, whatever we thought we
 				//-- knew about the last one.
 				set(ExecutionState.UNKNOWN, null);
-				console.setExecutionStopListener((c, pc) -> stopped(pc));
+				console.setExecutionStopListener((c, pc) -> {
+					//-- The console only reports a stop the machine came to by running, and
+					//-- running is what makes memory stale. A single step arrives only as this.
+					memory.markRun();
+					stopped(pc);
+				});
 			} else if(state != ConnectionManager.State.CONNECTING) {
 				set(ExecutionState.UNKNOWN, null);
 			}
@@ -103,8 +113,14 @@ public final class MachineState {
 		set(ExecutionState.STOPPED, pc == null ? m_pc : pc);
 	}
 
-	/** Something was started; the PC we knew is now stale but is the last thing we saw. */
+	/**
+	 * Something was started; the PC we knew is now stale but is the last thing we saw, and so is
+	 * everything read from memory.
+	 */
 	public void running() {
+		SharedMemory memory = m_memory;
+		if(memory != null)
+			memory.markRun();
 		set(ExecutionState.RUNNING, m_pc);
 	}
 

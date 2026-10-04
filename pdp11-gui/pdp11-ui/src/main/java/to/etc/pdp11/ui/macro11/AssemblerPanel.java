@@ -600,6 +600,7 @@ public final class AssemblerPanel extends JPanel {
 		//-- Remove first: showing a window that is already visible runs this again, and a
 		//-- listener list that grows one entry per raise is a leak that presents as a slow window.
 		detach();
+		m_grid.attach();
 		m_model.addListener(m_modelListener);
 		m_context.getMachineState().addListener(m_machineListener);
 		m_context.getConnectionManager().addListener(m_connectionListener);
@@ -607,6 +608,7 @@ public final class AssemblerPanel extends JPanel {
 	}
 
 	public void detach() {
+		m_grid.detach();
 		m_model.removeListener(m_modelListener);
 		m_context.getMachineState().removeListener(m_machineListener);
 		m_context.getConnectionManager().removeListener(m_connectionListener);

@@ -251,6 +251,116 @@ The rule, implemented in `MemoryCellGroups` and `MemoryCellGroup`:
    written by the command thread and read by the EDT one word at a time; a lock per word of a
    bulk examine would buy an exclusion nobody needs.
 
+**Amended: below the I/O page, one word per address.** See "Shared memory" below. The rules
+above carry over unchanged; what went is the per-window copy of every word.
+
+### Shared memory - one word per address
+
+**The problem.** Every window owned its own cells, and only the machine value propagated. So
+what the Loader read from a file, or the Assembler produced, existed only in that window: the
+Disassembler could not show it, the Memory window could not show it, and the only way to get it
+anywhere else was to deposit it to the machine first. That is the Pascal's design (per-form
+groups on one bus); it is replaced.
+
+**The model.** `SharedMemory` in `pdp11-common` - not `MemoryImage`, which the disassembler
+already has - is a sparse map from 22-bit physical address to one `MemoryWord` per word below
+the I/O page that anything has touched. A `MemoryWord` holds the values: what the machine said,
+the pending edit (unknown means none), who made the edit, and the run generation it was read
+at. A `MemoryCell` is now a *view* on a word: it keeps what is per view - its address as the
+window expresses it, `name`, `info`, `listingLineNr` - and every cell at the same physical word,
+in any window, points at the same `MemoryWord`. That is a smaller change than the sketch here
+first proposed (groups as address lists, the cell gone): every window and console kept its
+`MemoryCell` API and got the sharing underneath. Same monitor, same copy-out rule, same
+listeners-outside-the-lock as above.
+
+| State | Machine value | Edit |
+|---|---|---|
+| unknown | never read, or forgotten | none |
+| read | what the machine said | none, or equal to it |
+| stale | read before the machine last ran | none, or equal to it |
+| pending | any of the above | differs from a current machine value, or the machine value is not current |
+
+- **Stale is a generation, not a sweep.** `SharedMemory.markRun()` counts runs; a word
+  remembers the count it was read at. `MachineState` marks a run on Reset-and-start and Continue
+  (`running()`) and on every stop the console reports, which is how a single step arrives.
+  Pending edits are not affected. An edit equal to a stale value *is* pending - the program may
+  have written that word since - and an examine of what is not unknown (`unknownOnly`) rereads
+  stale words: the consoles ask `isMachineValueCurrent()`, not "is it known".
+- **What shows is the effective value** (`MemoryCell.getEditValue()`): the pending edit where
+  there is one, the machine value otherwise. The Disassembler decodes it too, and marks every
+  line holding a word the machine does not have (`DisassemblyListing.Line.pending`) - which
+  reverses the old rule that only what the machine answered is decoded. A loaded program is
+  readable before it is deposited, and says so.
+- **An examine sets the machine value and never the edit.** So `pdpOverwritesEdit` means
+  nothing for a shared word, and an edit goes only by being deposited or discarded. The Memory
+  window's Examine all no longer throws away what was typed; it has **Discard changes** for
+  that.
+- **The bus still tells, for shared words.** One copy has nothing to copy, but other windows
+  over the word must still repaint. Its equality short-circuit there is a version: each cell
+  remembers the word's version it last saw, and is told only when it is behind - which is what
+  stops two windows re-announcing one word to each other. Edits, deposits, discards, runs and
+  forgetting are announced once per burst through `SharedMemory.addChangeListener`.
+- **A group may keep its own values** (`setSharingMemory(false)`). The Memory Test does: its
+  patterns are not edits, and as edits they would take over words the user has loaded and not
+  deposited. What it reads still reaches shared memory over the bus.
+
+**The I/O page stays on the old mechanism.** Reading a device register can change it and its
+value changes on its own, so it is not memory. Cells there have a `MemoryWord` of their own, the
+propagation bus copies machine values between them as before, and examining one also gives up
+what was typed there (`MemoryCell.setExamined`). That includes R0-R7, the PSW and the MMU's own
+registers. Device registers are never stale.
+
+**Virtual addresses** resolve through a `VirtualResolver` on `MemoryCellGroups` when a cell is
+made. `ConnectionManager` installs the console's MMU, through the data map because that is the
+map an examine of a virtual address reads through; with no connection it is the identity of an
+MMU with relocation off. So a Disassembler at virtual 1000 and a Memory window at physical 1000
+are one word until the MMU says otherwise.
+
+**Who owns an edit.** A pending edit records the group whose cell made it; the last writer owns
+the word, and writing the edit that is already there changes nothing. Closing the Memory, Loader
+or Assembler window with edits it still owns asks: undo them, keep them, or cancel
+(`ToolWindow.mayClose`). A window that is disposed leaves its edits pending and ownerless, listed
+as "(window closed)". The Assembler drops the edits it still owns before installing a new
+program, so words the new one no longer covers do not linger.
+
+**Controls.**
+
+- *Per window*: Examine all rereads that window's range, Deposit changed / Deposit all deposit
+  it, and the Memory window's popup has Discard changes - all as before, now over shared words.
+- *Global*, the main window's **Memory** menu (`SharedMemoryActions`, over
+  `SharedMemoryOperations` in core): **Deposit changed** deposits every pending word, at the
+  console's width, counting and leaving pending any it cannot address. **Reread shown** examines
+  every shared word some group holds, once. **Check MMU** below. **Forget all** returns
+  everything to unknown and drops pending edits, after confirming. There is deliberately no
+  global "reread all" and no global "deposit all".
+- **Pending changes are impossible to miss**: a "N words to deposit" button in the main
+  window's status bar, shown only when there are any, opens the **Pending changes** window -
+  every pending word, the machine value (marked when old), the value to deposit and who made it,
+  with Deposit changed, Discard selected and Discard all. Quitting with pending changes asks.
+
+**Check MMU** re-examines the MMU registers and the PSW, re-evaluates the MMU, counts the
+registers that changed, and calls `MemoryCellGroups.reresolveVirtual()`, which moves every
+virtual cell that now names a different word to that word. It does *not* invalidate memory:
+every console examines and deposits by physical address, so what was read was true of the
+physical word it was filed under. A stale mapping makes a virtual view show the wrong words, not
+wrong values. An edit typed into a virtual view stays at the physical word it was typed at.
+
+**Connections.** *Amended:* disconnecting makes every machine value **stale**, not unknown -
+it is still the last thing the machine said, and a dump read a moment ago must still be
+writable (`MemoryDumperPanelTest` holds that). Connecting forgets every machine value and
+keeps pending edits. *Not done:* asking, on connecting to a different profile, whether to keep
+the pending edits; they are always kept.
+
+**Known consequences.**
+
+- The Memory Dumper writes what its window shows, so a word with an edit pending is written
+  with the edit. A dump of a range holding a loaded, undeposited program contains the program.
+- A virtual cell is bound when it is made. A group re-ranged after the MMU changed resolves
+  again; one that is not waits for Check MMU.
+- Deposits of a virtual cell still translate at deposit time, through the instruction map, as
+  the Pascal does. With separate I and D space mapped differently, the word a virtual cell shows
+  (data map) and the word it deposits to can differ.
+
 ### Preserving execution-stop ordering
 
 `MonitorTimerCallback` (`ConsoleGenericU.pas:521-525`) deliberately fires `OnExecutionStop`
@@ -392,6 +502,10 @@ Three semantics must be preserved exactly, or propagation will storm:
    Keep the equality check and add a depth guard as a backstop.
 
 Only `pdpValue` propagates; `editValue` never does.
+
+**Amended:** below the I/O page every cell at a word shares that word's values (§1, "Shared
+memory"), so the bus copies nothing there; it only tells the other windows, with a version as
+its equality check. The copying, and the three guards as written, are now the I/O page's.
 
 Note `Pdp11MmuU.pas:153` subscribes to this bus and is **not a window** — the MMU recomputes
 its own state when anything deposits to PSW or an MMU register. That is business logic on

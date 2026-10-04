@@ -81,13 +81,20 @@ silently diverging.
   show back with `AppContext.onUi`. Long operations take a `ProgressDialog`, which is the UI's
   implementation of the core's `ProgressMonitor`.
 - **The memory cells are guarded by one monitor, and hand out copies.** `MemoryCellGroups`,
-  every `MemoryCellGroup` under it and their indexes are guarded by `MemoryCellGroups.lock()` -
-  the innermost lock in the application, never held across a call that leaves those two classes.
-  `getGroups()`, `getCells()` and `cellsAt()` answer with an immutable copy, so a job may walk
-  what it was handed on any thread; `holdsExactly` is how it then asks whether that is still
-  what the group holds. A cell's own fields are `volatile` rather than lock-guarded. Do not
-  reintroduce a live view "for speed": three separate bugs came out of the old one. PLAN.md §1,
-  "Who owns the memory cells".
+  every `MemoryCellGroup` under it, their indexes and `SharedMemory`'s map are guarded by
+  `MemoryCellGroups.lock()` - the innermost lock in the application, never held across a call
+  that leaves those classes. `getGroups()`, `getCells()`, `cellsAt()` and `getPending()` answer
+  with an immutable copy, so a job may walk what it was handed on any thread; `holdsExactly` is
+  how it then asks whether that is still what the group holds. A word's own fields are
+  `volatile` rather than lock-guarded. Do not reintroduce a live view "for speed": three
+  separate bugs came out of the old one. PLAN.md §1, "Who owns the memory cells".
+- **Below the I/O page, memory is shared.** Every cell at a word of memory, in every window, is
+  a view on one `MemoryWord` in `SharedMemory`, so an edit made in one window is the edit in all
+  of them and a loaded program can be disassembled before it is deposited. Do not give a window
+  its own copy of memory values to "protect" them: an examine never touches an edit, so there is
+  nothing to protect them from. A group whose values are not edits - the memory test's patterns -
+  says `setSharingMemory(false)`. The I/O page is not memory and keeps per-cell values and the
+  old propagation bus. PLAN.md §1, "Shared memory".
 - **No window tells another window anything.** Shared machine state - is it running, where is the
   PC, where does a just-loaded program start - lives on `MachineState`, and which cell the user is
   looking at lives on `CellSelection`.
@@ -203,15 +210,24 @@ instructions for keying memory in on a real front panel — and are in scope.
 ## What a memory cell's two values mean
 
 Every window that shows memory shows `MemoryCell`, which carries a **machine value** (what the
-PDP-11 last said) and an **edit value** (what should be there instead). The difference is the
-window's whole vocabulary and is worth stating once:
+PDP-11 last said) and an **edit value** (what should be there instead). Below the I/O page both
+live in the shared `MemoryWord`, so what follows is true of a word in every window at once. The
+difference is the window's whole vocabulary and is worth stating once:
 
-- an **examine** sets both, so nothing shows as changed;
-- **typing**, and **loading a file**, set only the edit value, so every affected word shows as
-  changed until it has been deposited - which is what makes the Deposit button mean something;
-- a **verify** sets only the machine value, so the file's values stay put and the disagreements
-  colour themselves. This only works because those groups have `pdpOverwritesEdit` off; with it
-  on, the read would silently replace what the user is about to write.
+- `getEditValue()` is what should be there: the **pending edit** if there is one, the machine
+  value otherwise. That is what a window shows and what a deposit writes;
+- an **examine** sets only the machine value, never the edit - so it cannot eat what was typed
+  or loaded, in this window or another (a device register still gives up its typed value when
+  read; `setExamined`);
+- **typing**, and **loading a file**, set the edit, so every affected word shows as changed
+  until it has been deposited - which is what makes the Deposit button mean something - and
+  shows so everywhere, owned by the window that made it;
+- a **verify** is an examine, so the file's values stay put and the disagreements colour
+  themselves;
+- an edit goes away by being **deposited** (`setDeposited`) or **discarded** (`discardEdit`),
+  nothing else;
+- once the machine **runs**, every machine value is stale (`isStale`): still shown, reread by an
+  examine of what is not unknown, and an edit equal to it counts as pending again.
 
 A cell whose value was never read is `CellValue.UNKNOWN`, and that is not zero. When a positional
 file format has to write something for one, write zero and **report how many** - the Pascal writes

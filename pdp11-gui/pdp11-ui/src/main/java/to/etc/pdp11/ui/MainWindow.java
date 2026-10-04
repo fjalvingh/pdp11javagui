@@ -11,6 +11,7 @@ import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.macro11.ExamplePrograms;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
+import to.etc.pdp11.ui.mem.SharedMemoryActions;
 import to.etc.pdp11.ui.settings.SettingsDialog;
 import to.etc.pdp11.ui.terminal.TerminalStyle;
 import to.etc.pdp11.ui.window.ToolWindow;
@@ -119,7 +120,23 @@ public final class MainWindow extends JFrame {
 		//-- AppContext.confirmDiscard.
 		context.setDiscardConfirmer(this::askBeforeDiscarding);
 		onConnectionState(context.getConnectionManager());
+
+		//-- For the life of the application, like the machine console above: what is waiting to be
+		//-- deposited is shown whichever windows are open, including none.
+		m_panel.getPendingButton().addActionListener(e -> m_context.getWindowManager().open(WindowType.PENDING_CHANGES));
+		context.getMemoryCellGroups().getSharedMemory().addChangeListener(() -> {
+			if(m_pendingQueued.compareAndSet(false, true)) {
+				SwingUtilities.invokeLater(() -> {
+					m_pendingQueued.set(false);
+					m_panel.showPending(m_context.getMemoryCellGroups().getSharedMemory().getPendingCount());
+				});
+			}
+		});
+		m_panel.showPending(context.getMemoryCellGroups().getSharedMemory().getPendingCount());
 	}
+
+	/** Whether a pending-count update is already on its way; a load announces once per word. */
+	private final java.util.concurrent.atomic.AtomicBoolean m_pendingQueued = new java.util.concurrent.atomic.AtomicBoolean();
 
 	/** What is in the window, for a test that wants to know what it showed. */
 	/**
@@ -243,9 +260,59 @@ public final class MainWindow extends JFrame {
 
 		JMenuBar bar = new JMenuBar();
 		bar.add(file);
+		bar.add(buildMemoryMenu());
 		bar.add(m_windowsMenu);
 		bar.add(help);
 		return bar;
+	}
+
+	/**
+	 * What acts on shared memory as a whole rather than on one window's range. PLAN.md §1,
+	 * "Shared memory". The items that need a machine follow the connection when the menu opens.
+	 */
+	private JMenu buildMemoryMenu() {
+		JMenuItem pending = new JMenuItem("Pending changes");
+		pending.addActionListener(e -> m_context.getWindowManager().open(WindowType.PENDING_CHANGES));
+		JMenuItem deposit = new JMenuItem("Deposit changed");
+		deposit.setToolTipText("Write every word waiting to be deposited, from whichever window, to the machine");
+		deposit.addActionListener(e -> SharedMemoryActions.depositChanged(m_context, this));
+		JMenuItem reread = new JMenuItem("Reread shown");
+		reread.setToolTipText("Read again every word of memory an open window shows, each once");
+		reread.addActionListener(e -> SharedMemoryActions.rereadShown(m_context, this));
+		JMenuItem mmu = new JMenuItem("Check MMU");
+		mmu.setToolTipText("Read the MMU again, and move windows that show virtual addresses to where it now points");
+		mmu.addActionListener(e -> SharedMemoryActions.checkMmu(m_context, this, null));
+		JMenuItem forget = new JMenuItem("Forget all ...");
+		forget.setToolTipText("Start with a clean slate: nothing read, nothing waiting to be deposited");
+		forget.addActionListener(e -> SharedMemoryActions.forgetAll(m_context, this));
+
+		JMenu menu = new JMenu("Memory");
+		menu.setMnemonic(KeyEvent.VK_M);
+		menu.add(pending);
+		menu.addSeparator();
+		menu.add(deposit);
+		menu.add(reread);
+		menu.add(mmu);
+		menu.addSeparator();
+		menu.add(forget);
+		menu.addMenuListener(new MenuListener() {
+			@Override
+			public void menuSelected(MenuEvent e) {
+				boolean connected = m_context.getConnectionManager().isConnected();
+				deposit.setEnabled(connected && m_context.getMemoryCellGroups().getSharedMemory().getPendingCount() > 0);
+				reread.setEnabled(connected);
+				mmu.setEnabled(connected);
+			}
+
+			@Override
+			public void menuDeselected(MenuEvent e) {
+			}
+
+			@Override
+			public void menuCanceled(MenuEvent e) {
+			}
+		});
+		return menu;
 	}
 
 	/**
@@ -703,6 +770,11 @@ public final class MainWindow extends JFrame {
 		//-- Before anything is torn down: this is the last chance to keep the source, and the
 		//-- window that holds it may not even be open.
 		if(!m_context.getAssembler().confirmDiscard("quit"))
+			return;
+		//-- Memory is not saved anywhere: what has not been deposited goes with the application.
+		int pending = m_context.getMemoryCellGroups().getSharedMemory().getPendingCount();
+		if(pending > 0 && !m_context.confirmDiscard(pending + (pending == 1 ? " word has" : " words have")
+			+ " been changed and not deposited to the machine. Quit anyway?"))
 			return;
 		m_context.getLogger().log(LogChannel.OTHER, "Shutting down");
 		m_context.getWindowManager().rememberGeometry(this, WindowManager.MAIN_WINDOW_KEY);

@@ -74,7 +74,10 @@ public final class MemoryCellGroupList extends JPanel {
 
 	private final MemoryCellListener m_listener = (group, cell) -> AppContext.onUi(() -> {
 		//-- What the machine says becomes what is shown. Only reached when the group allows it.
-		cell.setEditValue(cell.getPdpValue());
+		//-- The edit is given up only where it is this window's alone; a word of memory may be
+		//-- holding an edit made somewhere else.
+		if(!cell.isShared())
+			cell.discardEdit();
 		repaintCell(cell);
 	});
 
@@ -253,8 +256,8 @@ public final class MemoryCellGroupList extends JPanel {
 				return;
 			}
 			for(MemoryCell mc : cells) {
-				if(mc.getPdpValue().isKnown())
-					mc.setEditValue(mc.getPdpValue());
+				if(mc.getPdpValue().isKnown() && !mc.isShared())
+					mc.discardEdit();
 			}
 			AppContext.onUi(this::refresh);
 		});
@@ -266,8 +269,7 @@ public final class MemoryCellGroupList extends JPanel {
 			return;
 		m_context.onConsole("Examining " + cell.getAddr().toOctal(), console -> {
 			CellValue v = console.examine(cell.getAddr());
-			cell.setPdpValue(v);
-			cell.setEditValue(v);
+			cell.setExamined(v);
 			if(cell.getGroup().getOwner() != null)
 				cell.getGroup().getOwner().syncMemoryCells(cell);
 			AppContext.onUi(() -> repaintCell(cell));

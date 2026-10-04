@@ -168,6 +168,11 @@ public final class MemoryPanel extends JPanel {
 		fill.addActionListener(e -> m_grid.fillWithAddress());
 		JMenuItem export = new JMenuItem("Export as SimH DO script ...");
 		export.addActionListener(e -> exportSimhScript());
+		JMenuItem discard = new JMenuItem("Discard changes");
+		discard.setToolTipText("Give up what was typed or loaded at these addresses and not deposited");
+		discard.addActionListener(e -> m_grid.discardChanges());
+		menu.add(discard);
+		menu.addSeparator();
 		menu.add(clear);
 		menu.add(fill);
 		menu.addSeparator();
@@ -390,6 +395,7 @@ public final class MemoryPanel extends JPanel {
 
 	public void attach() {
 		detach();
+		m_grid.attach();
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		onConnectionChanged();
 		examineIfConnected();
@@ -409,6 +415,7 @@ public final class MemoryPanel extends JPanel {
 	}
 
 	public void detach() {
+		m_grid.detach();
 		m_context.getConnectionManager().removeListener(m_connectionListener);
 	}
 

@@ -183,8 +183,7 @@ public final class IoPageScanner {
 				if(!v.isKnown())
 					continue;
 				MemoryCell mc = target.add(a);
-				mc.setPdpValue(v);
-				mc.setEditValue(v);
+				mc.setExamined(v);
 				//-- Named here rather than in a pass afterwards, so the row the window has just
 				//-- shown says "DL11.RCSR" instead of appearing blank and being relabelled later.
 				if(nameFromDescription(groups, mc))

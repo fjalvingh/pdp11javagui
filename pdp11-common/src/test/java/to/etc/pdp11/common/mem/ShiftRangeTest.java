@@ -55,12 +55,23 @@ class ShiftRangeTest {
 	}
 
 	@Test
-	void withoutOptimizeEverythingIsForgotten() {
-		MemoryCellGroup g = filled(groups(), 01000, 4);
-		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 01000), 4, false);
+	void withoutOptimizeEverythingOfItsOwnIsForgotten() {
+		MemoryCellGroup g = filled(groups(), 0177560, 4);         // the console's registers
+		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 0177560), 4, false);
 		for(MemoryCell mc : g.getCells()) {
 			assertFalse(mc.getPdpValue().isKnown(), "a reload that trusts nothing keeps nothing");
 		}
+	}
+
+	/**
+	 * A word of memory is the image's, not the group's: what the application knows about it is
+	 * not this window's to throw away. A caller that does not trust it rereads it.
+	 */
+	@Test
+	void withoutOptimizeMemoryStillKnowsWhatItKnew() {
+		MemoryCellGroup g = filled(groups(), 01000, 4);
+		g.shiftRange(Address.of(MemoryAddressType.PHYSICAL16, 01000), 4, false);
+		assertEquals(0100, g.cell(0).getPdpValue().word());
 	}
 
 	@Test

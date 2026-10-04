@@ -19,6 +19,7 @@ public enum WindowType {
 	MEMORY_TEST("Memory test"),
 	MEMORY_DUMPER("Memory dumper"),
 	MEMORY_LOADER("Memory loader"),
+	PENDING_CHANGES("Pending changes"),
 	IO_PAGE_SCANNER("I/O page scanner"),
 	MMU("MMU"),
 	MICROCODE("Microcode"),

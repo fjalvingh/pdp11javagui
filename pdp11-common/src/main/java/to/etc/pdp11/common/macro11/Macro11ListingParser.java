@@ -233,15 +233,18 @@ public final class Macro11ListingParser {
 			if(group.getType() != m_type)
 				throw new IllegalArgumentException("Listing parsed at " + m_type
 					+ " cannot be installed into a " + group.getType() + " group");
+			//-- The previous program's edits go first, so a word the new one no longer covers does
+			//-- not stay pending in shared memory with nothing left to say where it came from.
+			group.discardOwnedEdits();
 			group.clear();
 			for(Word w : m_words) {
 				MemoryCell mc = group.add(Address.of(m_type, w.m_addrValue));
+				//-- The listing says what memory *should* hold, so it is an edit, and what the
+				//-- machine holds is left as whatever is known about it. Every word the machine is
+				//-- not known to hold already shows as changed until it has been deposited - the
+				//-- same rule the Memory Loader follows.
 				mc.setEditValue(w.m_value);
 				mc.setListingLineNr(w.m_listingLine);
-				//-- What the machine holds at this address is still unknown; the file says what it
-				//-- *should* hold. That difference is what makes every word show as changed until
-				//-- it has been deposited, and it is the same rule the Memory Loader follows.
-				mc.setPdpValue(CellValue.UNKNOWN);
 			}
 			return new Macro11Listing(m_lines, m_sourceLineOf, m_problems, group, m_transferAddress);
 		}

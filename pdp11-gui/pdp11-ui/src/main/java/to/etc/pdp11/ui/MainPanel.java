@@ -5,6 +5,7 @@ import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.ui.terminal.GlassTerminalView;
 import to.etc.pdp11.ui.terminal.TerminalView;
 
+import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
@@ -25,6 +26,13 @@ public final class MainPanel extends JPanel {
 
 	private final JLabel m_detail = new JLabel();
 
+	/**
+	 * How many words are waiting to be deposited, from whichever window. Shown only when there
+	 * are some, and a button, because the list of them is one click away (PLAN.md §1, "Shared
+	 * memory": pending changes must be impossible to miss).
+	 */
+	private final JButton m_pending = new JButton();
+
 	private final JPanel m_statusBar;
 
 	public MainPanel() {
@@ -39,10 +47,15 @@ public final class MainPanel extends JPanel {
 	}
 
 	private JPanel buildStatusBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow][]", "[]"));
 		bar.add(m_state);
 		m_detail.setForeground(UiColors.SECONDARY_TEXT);
 		bar.add(m_detail, "growx");
+		m_pending.setForeground(UiColors.EDITED_TEXT);
+		m_pending.setBackground(UiColors.EDITED_BACKGROUND);
+		m_pending.setToolTipText("Show what is waiting to be deposited");
+		m_pending.setVisible(false);
+		bar.add(m_pending, "hidemode 3");
 		return bar;
 	}
 
@@ -58,6 +71,17 @@ public final class MainPanel extends JPanel {
 	/** The status bar, for a test that wants to know where it ended up. */
 	public JPanel getStatusBar() {
 		return m_statusBar;
+	}
+
+	/** Say how many words are waiting to be deposited. On the event thread. */
+	public void showPending(int count) {
+		m_pending.setText(count + (count == 1 ? " word" : " words") + " to deposit");
+		m_pending.setVisible(count > 0);
+	}
+
+	/** The pending-changes button, which the frame decides what to do with. */
+	public JButton getPendingButton() {
+		return m_pending;
 	}
 
 	public String getStateText() {

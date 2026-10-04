@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Shared memory
+
+- **Every window now shows the same memory.** What the Memory Loader reads from a file, what the
+  Assembler produces and what is typed into a Memory window is visible in every other window
+  over those addresses straight away, before anything is deposited. A loaded or assembled program
+  can be disassembled without putting it on the machine first; the Disassembler marks the lines
+  the machine does not hold yet. Any window's Deposit writes it, whichever window it came from.
+- **Reading never throws away a change.** Examining or verifying memory sets what the machine
+  holds and leaves what is waiting to be deposited alone, in every window. A change goes away by
+  being deposited, or with the Memory window's new **Discard changes**. Device registers in the
+  I/O page work as before.
+- **Values read before the machine last ran show as old**, in a different colour, and are read
+  again the next time a window looks. Disconnecting makes them old too; connecting to a machine
+  forgets them. Changes waiting to be deposited survive both.
+- **A Memory menu** in the main window: **Pending changes**, **Deposit changed** (everything
+  waiting, from every window), **Reread shown** (every word an open window shows, once each),
+  **Check MMU** (read the MMU again and move windows that show virtual addresses to where it now
+  points) and **Forget all** (a clean slate, after asking).
+- **Changes waiting to be deposited are always visible**: a "words to deposit" button in the
+  status bar opens the new **Pending changes** window, which lists each one with what the machine
+  holds and which window made it, and can deposit them or discard any of them. Closing a Memory,
+  Memory Loader or Assembler window with changes it has not deposited asks whether to undo or keep
+  them, and so does quitting. Assembling again drops what the previous assembly left behind.
+
 ### Diagnostics
 
 - **A standalone diagnostic can be run straight from the library**, with nothing but deposits

@@ -11,6 +11,7 @@ import to.etc.pdp11.ui.disas.DisassemblerWindow;
 import to.etc.pdp11.ui.exec.ExecutionWindow;
 import to.etc.pdp11.ui.log.LogWindow;
 import to.etc.pdp11.ui.mem.MemoryWindow;
+import to.etc.pdp11.ui.mem.PendingChangesWindow;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.mem.RegisterGroupWindow;
 import to.etc.pdp11.ui.dump.MemoryDumperWindow;
@@ -93,6 +94,7 @@ public final class Pdp11Gui {
 		MemoryTestWindow.register(context);
 		MemoryDumperWindow.register(context);
 		MemoryLoaderWindow.register(context);
+		PendingChangesWindow.register(context);
 		AssemblerWindow.register(context);
 		SimhConsoleWindow.register(context);
 		MmuWindow.register(context);

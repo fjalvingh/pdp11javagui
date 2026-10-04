@@ -361,11 +361,13 @@ public final class MemoryDumperPanel extends JPanel {
 
 	public void attach() {
 		detach();
+		m_grid.attach();
 		m_context.getConnectionManager().addListener(m_connectionListener);
 		updateButtons();
 	}
 
 	public void detach() {
+		m_grid.detach();
 		m_context.getConnectionManager().removeListener(m_connectionListener);
 	}
 

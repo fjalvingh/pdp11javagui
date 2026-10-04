@@ -79,14 +79,15 @@ public interface Console {
 	/**
 	 * Read a whole group, as few round trips as the dialect allows.
 	 *
-	 * @param unknownOnly skip cells that already have a value
+	 * @param unknownOnly skip cells whose value is known and was read since the machine last ran
 	 */
 	void examine(MemoryCellGroup g, boolean unknownOnly, ProgressMonitor pm) throws ConsoleException;
 
 	/**
 	 * Write a whole group.
 	 *
-	 * @param optimize skip cells whose edited value already matches what the machine holds
+	 * @param optimize skip cells with nothing pending: no edit, or one the machine is known to
+	 *                 hold already (see {@link to.etc.pdp11.common.mem.MemoryCell#isEdited})
 	 */
 	void deposit(MemoryCellGroup g, boolean optimize, ProgressMonitor pm) throws ConsoleException;
 

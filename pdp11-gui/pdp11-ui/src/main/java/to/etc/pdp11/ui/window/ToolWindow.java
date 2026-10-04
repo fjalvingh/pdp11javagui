@@ -58,7 +58,8 @@ public abstract class ToolWindow extends JFrame {
 		addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent e) {
-				hideWindow();
+				if(mayClose())
+					hideWindow();
 			}
 		});
 	}
@@ -91,6 +92,16 @@ public abstract class ToolWindow extends JFrame {
 	 * time showing nothing and looking like it had stopped working.</p>
 	 */
 	protected void onShowing() {
+	}
+
+	/**
+	 * Asked when the user closes the window, before anything happens; false keeps it open.
+	 *
+	 * <p>Only the user's close asks. {@link #hideWindow()} and {@link #dispose()} called by the
+	 * program do not, because the program has already decided.</p>
+	 */
+	protected boolean mayClose() {
+		return true;
 	}
 
 	/** Called as the window goes away. Replaces {@code OnBeforeHide}. */

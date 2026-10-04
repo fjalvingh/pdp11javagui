@@ -2,12 +2,15 @@ package to.etc.pdp11.common.disas;
 
 import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.mem.CellValue;
 import to.etc.pdp11.common.mem.MemoryCell;
 import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.common.util.Octal;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A range of memory cells turned into a listing, with the line the program counter is on.
@@ -35,9 +38,15 @@ public final class DisassemblyListing {
 	/**
 	 * One line: where it is, the raw words behind it, and what they decode to.
 	 *
-	 * @param atPc whether the program counter is here
+	 * @param atPc    whether the program counter is here
+	 * @param pending whether any of its words is an edit the machine does not hold yet - code
+	 *                loaded or assembled and not deposited, which the CPU would not execute
 	 */
-	public record Line(Address address, String words, String text, boolean atPc) {
+	public record Line(Address address, String words, String text, boolean atPc, boolean pending) {
+		public Line(Address address, String words, String text, boolean atPc) {
+			this(address, words, text, atPc, false);
+		}
+
 		/** The whole line, in the layout {@code Disas11} produces. */
 		public String toDisplayString() {
 			return address.toOctal() + ": " + words + " " + text;
@@ -135,7 +144,8 @@ public final class DisassemblyListing {
 		if(pc != null)
 			requireVirtual(pc, "PC");
 
-		MemoryImage image = imageOf(group, start.val(), end.val());
+		Set<Integer> pending = new HashSet<>();
+		MemoryImage image = imageOf(group, start.val(), end.val(), pending);
 		//-- Only worth hunting for the PC when it is inside the range being shown at all. The
 		//-- Pascal instead loops until the start address reaches the PC, which for a PC outside
 		//-- the range walks the start past the end and leaves the window blank; scrolling away
@@ -144,7 +154,7 @@ public final class DisassemblyListing {
 		Address from = start;
 		DisassemblyListing asAsked = null;
 		for(;;) {
-			DisassemblyListing listing = build(image, from, end, pc, maxLines);
+			DisassemblyListing listing = build(image, pending, from, end, pc, maxLines);
 			if(listing.m_pcLine >= 0 || !pcInRange)
 				return listing;
 			if(asAsked == null)
@@ -164,23 +174,34 @@ public final class DisassemblyListing {
 		}
 	}
 
-	/** Every valid word of the group inside {@code [lo, hi]}, as the disassembler sees memory. */
-	private static MemoryImage imageOf(MemoryCellGroup group, long lo, long hi) {
+	/**
+	 * Every valid word of the group inside {@code [lo, hi]}, as the disassembler sees memory,
+	 * with the addresses of the words that are edits rather than what the machine holds.
+	 *
+	 * <p>What should be there, not only what the machine said: a program read from a file or
+	 * assembled is in shared memory before it is deposited, and seeing it disassembled before
+	 * it goes to the machine is the point. It is not what the CPU would execute, though, and
+	 * showing it as though it were would be a lie - so every line with such a word in it says
+	 * so, in {@link Line#pending()}.</p>
+	 */
+	private static MemoryImage imageOf(MemoryCellGroup group, long lo, long hi, Set<Integer> pending) {
 		MemoryImage image = new MemoryImage();
 		for(MemoryCell mc : group.getCells()) {
 			long a = mc.getAddr().val();
 			if(a < lo || a > hi)
 				continue;
-			//-- Only what the machine actually answered. An edited-but-not-deposited value is
-			//-- not what the CPU would execute, and showing it as though it were is a lie.
-			if(!mc.getPdpValue().isKnown())
+			CellValue v = mc.getEditValue();
+			if(!v.isKnown())
 				continue;
-			image.putWord((int) (a & 0xFFFF), mc.getPdpValue().word());
+			int at = (int) (a & 0xFFFF);
+			image.putWord(at, v.word());
+			if(mc.isEdited())
+				pending.add(at);
 		}
 		return image;
 	}
 
-	private static DisassemblyListing build(MemoryImage image, Address start, Address end, Address pc,
+	private static DisassemblyListing build(MemoryImage image, Set<Integer> pending, Address start, Address end, Address pc,
 		int maxLines) {
 		List<Line> lines = new ArrayList<>();
 		int pcLine = -1;
@@ -196,7 +217,11 @@ public final class DisassemblyListing {
 			boolean atPc = pc != null && pc.val() == addr;
 			if(atPc)
 				pcLine = lines.size();
-			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc));
+			boolean edited = false;
+			for(int w = 0; w < di.words(); w++) {
+				edited |= pending.contains((addr + 2 * w) & 0xFFFF);
+			}
+			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc, edited));
 			addr += di.words() * 2;
 			//-- Not simply addr: a run of unread words at the end is not part of the listing, and
 			//-- the next page must not begin past the last instruction it actually showed.

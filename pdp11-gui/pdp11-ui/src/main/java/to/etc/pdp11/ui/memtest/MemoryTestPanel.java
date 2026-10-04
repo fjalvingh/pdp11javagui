@@ -96,6 +96,10 @@ public final class MemoryTestPanel extends JPanel {
 		//-- The test writes patterns, not values the user typed, so nothing here needs
 		//-- protecting from what the machine says.
 		m_group.setPdpOverwritesEdit(true);
+		//-- And they are not edits either: a pattern in shared memory would take over a word
+		//-- the user has loaded and not deposited yet, and leave it pending under the test's name.
+		//-- What the test reads still reaches the image over the propagation bus.
+		m_group.setSharingMemory(false);
 
 		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_startAddr.getFont().getSize());
 		m_startAddr.setFont(mono);

@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.load;
 
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.mem.SharedMemoryActions;
 import to.etc.pdp11.ui.window.ToolWindow;
 import to.etc.pdp11.ui.window.WindowKey;
 import to.etc.pdp11.ui.window.WindowType;
@@ -21,6 +22,12 @@ public final class MemoryLoaderWindow extends ToolWindow {
 
 	public MemoryLoaderPanel getPanel() {
 		return m_panel;
+	}
+
+	/** Edits made here and not deposited outlive the window; ask what to do with them. */
+	@Override
+	protected boolean mayClose() {
+		return SharedMemoryActions.mayClose(this, m_panel.getGroup());
 	}
 
 	@Override

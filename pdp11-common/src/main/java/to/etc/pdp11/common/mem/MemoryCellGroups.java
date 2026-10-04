@@ -76,6 +76,22 @@ import java.util.Map;
  * </ol>
  *
  * <p>Only {@code pdpValue} propagates. {@code editValue} never does.</p>
+ *
+ * <h2>Shared memory</h2>
+ *
+ * <p>Below the I/O page none of that copying happens any more: every cell at a word of memory
+ * shares that word's values through the {@link SharedMemory}, so there is nothing to copy and
+ * an edit made in one window is the edit in all of them. What the bus still does for such a
+ * word is <i>tell</i> the other windows, and its equality short-circuit there is a version
+ * rather than a value - see {@link MemoryCell}'s {@code m_seenVersion}. A cell with its own
+ * values - in the I/O page, or in a group that asked for them - still has a machine value
+ * copied in, and a shared word takes the machine value of such a cell when it is announced, so
+ * the memory test's reads still reach a Memory window over the same range.</p>
+ *
+ * <p>The index is keyed on <b>where a cell is</b>, so a virtual address is keyed on the physical
+ * word it resolves to through the {@link VirtualResolver} - the MMU, once a console has one. A
+ * Disassembler showing virtual 1000 and a Memory window showing physical 1000 with the MMU off
+ * are one word, and with relocation on they are not.</p>
  */
 public final class MemoryCellGroups {
 	/**
@@ -85,12 +101,36 @@ public final class MemoryCellGroups {
 	public static final int MAX_SYNC_DEPTH = 16;
 
 	/**
-	 * What two addresses have to share to be the same location. Concrete physical addresses
-	 * normalise to 22 bits; everything else keeps its own type, so it only ever matches
-	 * addresses of that same type.
+	 * What two addresses have to share to be the same location. Concrete physical addresses,
+	 * and virtual ones the resolver can place, normalise to 22-bit physical; everything else
+	 * keeps its own type, so it only ever matches addresses of that same type.
 	 */
-	private record CellKey(MemoryAddressType space, long value) {
+	record CellLocation(MemoryAddressType space, long value) {
+		boolean isMemory() {
+			return space == MemoryAddressType.PHYSICAL22
+				&& SharedMemory.isMemory(Address.of(MemoryAddressType.PHYSICAL22, value));
+		}
 	}
+
+	/**
+	 * Where a virtual address is in physical memory, as the MMU sees it now.
+	 *
+	 * <p>Called under the monitor, as cells are created, so it must not block or take a lock -
+	 * {@code Pdp11Mmu}'s translation is arithmetic over registers it already holds, which is
+	 * what qualifies it.</p>
+	 */
+	@FunctionalInterface
+	public interface VirtualResolver {
+		/** The concrete physical address, or {@code null} if this one does not translate. */
+		Address toPhysical(Address virtual);
+	}
+
+	/**
+	 * What the MMU does with relocation off, which is what a machine does before anything has
+	 * said otherwise: below the I/O page physical equals virtual, and the top 8 KB is the I/O
+	 * page.
+	 */
+	public static final VirtualResolver IDENTITY = virtual -> virtual.withWidth(MemoryAddressType.PHYSICAL22);
 
 	/**
 	 * The one monitor of the rule above. Held by everything in this class and in
@@ -101,7 +141,11 @@ public final class MemoryCellGroups {
 
 	private final List<MemoryCellGroup> m_groups = new ArrayList<>();
 
-	private final Map<CellKey, List<MemoryCell>> m_byAddress = new HashMap<>();
+	private final Map<CellLocation, List<MemoryCell>> m_byAddress = new HashMap<>();
+
+	private final SharedMemory m_image = new SharedMemory(m_lock);
+
+	private volatile VirtualResolver m_virtualResolver = IDENTITY;
 
 	/**
 	 * Propagation depth, per thread. Recursion is a listener writing back on the thread it was
@@ -113,6 +157,80 @@ public final class MemoryCellGroups {
 	/** The monitor guarding this object and every group under it. */
 	Object lock() {
 		return m_lock;
+	}
+
+	/** What is known about the machine's memory below the I/O page. */
+	public SharedMemory getSharedMemory() {
+		return m_image;
+	}
+
+	/**
+	 * How virtual addresses find their physical word from now on; {@code null} goes back to
+	 * {@link #IDENTITY}. Cells already made keep the word they were made over: a group re-ranged
+	 * after this resolves again.
+	 */
+	public void setVirtualResolver(VirtualResolver resolver) {
+		m_virtualResolver = resolver == null ? IDENTITY : resolver;
+	}
+
+	/**
+	 * Make a cell of {@code group} at {@code addr}, over shared memory's word if it is memory and
+	 * the group shares, over a word of its own otherwise. Under the monitor.
+	 */
+	MemoryCell newCell(MemoryCellGroup group, Address addr) {
+		CellLocation loc = locationOf(addr);
+		return new MemoryCell(group, addr, loc, wordFor(group, loc));
+	}
+
+	private MemoryWord wordFor(MemoryCellGroup group, CellLocation loc) {
+		return group.isSharingMemory() && loc.isMemory()
+			? m_image.word(Address.of(MemoryAddressType.PHYSICAL22, loc.value()))
+			: new MemoryWord(null, null);
+	}
+
+	/**
+	 * Resolve every virtual cell again through the {@link VirtualResolver}, and move each one
+	 * that now names a different word to that word - after the MMU's registers have been read
+	 * and found to map somewhere else.
+	 *
+	 * <p>Nothing in shared memory changes. Every console examines and deposits by physical
+	 * address, so what was read under the old mapping is still true of the physical word it was
+	 * filed under; a stale mapping makes a virtual view show the wrong words, not wrong values.
+	 * An edit typed into a virtual view stays at the physical word it was typed at, which is the
+	 * word it was shown as. A cell that moves to a word nobody has read shows as unknown, and
+	 * its window reads it as it would any other.</p>
+	 *
+	 * <p>Virtual cells with values of their own - in the I/O page, or of a group that does not
+	 * share - keep them; only their place in the index moves.</p>
+	 *
+	 * @return the groups that had a cell move, so their windows can be told
+	 */
+	public List<MemoryCellGroup> reresolveVirtual() {
+		List<MemoryCellGroup> moved = new ArrayList<>();
+		synchronized(m_lock) {
+			for(MemoryCellGroup g : m_groups) {
+				if(g.getType() != MemoryAddressType.VIRTUAL)
+					continue;
+				boolean any = false;
+				for(MemoryCell mc : g.getCells()) {
+					CellLocation now = locationOf(mc.getAddr());
+					if(now.equals(mc.getLocation()))
+						continue;
+					indexRemove(mc);
+					//-- A cell with values of its own that still has no shared word to go to keeps
+					//-- them; anything else takes whatever word is at the new place.
+					boolean toShared = g.isSharingMemory() && now.isMemory();
+					mc.rebind(now, !mc.isShared() && !toShared ? mc.word() : wordFor(g, now));
+					indexAdd(mc);
+					any = true;
+				}
+				if(any)
+					moved.add(g);
+			}
+		}
+		if(!moved.isEmpty())
+			m_image.announce();
+		return moved;
 	}
 
 	public MemoryCellGroup addGroup(MemoryAddressType type, String groupName) {
@@ -146,10 +264,16 @@ public final class MemoryCellGroups {
 		}
 	}
 
+	/**
+	 * Drop a group. Any edit it made and did not deposit stays in the image, as nobody's; a
+	 * window that would rather undo them calls {@link MemoryCellGroup#discardOwnedEdits} first.
+	 */
 	public void removeGroup(MemoryCellGroup group) {
 		synchronized(m_lock) {
-			if(m_groups.remove(group))
+			if(m_groups.remove(group)) {
 				group.clear();
+				m_image.orphanEditsOwnedBy(group);
+			}
 		}
 	}
 
@@ -172,6 +296,9 @@ public final class MemoryCellGroups {
 			for(MemoryCellGroup g : new ArrayList<>(m_groups)) {
 				g.clear();
 			}
+			for(MemoryCellGroup g : m_groups) {
+				m_image.orphanEditsOwnedBy(g);
+			}
 			m_groups.clear();
 			m_byAddress.clear();
 		}
@@ -180,40 +307,57 @@ public final class MemoryCellGroups {
 	/** Every cell at this address, across all groups, as a copy. Empty list if none. */
 	public List<MemoryCell> cellsAt(Address addr) {
 		synchronized(m_lock) {
-			List<MemoryCell> l = m_byAddress.get(keyOf(addr));
+			List<MemoryCell> l = m_byAddress.get(locationOf(addr));
 			return l == null ? List.of() : List.copyOf(l);
 		}
 	}
 
 	/**
-	 * A value has arrived for {@code source}; give every other cell at the same address the
-	 * same value and tell that group's listeners.
+	 * Something changed at {@code source}; bring every other cell at the same location up to
+	 * date and tell that cell's group.
 	 *
-	 * <p>Ported from {@code SyncMemoryCells} ({@code :793-812}), guards and all.</p>
+	 * <p>Ported from {@code SyncMemoryCells} ({@code :793-812}), guards and all, and extended
+	 * for shared memory. For each other cell at the location:</p>
+	 * <ul>
+	 *   <li>if it has values of its own, it takes the source's machine value - unless its group
+	 *       opted out (guard 1), or it already had that value (guard 3);</li>
+	 *   <li>if it is a shared word other than the source's, which is a memory cell hearing from
+	 *       one that keeps its own, the word takes the machine value likewise;</li>
+	 *   <li>it is then told if, and only if, its word has changed since it last saw it. For a
+	 *       cell sharing the source's word that is the whole of it: there is nothing to copy,
+	 *       and the version is the equality check.</li>
+	 * </ul>
 	 *
-	 * <p>Who is told what is decided under the monitor; the telling happens after it is
-	 * released, so a listener is free to do anything at all - including coming back in here,
-	 * which is what the depth guard is about.</p>
+	 * <p>Who is affected is decided under the monitor; the copying and the telling happen after
+	 * it is released, so a listener is free to do anything at all - including coming back in
+	 * here, which is what the depth guard is about.</p>
 	 */
 	public void syncMemoryCells(MemoryCell source) {
 		List<MemoryCell> targets;
 		CellValue value = source.getPdpValue();
+		source.catchUp();
 		synchronized(m_lock) {
-			List<MemoryCell> at = m_byAddress.get(keyOf(source.getAddr()));
+			List<MemoryCell> at = m_byAddress.get(source.getLocation());
 			if(at == null)
 				return;
 			targets = new ArrayList<>(at.size());
 			for(MemoryCell mc : at) {
 				if(mc == source)                                    // (2) self-exclusion
 					continue;
-				if(!mc.getGroup().isPdpOverwritesEdit())            // (1) per-group opt-out
-					continue;
-				if(mc.getPdpValue().equals(value))                  // (3) equality terminates
+				if(!mc.isShared() && !mc.getGroup().isPdpOverwritesEdit())  // (1) per-group opt-out
 					continue;
 				targets.add(mc);
 			}
 		}
-		if(targets.isEmpty())
+
+		List<MemoryCell> changed = new ArrayList<>(targets.size());
+		for(MemoryCell mc : targets) {
+			if(mc.word() != source.word() && !mc.getPdpValue().equals(value))  // (3) equality
+				mc.word().setMachine(value);
+			if(mc.catchUp())
+				changed.add(mc);
+		}
+		if(changed.isEmpty())
 			return;
 
 		int[] depth = m_syncDepth.get();
@@ -224,8 +368,7 @@ public final class MemoryCellGroups {
 		}
 		depth[0]++;
 		try {
-			for(MemoryCell mc : targets) {
-				mc.setPdpValue(value);
+			for(MemoryCell mc : changed) {
 				mc.getGroup().fireMemoryCellChanged(mc);
 			}
 		} finally {
@@ -241,7 +384,7 @@ public final class MemoryCellGroups {
 	 */
 	public MemoryCell findNamedCellAt(MemoryCell cell) {
 		synchronized(m_lock) {
-			List<MemoryCell> at = m_byAddress.get(keyOf(cell.getAddr()));
+			List<MemoryCell> at = m_byAddress.get(cell.getLocation());
 			if(at == null)
 				return null;
 			for(MemoryCell mc : at) {
@@ -297,13 +440,13 @@ public final class MemoryCellGroups {
 
 	void indexAdd(MemoryCell cell) {
 		synchronized(m_lock) {
-			m_byAddress.computeIfAbsent(keyOf(cell.getAddr()), k -> new ArrayList<>()).add(cell);
+			m_byAddress.computeIfAbsent(cell.getLocation(), k -> new ArrayList<>()).add(cell);
 		}
 	}
 
 	void indexRemove(MemoryCell cell) {
 		synchronized(m_lock) {
-			CellKey key = keyOf(cell.getAddr());
+			CellLocation key = cell.getLocation();
 			List<MemoryCell> l = m_byAddress.get(key);
 			if(l == null)
 				return;
@@ -313,10 +456,15 @@ public final class MemoryCellGroups {
 		}
 	}
 
-	private static CellKey keyOf(Address addr) {
+	private CellLocation locationOf(Address addr) {
+		if(addr.type() == MemoryAddressType.VIRTUAL) {
+			Address p = m_virtualResolver.toPhysical(addr);
+			if(p != null && p.type().isConcretePhysical())
+				addr = p;
+		}
 		if(addr.type().isConcretePhysical())
-			return new CellKey(MemoryAddressType.PHYSICAL22, addr.withWidth(MemoryAddressType.PHYSICAL22).val());
-		return new CellKey(addr.type(), addr.val());
+			return new CellLocation(MemoryAddressType.PHYSICAL22, addr.withWidth(MemoryAddressType.PHYSICAL22).val());
+		return new CellLocation(addr.type(), addr.val());
 	}
 
 	@Override

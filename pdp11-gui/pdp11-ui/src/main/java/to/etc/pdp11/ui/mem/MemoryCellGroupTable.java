@@ -50,6 +50,12 @@ import java.util.List;
  * it from "are there edits right now" undid that on the first refresh after a successful
  * deposit. Those windows use {@link OverwritePolicy#GROUP_DECIDES}, which is the default.</p>
  *
+ * <p><b>Below the I/O page all of that is moot</b>, and only the device registers still need
+ * it. A word of memory lives in shared memory, seen by every other window, and an examine
+ * there sets what the machine said and never the edit - so nothing typed here can be read over,
+ * and an edit made in another window shows here as soon as it is made. An edit goes away by
+ * being deposited or by {@link #discardChanges}. See PLAN.md §1, "Shared memory".</p>
+ *
  * <h2>Two cells at one address is normal</h2>
  *
  * <p>The grid is laid out by <i>address</i>, not by cell index - the address span of the group
@@ -102,12 +108,26 @@ public final class MemoryCellGroupTable extends JPanel {
 	};
 
 	/** Subscribed to the group, and unsubscribed when this table is pointed at another one. */
-	private final MemoryCellListener m_listener = (group, cell) -> AppContext.onUi(() -> {
-		//-- What the machine says becomes what is shown, which is the Pascal's memoryCellChange
-		//-- ({@code :508-513}). It is only reached at all when the group allows it.
-		cell.setEditValue(cell.getPdpValue());
-		repaintCell(cell);
-	});
+	private final MemoryCellListener m_listener = (group, cell) -> AppContext.onUi(() -> repaintCell(cell));
+
+	/** Whether a repaint for a change in the image's edits is already on its way. */
+	private final java.util.concurrent.atomic.AtomicBoolean m_repaintQueued = new java.util.concurrent.atomic.AtomicBoolean();
+
+	/**
+	 * Told when any edit anywhere in the image changed - another window typed, loaded, deposited
+	 * or discarded - possibly once a word, so it only queues one repaint at a time.
+	 */
+	private final Runnable m_pendingListener = () -> {
+		if(m_repaintQueued.compareAndSet(false, true)) {
+			AppContext.onUi(() -> {
+				m_repaintQueued.set(false);
+				//-- A repaint, not a data-changed event: that would cancel a cell being typed into
+				//-- here because a word changed in some other window.
+				m_table.repaint();
+				m_onUpdate.run();
+			});
+		}
+	};
 
 	public MemoryCellGroupTable(AppContext context) {
 		this(context, DEFAULT_COLUMNS, OverwritePolicy.GROUP_DECIDES);
@@ -161,6 +181,19 @@ public final class MemoryCellGroupTable extends JPanel {
 
 	public MemoryCellGroup getGroup() {
 		return m_group;
+	}
+
+	/**
+	 * Follow edits made anywhere in shared memory, for as long as the window is open. The
+	 * window around this calls it from its own {@code attach}.
+	 */
+	public void attach() {
+		detach();
+		m_context.getMemoryCellGroups().getSharedMemory().addChangeListener(m_pendingListener);
+	}
+
+	public void detach() {
+		m_context.getMemoryCellGroups().getSharedMemory().removeChangeListener(m_pendingListener);
 	}
 
 	/** Told when the contents changed enough that the window around this wants to know. */
@@ -322,15 +355,14 @@ public final class MemoryCellGroupTable extends JPanel {
 	/**
 	 * Read the group back from the machine and show what it said.
 	 *
-	 * <p>Ported from {@code ExamineCells} ({@code :198-211}), including the part that is easy to
-	 * miss: after examining, every cell's edit value is set to what the machine said, so the
-	 * grid shows the machine rather than showing yesterday's edits over the top of it.</p>
+	 * <p>Ported from {@code ExamineCells} ({@code :198-211}), less the part where every cell's
+	 * edit value is then set to what the machine said. That threw away what was typed, and a
+	 * word of memory is now shared with every other window: the edit it would throw away may be
+	 * the Loader's. An examine sets what the machine said; {@link #discardChanges} is how an
+	 * edit is given up.</p>
 	 *
-	 * <p>Which is right for <i>Examine all</i> and wrong for <i>Verify</i>: it is the step that
-	 * throws away the thing a verify would have compared against. Use {@link #verifyAll} for
-	 * that.</p>
-	 *
-	 * @param unknownOnly skip the cells that already have a value
+	 * @param unknownOnly skip the cells whose value is known and was read since the machine
+	 *                    last ran
 	 */
 	public void examineAll(boolean unknownOnly, java.awt.Window owner) {
 		MemoryCellGroup group = m_group;
@@ -350,12 +382,10 @@ public final class MemoryCellGroupTable extends JPanel {
 				AppContext.onUi(this::refresh);
 				return;
 			}
+			//-- A device register keeps the old rule: what was just read replaces what was typed.
 			for(MemoryCell mc : cells) {
-				//-- Only the cells the machine actually answered about. A cell the examine never
-				//-- reached is still UNKNOWN, and copying that over a typed edit throws away
-				//-- something the read never looked at.
-				if(mc.getPdpValue().isKnown())
-					mc.setEditValue(mc.getPdpValue());
+				if(mc.getPdpValue().isKnown() && !mc.isShared())
+					mc.discardEdit();
 			}
 			AppContext.onUi(this::refresh);
 		});
@@ -402,8 +432,7 @@ public final class MemoryCellGroupTable extends JPanel {
 			return;
 		m_context.onConsole("Examining " + cell.getAddr().toOctal(), console -> {
 			CellValue v = console.examine(cell.getAddr());
-			cell.setPdpValue(v);
-			cell.setEditValue(v);
+			cell.setExamined(v);
 			MemoryCellGroup group = cell.getGroup();
 			if(group.getOwner() != null)
 				group.getOwner().syncMemoryCells(cell);
@@ -425,6 +454,19 @@ public final class MemoryCellGroupTable extends JPanel {
 			console.deposit(group, optimize, progress);
 			AppContext.onUi(this::refresh);
 		});
+	}
+
+	/**
+	 * Give up every edit in this grid, so it shows what the machine holds. Only the words shown
+	 * here - an edit the same window made elsewhere is {@link MemoryCellGroup#discardOwnedEdits}.
+	 */
+	public void discardChanges() {
+		if(m_group == null)
+			return;
+		for(MemoryCell mc : m_group.getCells()) {
+			mc.discardEdit();
+		}
+		refresh();
 	}
 
 	/** Set every cell's edit value to zero. {@code Cleardata1Click} ({@code :515-527}). */
@@ -551,6 +593,9 @@ public final class MemoryCellGroupTable extends JPanel {
 			} else if(mc != null && !mc.getPdpValue().isKnown()) {
 				c.setBackground(selected ? table.getSelectionBackground() : table.getBackground());
 				c.setForeground(UiColors.UNKNOWN_TEXT);
+			} else if(mc != null && mc.isStale()) {
+				c.setBackground(selected ? table.getSelectionBackground() : table.getBackground());
+				c.setForeground(UiColors.STALE_TEXT);
 			} else {
 				c.setBackground(selected ? table.getSelectionBackground() : table.getBackground());
 				c.setForeground(selected ? table.getSelectionForeground() : table.getForeground());
@@ -568,6 +613,14 @@ public final class MemoryCellGroupTable extends JPanel {
 		if(!mc.getInfo().isEmpty())
 			sb.append(": ").append(mc.getInfo());
 		sb.append("; machine holds ").append(mc.getPdpValue().isKnown() ? mc.getPdpValue().toOctal() : "nothing read");
+		if(mc.isStale())
+			sb.append(", read before it last ran");
+		if(mc.isEdited()) {
+			MemoryCellGroup owner = mc.getEditOwner();
+			sb.append("; to deposit: ").append(mc.getEditValue().toOctal());
+			if(owner != null && owner != m_group)
+				sb.append(", from ").append(owner.getGroupName());
+		}
 		return sb.toString();
 	}
 

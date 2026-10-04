@@ -504,8 +504,7 @@ public final class BitfieldsPanel extends JPanel {
 	/** One examine, on the command thread, into the cell the job was queued for. */
 	void examineInto(Console console, MemoryCell cell) throws ConsoleException {
 		CellValue v = console.examine(cell.getAddr());
-		cell.setPdpValue(v);
-		cell.setEditValue(v);
+		cell.setExamined(v);
 		if(m_group.getOwner() != null)
 			m_group.getOwner().syncMemoryCells(cell);
 		AppContext.onUi(this::refreshValue);
@@ -551,7 +550,8 @@ public final class BitfieldsPanel extends JPanel {
 	private final CellSelection.Listener m_selectionListener = this::showCell;
 
 	private final MemoryCellListener m_listener = (group, cell) -> AppContext.onUi(() -> {
-		cell.setEditValue(cell.getPdpValue());
+		if(!cell.isShared())
+			cell.discardEdit();
 		refreshValue();
 	});
 

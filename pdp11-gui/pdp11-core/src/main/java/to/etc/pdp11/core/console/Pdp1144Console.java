@@ -451,7 +451,7 @@ public final class Pdp1144Console extends AbstractConsole {
 		List<ExamineItem> memory = new ArrayList<>();
 		List<ExamineItem> registers = new ArrayList<>();
 		for(MemoryCell mc : List.copyOf(g.getCells())) {
-			if(unknownOnly && mc.getPdpValue().isKnown())
+			if(unknownOnly && mc.isMachineValueCurrent())
 				continue;
 			Address physical = toPhysical(mc.getAddr(), false);
 			if(isGlobalRegister(physical.val()))

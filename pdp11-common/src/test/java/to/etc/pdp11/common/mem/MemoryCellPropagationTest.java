@@ -166,8 +166,30 @@ class MemoryCellPropagationTest {
 		assertEquals(2, m_groups.cellsAt(narrow.getAddr()).size());
 	}
 
+	/**
+	 * With relocation on, virtual 1000 is wherever the MMU puts it, and not physical 1000. The
+	 * resolver stands in for an MMU mapping everything 200000 up.
+	 */
 	@Test
 	void aVirtualAddressIsNotThePhysicalOneWithTheSameNumber() {
+		m_groups.setVirtualResolver(v -> v.val() >= 0160000
+			? v.withWidth(MemoryAddressType.PHYSICAL22)
+			: Address.of(MemoryAddressType.PHYSICAL22, v.val() + 0200000));
+		MemoryCell physical = m_groups.addGroup(MemoryAddressType.PHYSICAL22, "Memory").add(01000);
+		MemoryCell relocated = m_groups.addGroup(MemoryAddressType.PHYSICAL22, "High").add(0201000);
+		MemoryCell virtual = m_groups.addGroup(MemoryAddressType.VIRTUAL, "Listing")
+			.add(Address.of(MemoryAddressType.VIRTUAL, 01000));
+
+		virtual.setPdpValue(CellValue.of(0340));
+		m_groups.syncMemoryCells(virtual);
+
+		assertEquals(CellValue.UNKNOWN, physical.getPdpValue());
+		assertEquals(CellValue.of(0340), relocated.getPdpValue());
+	}
+
+	/** The top 8 KB of virtual space is the I/O page whatever the MMU says, so this is the PSW. */
+	@Test
+	void theVirtualIoPageIsThePhysicalOne() {
 		MemoryCell physical = group("CPU").add(PSW);
 		MemoryCell virtual = m_groups.addGroup(MemoryAddressType.VIRTUAL, "Listing")
 			.add(Address.of(MemoryAddressType.VIRTUAL, PSW));
@@ -175,7 +197,7 @@ class MemoryCellPropagationTest {
 		virtual.setPdpValue(CellValue.of(0340));
 		m_groups.syncMemoryCells(virtual);
 
-		assertEquals(CellValue.UNKNOWN, physical.getPdpValue());
+		assertEquals(CellValue.of(0340), physical.getPdpValue());
 	}
 
 	/**

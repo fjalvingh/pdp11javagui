@@ -399,7 +399,7 @@ public final class M9312Console extends AbstractConsole {
 					break;
 				if(!mc.getEditValue().isKnown())
 					continue;
-				if(optimize && mc.getEditValue().equals(mc.getPdpValue()))
+				if(optimize && !mc.isEdited())
 					continue;
 				Address physical = toPhysical(mc.getAddr(), true);
 				requireDepositable(physical);
@@ -434,7 +434,7 @@ public final class M9312Console extends AbstractConsole {
 		List<MemoryCell> cells = List.copyOf(g.getCells());
 		List<ExamineItem> memory = new ArrayList<>();
 		for(MemoryCell mc : cells) {
-			if(unknownOnly && mc.getPdpValue().isKnown())
+			if(unknownOnly && mc.isMachineValueCurrent())
 				continue;
 			if(mc.getAddr().type() == MemoryAddressType.SPECIAL_REGISTER) {
 				mc.setPdpValue(CellValue.UNKNOWN);

@@ -511,7 +511,7 @@ public final class OdtConsole extends AbstractConsole {
 				pm.step(1);
 				if(pm.isCancelled())
 					break;
-				if(unknownOnly && mc.getPdpValue().isKnown())
+				if(unknownOnly && mc.isMachineValueCurrent())
 					continue;
 				mc.setPdpValue(examine(mc.getAddr()));
 				if(owner != null)
