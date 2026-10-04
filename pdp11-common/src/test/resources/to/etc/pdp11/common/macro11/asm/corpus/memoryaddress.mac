@@ -1,0 +1,73 @@
+	.title Memory address program
+	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+
+	; The idea of this program is to load every memory location with
+	; it's address and then verify. It should normally halt at location 10.
+	; If there is an error, the address will be in register 1.
+	 .asect
+
+        .=4                      ; bus error trap
+        .word rldtvc
+        halt
+
+        .=10                     ; reserved instruction trap
+        .word rsvint
+rsvint: halt
+
+        .=200
+	mov #410,sp	set the stack
+
+	mov #420,r0	set target memory address
+
+	mov r0, r1	copy memory address
+loop1:	mov r1, (r1)	write memory
+	cmp r1, (r1)	check write
+	beq .+4 	OK
+	halt		initial check error
+	com (r1)+	complement the data
+	br loop1	loop till bus error
+rldtvc:
+	mov #6,@#4	reload trap vector
+
+	mov r0,r1	copy memory address
+loop2:	com (r1)	complement memory
+	cmp r1,(r1)	recheck memory
+	beq .+4 	OK
+	halt		memory addressing error
+	tst (r1)+	increment memory address
+	br loop2
+
+
+
+
+       .=740
+aproc:
+	halt
+
+ .=1000
+1$:
+	mov #500,sp		  ; OK
+ mov #1234,r3			  ; OK
+ inc r3 			  ; nop
+ asr	r3			  ; nop
+ mov r3,r2			  ; OK
+ add r3,r2			  ; nop
+ br aprocx
+  cmp	     #1235,r3		   ; nop, r3 = 0!!
+  bhi	     1$
+  beq	     1$
+   br 1$
+  cmp	     #1233,r3		     ; hit end of buffer (512. bytes)?
+  bhi	     1$
+ mov r3,r4
+ clr r4
+ mov  r3,(r2)
+ inc  (r2)
+
+ add r3,r4
+; mov r3,@#100
+aprocx:
+ halt
+
+	.end
+

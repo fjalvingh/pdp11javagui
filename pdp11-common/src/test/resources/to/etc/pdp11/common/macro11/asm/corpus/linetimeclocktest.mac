@@ -1,0 +1,37 @@
+	.title Line Time Clock Interrupt Test
+	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+
+	; Most of the older PDP11's had a line time clock that
+	; would interrupt at mains frequency (50 or 60Hz).
+	; On early LSI-11's, it was not programmable but enabled by a
+	; switch on the front panel. Load the following program
+	; (which is just a trap catcher and interrupt enable), and start.
+	; If an early LSI-11's, substitute 000240 for the lines
+	; marked #, run the program for a second or two, then
+	; enable the clock. The program should halt at address 104
+	; (the interrupt vector address is 100, and the vector is loaded
+	; with 102, which then executes a halt at 102, the PC will then be 104).
+
+	.asect
+
+	ltc = 177546
+
+	.=1000
+start:
+	mov #770,sp	set the stack pointer
+
+	clr r0		memory pointer
+	mov #2,r1	trap value
+
+loop:	mov r1,(r0)+	set trap vector value
+	clr (r0)+	set halt instruction in trap
+	add #4,r1	update r1 for next trap
+
+	cmp sp,r0	load up to stack pointer
+	bne loop
+    mov #100,@#ltc  enable clock interrupt
+
+	br .		loop for ever
+
+	; If the processor doesn't halt, then your clock isn't running.
+	; If it halts at 6, then the clock register is missing.

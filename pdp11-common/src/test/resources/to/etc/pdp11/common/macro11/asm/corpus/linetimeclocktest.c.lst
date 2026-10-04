@@ -1,0 +1,46 @@
+       1                                	.title Line Time Clock Interrupt Test
+       2                                	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+       3                                
+       4                                	; Most of the older PDP11's had a line time clock that
+       5                                	; would interrupt at mains frequency (50 or 60Hz).
+       6                                	; On early LSI-11's, it was not programmable but enabled by a
+       7                                	; switch on the front panel. Load the following program
+       8                                	; (which is just a trap catcher and interrupt enable), and start.
+       9                                	; If an early LSI-11's, substitute 000240 for the lines
+      10                                	; marked #, run the program for a second or two, then
+      11                                	; enable the clock. The program should halt at address 104
+      12                                	; (the interrupt vector address is 100, and the vector is loaded
+      13                                	; with 102, which then executes a halt at 102, the PC will then be 104).
+      14                                
+      15                                	.asect
+      16                                
+      17 177546                         	ltc = 177546
+      18                                
+      19 001000                         	.=1000
+      20                                start:
+linetimeclocktest.mac:21: ***ERROR Junk at end of line ('s')
+      21 001000 012706  000770          	mov #770,sp	set the stack pointer
+      22                                
+linetimeclocktest.mac:23: ***ERROR Junk at end of line ('m')
+      23 001004 005000                  	clr r0		memory pointer
+linetimeclocktest.mac:24: ***ERROR Junk at end of line ('t')
+      24 001006 012701  000002          	mov #2,r1	trap value
+      25                                
+linetimeclocktest.mac:26: ***ERROR Junk at end of line ('s')
+      26 001012 010120                  loop:	mov r1,(r0)+	set trap vector value
+linetimeclocktest.mac:27: ***ERROR Junk at end of line ('s')
+      27 001014 005020                  	clr (r0)+	set halt instruction in trap
+linetimeclocktest.mac:28: ***ERROR Junk at end of line ('u')
+      28 001016 062701  000004          	add #4,r1	update r1 for next trap
+      29                                
+linetimeclocktest.mac:30: ***ERROR Junk at end of line ('l')
+      30 001022 020600                  	cmp sp,r0	load up to stack pointer
+      31 001024 001372                  	bne loop
+linetimeclocktest.mac:32: ***ERROR Junk at end of line ('e')
+      32 001026 012737  000100  177546      mov #100,@#ltc  enable clock interrupt
+      33                                
+linetimeclocktest.mac:34: ***ERROR Junk at end of line ('l')
+      34 001034 000777                  	br .		loop for ever
+      35                                
+      36                                	; If the processor doesn't halt, then your clock isn't running.
+      37                                	; If it halts at 6, then the clock register is missing.

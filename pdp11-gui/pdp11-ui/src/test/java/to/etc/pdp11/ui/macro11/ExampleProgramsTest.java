@@ -5,10 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.common.macro11.Macro11Listing;
-import to.etc.pdp11.common.macro11.Macro11ListingParser;
 import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.common.mem.MemoryCellGroups;
-import to.etc.pdp11.common.util.Logger;
 import to.etc.pdp11.ui.macro11.ExamplePrograms.CopyState;
 import to.etc.pdp11.ui.macro11.ExamplePrograms.Example;
 import to.etc.pdp11.ui.macro11.ExamplePrograms.Prepared;
@@ -25,7 +23,6 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The packaged example programs: that the index and the files agree, that loading one never
@@ -105,16 +102,16 @@ class ExampleProgramsTest {
 	}
 
 	/**
-	 * An example that does not assemble is worse than none. Skipped where {@code macro11} is not
-	 * installed, which includes CI.
+	 * An example that does not assemble is worse than none. The assembler is part of the
+	 * application, so this runs everywhere, CI included.
 	 */
 	@Test
 	void everyExampleAssemblesWithoutAProblem(@TempDir Path data) throws Exception {
-		assumeTrue(Macro11.isAvailable(), "macro11 is not on the PATH");
 		for(Example example : ExamplePrograms.list()) {
 			Path file = ExamplePrograms.prepare(example, data, false).file();
 			MemoryCellGroup g = new MemoryCellGroups().addGroup(MemoryAddressType.VIRTUAL, example.fileName());
-			Macro11Listing listing = Macro11ListingParser.parse(Macro11.assemble(file, Logger.NULL).listing(), g);
+			String text = Files.readString(file, StandardCharsets.ISO_8859_1);
+			Macro11Listing listing = Macro11.assemble(file, text, MemoryAddressType.VIRTUAL).parsed().installInto(g);
 			assertTrue(listing.isOk(), () -> example.fileName() + ": " + listing.getProblems());
 			assertTrue(listing.getWordCount() > 0, example.fileName() + " assembled to nothing");
 			assertEquals("001000", listing.getStartAddress().toOctal(), example.fileName() + " should start at 1000");

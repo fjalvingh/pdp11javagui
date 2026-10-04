@@ -73,19 +73,20 @@ Disconnecting throws away everything read from the old machine.
 
 ## The assembler
 
-**Compile is dead**
-`macro11` is not on your `PATH`. The button's tooltip says so. Get it from
-<https://github.com/rhefner1/macro11>.
+**"Unexpected 'SET' after the operands; is a ';' missing before a comment?"**
+The old `macro11` ignored anything after the operands, so a comment written without its `;`
+went unnoticed. It is an error in DEC's MACRO-11 and is one here; put the `;` in.
 
-**"Cannot write to the directory …, and MACRO-11 has to put its listing there"**
-MACRO-11 writes `<name>.lst` beside the source and has no option not to. Copy the source somewhere
-writable — this usually bites when assembling straight off a mounted disc image.
+**A program that assembled with `macro11` now has errors**
+This assembler reports mistakes `macro11` let through: an octal number with an 8 or 9 in it, a
+value that does not fit, an undefined symbol. The message says which; each was a bug in the
+program that the old assembler hid, usually by storing a wrong value.
 
 **An error appeared but no dialog**
 By design. The line is marked in the Source tab and the status bar is coloured; you are left on
 the tab where you can fix it.
 
-**I have a `.lst` but no `macro11`**
+**I have a `.lst` but not the source**
 **Listing → Open listing …** reads it. Everything downstream — the code grid, depositing,
 verifying, the PC marker — works from the listing alone.
 

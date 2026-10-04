@@ -1,0 +1,752 @@
+       1                                	.TITLE	MEMTESTER - MEMORY SIZER AND TESTER FOR A BARE PDP-11
+       2                                ;
+       3                                ; Finds where memory is installed, reports each block by address and
+       4                                ; size, and then tests all of it, pass after pass, until you stop it
+       5                                ; with the HALT switch.  No operating system is needed.
+       6                                ;
+       7                                ; Runs on anything from an 11/05 up: it uses only the basic instruction
+       8                                ; set (no SOB, XOR, MUL or DIV) and polls the console DL11 at 177560.
+       9                                ;
+      10                                ; Load it, then start at 1000. On an M9312 console:  L 1000  then  S
+      11                                ;
+      12                                ; How much memory it can see depends on the machine:
+      13                                ;
+      14                                ;  - without memory management, the 28K words below the I/O page at
+      15                                ;    160000 - all an 11/05 or 11/03 can address;
+      16                                ;  - with memory management, everything below the I/O page: 760000 on an
+      17                                ;    18-bit machine, 17760000 on a 22-bit one (11/23, 11/24, 11/44, 11/70,
+      18                                ;    11/73 and up).  The program runs in kernel mode with pages 0-5
+      19                                ;    mapped onto themselves, and slides page 6 (140000-157777) over
+      20                                ;    physical memory 8 KB at a time to reach the rest.
+      21                                ;
+      22                                ; FINDING THE MEMORY.  Every 1 KB it reads one word.  If nothing answers,
+      23                                ; the bus times out and traps to 4; the trap handler sets the carry and
+      24                                ; returns, so a probe is just "TST (R0)" followed by "BCS".
+      25                                ;
+      26                                ; Before that it checks that the high address lines are really there.  A
+      27                                ; 22-bit processor in an 18-bit backplane, or an 18-bit one in a 16-bit
+      28                                ; Q-bus, sees its low memory again at every multiple of 256 KB or 64 KB,
+      29                                ; and would report that one board many times over.  So for each address
+      30                                ; bit from 16 up it writes two patterns to a word of this program and
+      31                                ; reads the same word with that bit set; if both come back, the bit is
+      32                                ; not connected and the search stops below it.
+      33                                ;
+      34                                ; TESTING IT.  Each pass fills all of the memory with a pattern and then
+      35                                ; reads all of it back, for five patterns:
+      36                                ;
+      37                                ;  ADDRESS  each word holds its own word address, modulo 177777.  The
+      38                                ;	    residue keeps changing above 64K words, so a dead address
+      39                                ;	    line - two addresses landing on one word - shows up wherever
+      40                                ;	    it is.  It is made by adding 1 in one's complement (ADD #1 and
+      41                                ;	    ADC), and the first value of a stretch is its 64-byte block
+      42                                ;	    number rotated left five places, which is the same thing.
+      43                                ;  INVERSE  the complement of that, so every bit is tried both ways.
+      44                                ;  ZEROS, ONES, CHECKER (125252 and 052525 in turn).
+      45                                ;
+      46                                ; Each bad word is reported with its address, what was written, what was
+      47                                ; read and which bits differ - the last is what points at a stuck data
+      48                                ; line or a dead chip.  Only the first ten are shown in each pass; all
+      49                                ; are counted.  The memory below the end of this program, which holds the
+      50                                ; vectors, the stack and the program itself, is not tested.
+      51                                ;
+      52                                ; If the machine has a cache, bits 2 and 3 of the cache control register
+      53                                ; at 177746 are set to force misses (11/70, 11/44, the J-11), so that the
+      54                                ; reads below come from memory and not from the cache.
+      55                                
+      56 177564                         TPS	= 177564		; console printer status: bit 7 = ready to print
+      57 177566                         TPB	= 177566		; console printer buffer
+      58                                
+      59 177572                         MMR0	= 177572		; memory management register 0: bit 0 = on
+      60 172516                         MMR3	= 172516		; memory management register 3: bit 4 = 22-bit
+      61 172300                         KISD0	= 172300		; kernel page descriptor registers 0-7
+      62 172340                         KISA0	= 172340		; kernel page address registers 0-7
+      63 172354                         KISA6	= KISA0+14		; the one for the window
+      64 177746                         CCR	= 177746		; cache control register
+      65                                
+      66 140000                         WINDOW	= 140000		; where page 6 starts: the sliding window
+      67 000200                         CHUNK	= 200			; 64-byte blocks in the window: 8 KB
+      68 000020                         STEP	= 20			; 64-byte blocks between probes: 1 KB
+      69 000024                         MAXBLK	= 20.			; most memory blocks it keeps track of
+      70 000012                         MAXERR	= 10.			; most bad words shown in one pass
+      71                                
+      72 000040                         SPACE	= 40
+      73                                
+      74                                	.ASECT
+      75 001000                         	.=1000
+      76                                
+      77 001000 012706  001000          START:	MOV	#START,SP	; stack grows down from 1000
+      78 001004 012746  000340          	MOV	#340,-(SP)	; priority 7, so no interrupt gets in - the
+      79 001010 012746  001016          	MOV	#10$,-(SP)	; 11/03's line clock has no enable bit.  RTI
+      80 001014 000002                  	RTI			; sets the PS on every model; MTPS does not
+      81 001016 012737  002730  000004  10$:	MOV	#BUSERR,@#4	; bus time-out: comes back with the carry set
+      82 001024 012737  000340  000006  	MOV	#340,@#6
+      83 001032 012700  003554          	MOV	#MSGHDR,R0
+      84 001036 004767  003344'         	JSR	PC,PUTS
+      85                                
+      86                                ; ---------------------------------------------------------------------
+      87                                ; How are addresses made?
+      88                                ; ---------------------------------------------------------------------
+      89                                
+      90 001042 005067  003366'         	CLR	MODE
+      91 001046 012767  001600  003370' 	MOV	#1600,LIMIT	; 160000 in 64-byte blocks
+      92 001054 005737  177572          	TST	@#MMR0
+      93 001060 103456                  	BCS	3$		; no memory management
+      94 001062 005037  177572          	CLR	@#MMR0		; off while it is set up; a restart may find it on
+      95                                
+      96 001066 012700  172340          	MOV	#KISA0,R0	; pages 0-6 onto physical 0-157777
+      97 001072 012701  172300          	MOV	#KISD0,R1
+      98 001076 005002                  	CLR	R2
+      99 001100 010220                  1$:	MOV	R2,(R0)+
+     100 001102 012721  077406          	MOV	#77406,(R1)+	; 8 KB, read and write
+     101 001106 062702  000200          	ADD	#200,R2
+     102 001112 020027  172356          	CMP	R0,#KISA6+2
+     103 001116 103770                  	BLO	1$
+     104 001120 012711  077406          	MOV	#77406,(R1)	; page 7: the I/O page
+     105 001124 012710  007600          	MOV	#7600,(R0)
+     106 001130 012767  000001  003366' 	MOV	#1,MODE
+     107 001136 012767  007600  003370' 	MOV	#7600,LIMIT	; 760000
+     108                                
+     109 001144 005737  172516          	TST	@#MMR3
+     110 001150 103417                  	BCS	2$		; no MMR3: 18-bit (11/34, 11/40)
+     111 001152 012737  000020  172516  	MOV	#20,@#MMR3	; ask for 22-bit addresses
+     112 001160 032737  000020  172516  	BIT	#20,@#MMR3
+     113 001166 001410                  	BEQ	2$		; it did not take: 18-bit (11/45, 11/55)
+     114 001170 012710  177600          	MOV	#177600,(R0)	; page 7 to the 22-bit I/O page
+     115 001174 012767  000002  003366' 	MOV	#2,MODE
+     116 001202 012767  177600  003370' 	MOV	#177600,LIMIT	; 17760000
+     117 001210 012737  000001  177572  2$:	MOV	#1,@#MMR0	; memory management on
+     118                                
+     119 001216 005737  177746          3$:	TST	@#CCR
+     120 001222 103403                  	BCS	4$		; no cache
+     121 001224 052737  000014  177746  	BIS	#14,@#CCR	; force misses: test the memory, not the cache
+     122                                4$:
+     123                                
+     124                                ; ---------------------------------------------------------------------
+     125                                ; Are the high address lines connected?
+     126                                ; ---------------------------------------------------------------------
+     127                                
+     128 001232 005767  003366'         FOLDCK:	TST	MODE
+     129 001236 001415                  	BEQ	7$		; 16 bits: nothing to check
+     130 001240 012701  002000          	MOV	#2000,R1	; 200000, address bit 16, in 64-byte blocks
+     131 001244 020167  003370'         5$:	CMP	R1,LIMIT
+     132 001250 103010                  	BHIS	7$
+     133 001252 004767  002574'         	JSR	PC,FOLDS
+     134 001256 103403                  	BCS	6$
+     135 001260 006301                  	ASL	R1		; the next address bit
+     136 001262 103370                  	BCC	5$
+     137 001264 000402                  	BR	7$
+     138 001266 010167  003370'         6$:	MOV	R1,LIMIT	; look no higher than the first one missing
+     139                                
+     140 001272 016700  003366'         7$:	MOV	MODE,R0
+     141 001276 006300                  	ASL	R0
+     142 001300 016000  003546          	MOV	MODMSG(R0),R0
+     143 001304 004767  003344'         	JSR	PC,PUTS
+     144 001310 016700  003370'         	MOV	LIMIT,R0
+     145 001314 005001                  	CLR	R1
+     146 001316 004767  003050'         	JSR	PC,PUTPA
+     147 001322 004767  003322'         	JSR	PC,CRLF
+     148                                
+     149                                ; ---------------------------------------------------------------------
+     150                                ; Find the memory: one probe every 1 KB, contiguous answers make a block
+     151                                ; ---------------------------------------------------------------------
+     152                                
+     153 001326 012704  003414          SIZE:	MOV	#BLKTAB,R4	; next free entry
+     154 001332 012705  177777          	MOV	#-1,R5		; start of the block being found, -1 if none
+     155 001336 005001                  	CLR	R1
+     156 001340 020167  003370'         1$:	CMP	R1,LIMIT
+     157 001344 103021                  	BHIS	4$
+     158 001346 004767  002534'         	JSR	PC,MAP
+     159 001352 005710                  	TST	(R0)
+     160 001354 103405                  	BCS	2$		; nothing there
+     161 001356 020527  177777          	CMP	R5,#-1
+     162 001362 001007                  	BNE	3$
+     163 001364 010105                  	MOV	R1,R5		; a block starts here
+     164 001366 000405                  	BR	3$
+     165 001370 020527  177777          2$:	CMP	R5,#-1
+     166 001374 001402                  	BEQ	3$
+     167 001376 004767  002710'         	JSR	PC,ADDBLK	; and ends here
+     168 001402 062701  000020          3$:	ADD	#STEP,R1
+     169 001406 000754                  	BR	1$
+     170 001410 020527  177777          4$:	CMP	R5,#-1
+     171 001414 001402                  	BEQ	5$
+     172 001416 004767  002710'         	JSR	PC,ADDBLK	; runs up to the limit
+     173 001422 010467  003412'         5$:	MOV	R4,BLKTOP
+     174                                
+     175 001426 012700  004041          	MOV	#MSGFND,R0
+     176 001432 004767  003344'         	JSR	PC,PUTS
+     177 001436 012704  003414          	MOV	#BLKTAB,R4
+     178 001442 020467  003412'         6$:	CMP	R4,BLKTOP
+     179 001446 103005                  	BHIS	7$
+     180 001450 012401                  	MOV	(R4)+,R1
+     181 001452 012402                  	MOV	(R4)+,R2
+     182 001454 004767  002740'         	JSR	PC,SHOBLK
+     183 001460 000770                  	BR	6$
+     184                                
+     185 001462 012700  004435          7$:	MOV	#PRGEND+77,R0	; the first 64-byte block clear of this program
+     186 001466 004767  002672'         	JSR	PC,SHR6
+     187 001472 010067  003372'         	MOV	R0,PROT
+     188 001476 012700  004076          	MOV	#MSGTST,R0
+     189 001502 004767  003344'         	JSR	PC,PUTS
+     190 001506 016700  003372'         	MOV	PROT,R0
+     191 001512 005001                  	CLR	R1
+     192 001514 004767  003050'         	JSR	PC,PUTPA
+     193 001520 012700  004126          	MOV	#MSGTS2,R0
+     194 001524 004767  003344'         	JSR	PC,PUTS
+     195                                
+     196                                ; ---------------------------------------------------------------------
+     197                                ; Test it, for ever
+     198                                ; ---------------------------------------------------------------------
+     199                                
+     200 001530 005067  003400'         	CLR	PASSNO
+     201 001534 005067  003404'         	CLR	ERRCNT
+     202 001540 005267  003400'         PASS:	INC	PASSNO
+     203 001544 005067  003402'         	CLR	PERRS
+     204 001550 012700  004171          	MOV	#MSGPAS,R0
+     205 001554 004767  003344'         	JSR	PC,PUTS
+     206 001560 016700  003400'         	MOV	PASSNO,R0
+     207 001564 004767  003200'         	JSR	PC,PUTDEC
+     208 001570 012700  000072          	MOV	#':,R0
+     209 001574 004767  003306'         	JSR	PC,PUTC
+     210 001600 012705  001734          	MOV	#TESTS,R5
+     211 001604 012567  003374'         1$:	MOV	(R5)+,STFN	; how the test starts a stretch
+     212 001610 001426                  	BEQ	2$
+     213 001612 012567  003376'         	MOV	(R5)+,NXFN	; and goes from one word to the next
+     214 001616 005067  003406'         	CLR	BOL		; mid-line now
+     215 001622 012700  000040          	MOV	#SPACE,R0
+     216 001626 004767  003306'         	JSR	PC,PUTC
+     217 001632 012500                  	MOV	(R5)+,R0	; its name
+     218 001634 004767  003344'         	JSR	PC,PUTS
+     219 001640 010546                  	MOV	R5,-(SP)
+     220 001642 012705  002224          	MOV	#FILL,R5
+     221 001646 004767  002102'         	JSR	PC,WALK
+     222 001652 012705  002244          	MOV	#CHECK,R5
+     223 001656 004767  002102'         	JSR	PC,WALK
+     224 001662 012605                  	MOV	(SP)+,R5
+     225 001664 000747                  	BR	1$
+     226                                
+     227 001666 012700  004176          2$:	MOV	#MSGERR,R0
+     228 001672 004767  003344'         	JSR	PC,PUTS
+     229 001676 016700  003402'         	MOV	PERRS,R0
+     230 001702 004767  003200'         	JSR	PC,PUTDEC
+     231 001706 012700  004210          	MOV	#MSGALL,R0
+     232 001712 004767  003344'         	JSR	PC,PUTS
+     233 001716 016700  003404'         	MOV	ERRCNT,R0
+     234 001722 004767  003200'         	JSR	PC,PUTDEC
+     235 001726 004767  003322'         	JSR	PC,CRLF
+     236 001732 000702                  	BR	PASS
+     237                                
+     238                                ; ---------------------------------------------------------------------
+     239                                ; The tests: start, next, name.  A start routine puts the first value
+     240                                ; for the stretch beginning at 64-byte block R1 in R3; a next routine
+     241                                ; turns R3 into the value for the word after.  Both use only R3.
+     242                                ; ---------------------------------------------------------------------
+     243                                
+     244 001734 001774  002024  004272  TESTS:	.WORD	STADR,NXADR,TNADR
+     245 001742 002034  002044  004302  	.WORD	STINV,NXINV,TNINV
+     246 001750 002054  002066  004312  	.WORD	STZER,NXSAM,TNZER
+     247 001756 002060  002066  004320  	.WORD	STONE,NXSAM,TNONE
+     248 001764 002070  002076  004325  	.WORD	STCHK,NXFLP,TNCHK
+     249 001772 000000                  	.WORD	0
+     250                                
+     251 001774 010103                  STADR:	MOV	R1,R3		; R1 * 32 modulo 177777: rotate left 5
+     252 001776 006303                  	ASL	R3
+     253 002000 005503                  	ADC	R3
+     254 002002 006303                  	ASL	R3
+     255 002004 005503                  	ADC	R3
+     256 002006 006303                  	ASL	R3
+     257 002010 005503                  	ADC	R3
+     258 002012 006303                  	ASL	R3
+     259 002014 005503                  	ADC	R3
+     260 002016 006303                  	ASL	R3
+     261 002020 005503                  	ADC	R3
+     262 002022 000207                  	RTS	PC
+     263 002024 062703  000001          NXADR:	ADD	#1,R3		; add 1 in one's complement
+     264 002030 005503                  	ADC	R3
+     265 002032 000207                  	RTS	PC
+     266                                
+     267 002034 004767  001774'         STINV:	JSR	PC,STADR
+     268 002040 005103                  	COM	R3
+     269 002042 000207                  	RTS	PC
+     270 002044 162703  000001          NXINV:	SUB	#1,R3		; the complement of adding 1
+     271 002050 005603                  	SBC	R3
+     272 002052 000207                  	RTS	PC
+     273                                
+     274 002054 005003                  STZER:	CLR	R3
+     275 002056 000207                  	RTS	PC
+     276 002060 012703  177777          STONE:	MOV	#177777,R3
+     277 002064 000207                  	RTS	PC
+     278 002066 000207                  NXSAM:	RTS	PC
+     279                                
+     280 002070 012703  125252          STCHK:	MOV	#125252,R3	; every stretch is a whole number of
+     281 002074 000207                  	RTS	PC		; words in pairs, so this lines up
+     282 002076 005103                  NXFLP:	COM	R3
+     283 002100 000207                  	RTS	PC
+     284                                
+     285                                ; ---------------------------------------------------------------------
+     286                                ; WALK - call the routine at R5 for each stretch of the memory under
+     287                                ; test, at most 8 KB: R1 = its first 64-byte block, R0 = the virtual
+     288                                ; address it is at, R2 = its length in words.  The routine may change
+     289                                ; R0-R4.
+     290                                ; ---------------------------------------------------------------------
+     291                                
+     292 002102 012704  003414          WALK:	MOV	#BLKTAB,R4
+     293 002106 020467  003412'         1$:	CMP	R4,BLKTOP
+     294 002112 103043                  	BHIS	9$
+     295 002114 012401                  	MOV	(R4)+,R1	; the block's start
+     296 002116 012403                  	MOV	(R4)+,R3	; and its end
+     297 002120 020167  003372'         	CMP	R1,PROT
+     298 002124 103002                  	BHIS	2$
+     299 002126 016701  003372'         	MOV	PROT,R1		; not over this program
+     300 002132 020103                  2$:	CMP	R1,R3
+     301 002134 103364                  	BHIS	1$		; nothing of this block is left to test
+     302 002136 010302                  3$:	MOV	R3,R2
+     303 002140 160102                  	SUB	R1,R2		; what is left of it
+     304 002142 020227  000200          	CMP	R2,#CHUNK
+     305 002146 101402                  	BLOS	4$
+     306 002150 012702  000200          	MOV	#CHUNK,R2	; no more than fits in the window
+     307 002154 010246                  4$:	MOV	R2,-(SP)
+     308 002156 010146                  	MOV	R1,-(SP)
+     309 002160 010346                  	MOV	R3,-(SP)
+     310 002162 010446                  	MOV	R4,-(SP)
+     311 002164 004767  002534'         	JSR	PC,MAP
+     312 002170 006302                  	ASL	R2		; 64-byte blocks to words: times 32
+     313 002172 006302                  	ASL	R2
+     314 002174 006302                  	ASL	R2
+     315 002176 006302                  	ASL	R2
+     316 002200 006302                  	ASL	R2
+     317 002202 004715                  	JSR	PC,(R5)
+     318 002204 012604                  	MOV	(SP)+,R4
+     319 002206 012603                  	MOV	(SP)+,R3
+     320 002210 012601                  	MOV	(SP)+,R1
+     321 002212 062601                  	ADD	(SP)+,R1	; the next stretch
+     322 002214 020103                  	CMP	R1,R3
+     323 002216 103747                  	BLO	3$
+     324 002220 000732                  	BR	1$
+     325 002222 000207                  9$:	RTS	PC
+     326                                
+     327                                ; FILL - write the test's values over one stretch.
+     328 002224 004777  003374'         FILL:	JSR	PC,@STFN
+     329 002230 010320                  1$:	MOV	R3,(R0)+
+     330 002232 004777  003376'         	JSR	PC,@NXFN
+     331 002236 005302                  	DEC	R2
+     332 002240 001373                  	BNE	1$
+     333 002242 000207                  	RTS	PC
+     334                                
+     335                                ; CHECK - read one stretch back and report every word that differs.
+     336 002244 004777  003374'         CHECK:	JSR	PC,@STFN
+     337 002250 012004                  1$:	MOV	(R0)+,R4
+     338 002252 020403                  	CMP	R4,R3
+     339 002254 001005                  	BNE	3$
+     340 002256 004777  003376'         2$:	JSR	PC,@NXFN
+     341 002262 005302                  	DEC	R2
+     342 002264 001371                  	BNE	1$
+     343 002266 000207                  	RTS	PC
+     344 002270 004767  002276'         3$:	JSR	PC,BAD
+     345 002274 000770                  	BR	2$
+     346                                
+     347                                ; BAD - count a bad word and, if few enough have been shown, show it.
+     348                                ; R0 = just past it, R1 = the stretch's first 64-byte block,
+     349                                ; R3 = what was written, R4 = what was read.  Keeps all registers.
+     350 002276 005267  003404'         BAD:	INC	ERRCNT		; both counts stop at 65535 rather than
+     351 002302 001002                  	BNE	1$		; going round to 0
+     352 002304 005367  003404'         	DEC	ERRCNT
+     353 002310 005267  003402'         1$:	INC	PERRS
+     354 002314 001002                  	BNE	2$
+     355 002316 005367  003402'         	DEC	PERRS
+     356 002322 026727  003402' 000012  2$:	CMP	PERRS,#MAXERR
+     357 002330 101401                  	BLOS	3$
+     358 002332 000207                  	RTS	PC
+     359 002334 010046                  3$:	MOV	R0,-(SP)
+     360 002336 010146                  	MOV	R1,-(SP)
+     361 002340 010246                  	MOV	R2,-(SP)
+     362 002342 010002                  	MOV	R0,R2
+     363 002344 004767  002534'         	JSR	PC,MAP		; R0 = where the stretch starts
+     364 002350 160002                  	SUB	R0,R2
+     365 002352 162702  000002          	SUB	#2,R2		; the bad word's offset in the stretch
+     366 002356 010200                  	MOV	R2,R0
+     367 002360 004767  002672'         	JSR	PC,SHR6
+     368 002364 060001                  	ADD	R0,R1		; its 64-byte block
+     369 002366 042702  177700          	BIC	#177700,R2	; and where in that
+     370 002372 005767  003406'         	TST	BOL
+     371 002376 001002                  	BNE	4$
+     372 002400 004767  003322'         	JSR	PC,CRLF		; off the line of test names
+     373 002404 012700  004222          4$:	MOV	#MSGBAD,R0
+     374 002410 004767  003344'         	JSR	PC,PUTS
+     375 002414 010100                  	MOV	R1,R0
+     376 002416 010201                  	MOV	R2,R1
+     377 002420 004767  003050'         	JSR	PC,PUTPA
+     378 002424 012700  004241          	MOV	#MSGWR,R0
+     379 002430 004767  003344'         	JSR	PC,PUTS
+     380 002434 010300                  	MOV	R3,R0
+     381 002436 004767  003116'         	JSR	PC,PUTO6
+     382 002442 012700  004252          	MOV	#MSGRD,R0
+     383 002446 004767  003344'         	JSR	PC,PUTS
+     384 002452 010400                  	MOV	R4,R0
+     385 002454 004767  003116'         	JSR	PC,PUTO6
+     386 002460 012700  004262          	MOV	#MSGBIT,R0
+     387 002464 004767  003344'         	JSR	PC,PUTS
+     388 002470 010300                  	MOV	R3,R0		; the bits that differ, without XOR:
+     389 002472 050400                  	BIS	R4,R0		; (written OR read)
+     390 002474 010401                  	MOV	R4,R1
+     391 002476 005101                  	COM	R1
+     392 002500 010302                  	MOV	R3,R2
+     393 002502 040102                  	BIC	R1,R2		; minus (written AND read)
+     394 002504 040200                  	BIC	R2,R0
+     395 002506 004767  003116'         	JSR	PC,PUTO6
+     396 002512 004767  003322'         	JSR	PC,CRLF
+     397 002516 012767  000001  003406' 	MOV	#1,BOL
+     398 002524 012602                  	MOV	(SP)+,R2
+     399 002526 012601                  	MOV	(SP)+,R1
+     400 002530 012600                  	MOV	(SP)+,R0
+     401 002532 000207                  	RTS	PC
+     402                                
+     403                                ; ---------------------------------------------------------------------
+     404                                ; Addressing
+     405                                ; ---------------------------------------------------------------------
+     406                                
+     407                                ; MAP - R0 = a virtual address for the 64-byte block R1, valid for the
+     408                                ; 8 KB from there.  With memory management that is the window, moved
+     409                                ; onto it; without, the address is simply the block number times 64.
+     410 002534 005767  003366'         MAP:	TST	MODE
+     411 002540 001405                  	BEQ	1$
+     412 002542 010137  172354          	MOV	R1,@#KISA6
+     413 002546 012700  140000          	MOV	#WINDOW,R0
+     414 002552 000207                  	RTS	PC
+     415 002554 010100                  1$:	MOV	R1,R0
+     416 002556 006300                  	ASL	R0
+     417 002560 006300                  	ASL	R0
+     418 002562 006300                  	ASL	R0
+     419 002564 006300                  	ASL	R0
+     420 002566 006300                  	ASL	R0
+     421 002570 006300                  	ASL	R0
+     422 002572 000207                  	RTS	PC
+     423                                
+     424                                ; FOLDS - is the address bit worth R1 64-byte blocks not connected?
+     425                                ; Sets the carry if the word FOLD reads back at its own address plus
+     426                                ; that.  Uses R0 and R2.
+     427 002574 010146                  FOLDS:	MOV	R1,-(SP)
+     428 002576 012700  003410          	MOV	#FOLD,R0	; this program's own addresses are physical
+     429 002602 010002                  	MOV	R0,R2
+     430 002604 042702  177700          	BIC	#177700,R2	; its place in its 64-byte block
+     431 002610 004767  002672'         	JSR	PC,SHR6
+     432 002614 060001                  	ADD	R0,R1
+     433 002616 004767  002534'         	JSR	PC,MAP
+     434 002622 060002                  	ADD	R0,R2		; R2 = the same word with the bit set
+     435 002624 012601                  	MOV	(SP)+,R1
+     436 002626 005712                  	TST	(R2)
+     437 002630 103416                  	BCS	2$		; no memory there at all
+     438 002632 012767  125252  003410' 	MOV	#125252,FOLD
+     439 002640 021227  125252          	CMP	(R2),#125252
+     440 002644 001010                  	BNE	2$
+     441 002646 012767  052525  003410' 	MOV	#052525,FOLD
+     442 002654 021227  052525          	CMP	(R2),#052525
+     443 002660 001002                  	BNE	2$
+     444 002662 000261                  	SEC			; both followed: it is the same word
+     445 002664 000207                  	RTS	PC
+     446 002666 000241                  2$:	CLC
+     447 002670 000207                  	RTS	PC
+     448                                
+     449                                ; SHR6 - shift R0, which must be positive, right six places.
+     450 002672 006200                  SHR6:	ASR	R0
+     451 002674 006200                  	ASR	R0
+     452 002676 006200                  	ASR	R0
+     453 002700 006200                  	ASR	R0
+     454 002702 006200                  	ASR	R0
+     455 002704 006200                  	ASR	R0
+     456 002706 000207                  	RTS	PC
+     457                                
+     458                                ; ADDBLK - add the block from R5 to R1 (64-byte blocks) to the table
+     459                                ; at R4, if it has room, and set R5 to -1.
+     460 002710 020427  003534          ADDBLK:	CMP	R4,#BLKTAB+<MAXBLK*4>
+     461 002714 103002                  	BHIS	1$
+     462 002716 010524                  	MOV	R5,(R4)+
+     463 002720 010124                  	MOV	R1,(R4)+
+     464 002722 012705  177777          1$:	MOV	#-1,R5
+     465 002726 000207                  	RTS	PC
+     466                                
+     467                                ; BUSERR - vector 4: nothing answered.  Return with the carry set.
+     468 002730 052766  000001  000002  BUSERR:	BIS	#1,2(SP)
+     469 002736 000002                  	RTI
+     470                                
+     471                                ; ---------------------------------------------------------------------
+     472                                ; Printing
+     473                                ; ---------------------------------------------------------------------
+     474                                
+     475                                ; SHOBLK - print the block from R1 to R2 (64-byte blocks, R2 just past
+     476                                ; its end) as "  first - last  size KB".  Uses R0-R2.
+     477 002740 012700  004061          SHOBLK:	MOV	#MSGIND,R0
+     478 002744 004767  003344'         	JSR	PC,PUTS
+     479 002750 010246                  	MOV	R2,-(SP)
+     480 002752 010146                  	MOV	R1,-(SP)
+     481 002754 010100                  	MOV	R1,R0
+     482 002756 005001                  	CLR	R1
+     483 002760 004767  003050'         	JSR	PC,PUTPA
+     484 002764 012700  004064          	MOV	#MSGTO,R0
+     485 002770 004767  003344'         	JSR	PC,PUTS
+     486 002774 016600  000002          	MOV	2(SP),R0	; the last byte is the end less one
+     487 003000 005300                  	DEC	R0
+     488 003002 012701  000077          	MOV	#77,R1
+     489 003006 004767  003050'         	JSR	PC,PUTPA
+     490 003012 012601                  	MOV	(SP)+,R1
+     491 003014 012600                  	MOV	(SP)+,R0
+     492 003016 160100                  	SUB	R1,R0		; 64-byte blocks, divided by 16
+     493 003020 000241                  	CLC
+     494 003022 006000                  	ROR	R0
+     495 003024 006200                  	ASR	R0
+     496 003026 006200                  	ASR	R0
+     497 003030 006200                  	ASR	R0
+     498 003032 004767  003200'         	JSR	PC,PUTDEC
+     499 003036 012700  004070          	MOV	#MSGKB,R0
+     500 003042 004767  003344'         	JSR	PC,PUTS
+     501 003046 000207                  	RTS	PC
+     502                                
+     503                                ; PUTPA - print the physical address of byte R1 (0-77) of 64-byte block
+     504                                ; R0, as eight octal digits: the block number, then R1 in two.
+     505 003050 010146                  PUTPA:	MOV	R1,-(SP)
+     506 003052 004767  003116'         	JSR	PC,PUTO6
+     507 003056 011600                  	MOV	(SP),R0
+     508 003060 006200                  	ASR	R0
+     509 003062 006200                  	ASR	R0
+     510 003064 006200                  	ASR	R0
+     511 003066 062700  000060          	ADD	#'0,R0
+     512 003072 004767  003306'         	JSR	PC,PUTC
+     513 003076 012600                  	MOV	(SP)+,R0
+     514 003100 042700  177770          	BIC	#177770,R0
+     515 003104 062700  000060          	ADD	#'0,R0
+     516 003110 004767  003306'         	JSR	PC,PUTC
+     517 003114 000207                  	RTS	PC
+     518                                
+     519                                ; PUTO6 - print R0 as six octal digits.
+     520 003116 010146                  PUTO6:	MOV	R1,-(SP)
+     521 003120 010246                  	MOV	R2,-(SP)
+     522 003122 010001                  	MOV	R0,R1
+     523 003124 005000                  	CLR	R0
+     524 003126 006301                  	ASL	R1		; the first digit is the top bit alone
+     525 003130 006100                  	ROL	R0
+     526 003132 012702  000006          	MOV	#6,R2
+     527 003136 000407                  	BR	2$
+     528 003140 005000                  1$:	CLR	R0
+     529 003142 006301                  	ASL	R1
+     530 003144 006100                  	ROL	R0
+     531 003146 006301                  	ASL	R1
+     532 003150 006100                  	ROL	R0
+     533 003152 006301                  	ASL	R1
+     534 003154 006100                  	ROL	R0
+     535 003156 062700  000060          2$:	ADD	#'0,R0
+     536 003162 004767  003306'         	JSR	PC,PUTC
+     537 003166 005302                  	DEC	R2
+     538 003170 001363                  	BNE	1$
+     539 003172 012602                  	MOV	(SP)+,R2
+     540 003174 012601                  	MOV	(SP)+,R1
+     541 003176 000207                  	RTS	PC
+     542                                
+     543                                ; PUTDEC - print R0, unsigned, in decimal, right-aligned in five places.
+     544 003200 010146                  PUTDEC:	MOV	R1,-(SP)
+     545 003202 010246                  	MOV	R2,-(SP)
+     546 003204 010346                  	MOV	R3,-(SP)
+     547 003206 010001                  	MOV	R0,R1
+     548 003210 012702  003534          	MOV	#TENS,R2
+     549 003214 005003                  	CLR	R3		; set once a digit has been printed
+     550 003216 012700  000060          1$:	MOV	#'0,R0
+     551 003222 020112                  2$:	CMP	R1,(R2)		; subtract this power of ten while it goes
+     552 003224 103403                  	BLO	3$
+     553 003226 161201                  	SUB	(R2),R1
+     554 003230 005200                  	INC	R0
+     555 003232 000773                  	BR	2$
+     556 003234 020027  000060          3$:	CMP	R0,#'0
+     557 003240 001010                  	BNE	4$
+     558 003242 005703                  	TST	R3
+     559 003244 001007                  	BNE	5$
+     560 003246 021227  000001          	CMP	(R2),#1		; the units are shown even when 0
+     561 003252 001404                  	BEQ	5$
+     562 003254 012700  000040          	MOV	#SPACE,R0	; a leading zero
+     563 003260 000401                  	BR	5$
+     564 003262 005203                  4$:	INC	R3
+     565 003264 004767  003306'         5$:	JSR	PC,PUTC
+     566 003270 022227  000001          	CMP	(R2)+,#1
+     567 003274 001350                  	BNE	1$
+     568 003276 012603                  	MOV	(SP)+,R3
+     569 003300 012602                  	MOV	(SP)+,R2
+     570 003302 012601                  	MOV	(SP)+,R1
+     571 003304 000207                  	RTS	PC
+     572                                
+     573                                ; PUTC - print the character in R0.
+     574 003306 105737  177564          PUTC:	TSTB	@#TPS
+     575 003312 100375                  	BPL	PUTC
+     576 003314 110037  177566          	MOVB	R0,@#TPB
+     577 003320 000207                  	RTS	PC
+     578                                
+     579                                ; CRLF - start a new line.
+     580 003322 012700  000015          CRLF:	MOV	#15,R0
+     581 003326 004767  003306'         	JSR	PC,PUTC
+     582 003332 012700  000012          	MOV	#12,R0
+     583 003336 004767  003306'         	JSR	PC,PUTC
+     584 003342 000207                  	RTS	PC
+     585                                
+     586                                ; PUTS - print the zero-terminated string at R0.  Keeps R1.
+     587 003344 010146                  PUTS:	MOV	R1,-(SP)
+     588 003346 010001                  	MOV	R0,R1
+     589 003350 112100                  1$:	MOVB	(R1)+,R0
+     590 003352 001403                  	BEQ	2$
+     591 003354 004767  003306'         	JSR	PC,PUTC
+     592 003360 000773                  	BR	1$
+     593 003362 012601                  2$:	MOV	(SP)+,R1
+     594 003364 000207                  	RTS	PC
+     595                                
+     596                                ; ---------------------------------------------------------------------
+     597                                ; Data
+     598                                ; ---------------------------------------------------------------------
+     599                                
+     600 003366 000000                  MODE:	.WORD	0		; 0 = no memory management, 1 = 18-bit, 2 = 22-bit
+     601 003370 000000                  LIMIT:	.WORD	0		; where to stop looking, in 64-byte blocks
+     602 003372 000000                  PROT:	.WORD	0		; the first 64-byte block clear of this program
+     603 003374 000000                  STFN:	.WORD	0		; the current test's start routine
+     604 003376 000000                  NXFN:	.WORD	0		; and its next routine
+     605 003400 000000                  PASSNO:	.WORD	0
+     606 003402 000000                  PERRS:	.WORD	0		; bad words this pass
+     607 003404 000000                  ERRCNT:	.WORD	0		; bad words since the start
+     608 003406 000000                  BOL:	.WORD	0		; set when the printing is at the start of a line
+     609 003410 000000                  FOLD:	.WORD	0		; written to see whether an address bit is there
+     610 003412 000000                  BLKTOP:	.WORD	0		; just past the last block in the table
+     611 003414                         BLKTAB:	.BLKW	MAXBLK*2	; first and just-past-last 64-byte block of each
+     612                                
+     613 003534 023420  001750  000144  TENS:	.WORD	10000.,1000.,100.,10.,1
+         003542 000012  000001          
+     614                                
+     615 003546 003652  003717  003770  MODMSG:	.WORD	MSG16,MSG18,MSG22
+     616                                
+     617 003554    015     012          MSGHDR:	.BYTE	15,12
+     618 003556    115     105     115  	.ASCII	/MEMTESTER - FINDS THE MEMORY, THEN TESTS IT UNTIL HALTED./
+         003561    124     105     123  
+         003564    124     105     122  
+         003567    040     055     040  
+         003572    106     111     116  
+         003575    104     123     040  
+         003600    124     110     105  
+         003603    040     115     105  
+         003606    115     117     122  
+         003611    131     054     040  
+         003614    124     110     105  
+         003617    116     040     124  
+         003622    105     123     124  
+         003625    123     040     111  
+         003630    124     040     125  
+         003633    116     124     111  
+         003636    114     040     110  
+         003641    101     114     124  
+         003644    105     104     056  
+     619 003647    015     012     000  	.BYTE	15,12,0
+     620 003652    116     117     040  MSG16:	.ASCIZ	/NO MEMORY MANAGEMENT. LOOKING BELOW /
+         003655    115     105     115  
+         003660    117     122     131  
+         003663    040     115     101  
+         003666    116     101     107  
+         003671    105     115     105  
+         003674    116     124     056  
+         003677    040     114     117  
+         003702    117     113     111  
+         003705    116     107     040  
+         003710    102     105     114  
+         003713    117     127     040  
+         003716    000                  
+     621 003717    061     070     055  MSG18:	.ASCIZ	/18-BIT MEMORY MANAGEMENT. LOOKING BELOW /
+         003722    102     111     124  
+         003725    040     115     105  
+         003730    115     117     122  
+         003733    131     040     115  
+         003736    101     116     101  
+         003741    107     105     115  
+         003744    105     116     124  
+         003747    056     040     114  
+         003752    117     117     113  
+         003755    111     116     107  
+         003760    040     102     105  
+         003763    114     117     127  
+         003766    040     000          
+     622 003770    062     062     055  MSG22:	.ASCIZ	/22-BIT MEMORY MANAGEMENT. LOOKING BELOW /
+         003773    102     111     124  
+         003776    040     115     105  
+         004001    115     117     122  
+         004004    131     040     115  
+         004007    101     116     101  
+         004012    107     105     115  
+         004015    105     116     124  
+         004020    056     040     114  
+         004023    117     117     113  
+         004026    111     116     107  
+         004031    040     102     105  
+         004034    114     117     127  
+         004037    040     000          
+     623 004041    115     105     115  MSGFND:	.ASCII	/MEMORY FOUND:/
+         004044    117     122     131  
+         004047    040     106     117  
+         004052    125     116     104  
+         004055    072                  
+     624 004056    015     012     000  	.BYTE	15,12,0
+     625 004061    040     040     000  MSGIND:	.ASCIZ	/  /
+     626 004064    040     055     040  MSGTO:	.ASCIZ	/ - /
+         004067    000                  
+     627 004070    040     113     102  MSGKB:	.ASCII	/ KB/
+     628 004073    015     012     000  	.BYTE	15,12,0
+     629 004076    124     105     123  MSGTST:	.ASCIZ	/TESTING ALL OF IT FROM /
+         004101    124     111     116  
+         004104    107     040     101  
+         004107    114     114     040  
+         004112    117     106     040  
+         004115    111     124     040  
+         004120    106     122     117  
+         004123    115     040     000  
+     630 004126    040     125     120  MSGTS2:	.ASCII	/ UP; BELOW THAT IS THIS PROGRAM./
+         004131    073     040     102  
+         004134    105     114     117  
+         004137    127     040     124  
+         004142    110     101     124  
+         004145    040     111     123  
+         004150    040     124     110  
+         004153    111     123     040  
+         004156    120     122     117  
+         004161    107     122     101  
+         004164    115     056          
+     631 004166    015     012     000  	.BYTE	15,12,0
+     632 004171    120     101     123  MSGPAS:	.ASCIZ	/PASS/
+         004174    123     000          
+     633 004176    040     040     105  MSGERR:	.ASCIZ	/  ERRORS:/
+         004201    122     122     117  
+         004204    122     123     072  
+         004207    000                  
+     634 004210    054     040     111  MSGALL:	.ASCIZ	/, IN ALL:/
+         004213    116     040     101  
+         004216    114     114     072  
+         004221    000                  
+     635 004222    040     040     102  MSGBAD:	.ASCIZ	/  BAD WORD AT /
+         004225    101     104     040  
+         004230    127     117     122  
+         004233    104     040     101  
+         004236    124     040     000  
+     636 004241    040     040     127  MSGWR:	.ASCIZ	/  WROTE /
+         004244    122     117     124  
+         004247    105     040     000  
+     637 004252    040     040     122  MSGRD:	.ASCIZ	/  READ /
+         004255    105     101     104  
+         004260    040     000          
+     638 004262    040     040     102  MSGBIT:	.ASCIZ	/  BITS /
+         004265    111     124     123  
+         004270    040     000          
+     639 004272    101     104     104  TNADR:	.ASCIZ	/ADDRESS/
+         004275    122     105     123  
+         004300    123     000          
+     640 004302    111     116     126  TNINV:	.ASCIZ	/INVERSE/
+         004305    105     122     123  
+         004310    105     000          
+     641 004312    132     105     122  TNZER:	.ASCIZ	/ZEROS/
+         004315    117     123     000  
+     642 004320    117     116     105  TNONE:	.ASCIZ	/ONES/
+         004323    123     000          
+     643 004325    103     110     105  TNCHK:	.ASCIZ	/CHECKER/
+         004330    103     113     105  
+         004333    122     000          
+     644 004335    000                  	.EVEN
+     645                                
+     646                                PRGEND:				; everything from here up is tested
+     647                                
+     648                                	.END	START

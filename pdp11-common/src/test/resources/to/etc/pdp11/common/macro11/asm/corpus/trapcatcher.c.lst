@@ -1,0 +1,32 @@
+       1                                	.title Trap catcher program
+       2                                	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+       3                                
+       4                                	; The idea of a trap catcher is to load all the trap vectors so that
+       5                                	; a random trap can be detected. The first program will trap to 0 on
+       6                                	; any random trap.
+       7                                	; Remember on that 11/03 processors (and some other LSI as strap options),
+       8                                	; that the line time clock is always running unless disabled by the LTC switch
+       9                                	; on the front panel, and this will cause traps to location 0100.
+      10                                	.asect
+      11                                
+      12                                	; This slightly more complicated version will identity the trap location, with the processor halting with the trap location + 6 in the PC register.
+      13                                
+      14 001000                         	.=1000
+      15                                start:
+      16 001000 012706  000770          	mov #770,sp	; set the stack pointer
+      17 001004 005000                  	clr r0		; memory pointer
+      18 001006 012701  000002          	mov #2,r1	; trap value
+      19                                
+      20 001012 010120                  loop:	mov r1,(r0)+	; set trap vector value
+      21 001014 005020                  	clr (r0)+	; set halt instruction in trap
+      22 001016 062701  000004          	add #4,r1	; update r1 for next trap
+      23                                
+      24 001022 020600                  	cmp sp,r0	; load up to stack pointer
+      25 001024 001372                  	bne loop
+      26 001026 000000                  	halt
+      27                                
+      28                                
+      29                                	; After loading memory with the trap catcher,
+      30                                	; deposit 777 into location 1000 as start (at location 1000).
+      31                                	; The processor should loop at 1000.
+      32                                

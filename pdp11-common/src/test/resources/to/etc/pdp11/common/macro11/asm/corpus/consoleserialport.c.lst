@@ -1,0 +1,37 @@
+       1                                
+       2                                	.title	Console serial port
+       3                                
+       4                                	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+       5                                	; Any DL-11 style serial port (including the console) can be simply
+       6                                	; tested by depositing 060 (octal) into its 'transmitter buffer ',
+       7                                	; 0777566 in the case of the console. A '0' should appear on the
+       8                                	; console. If it is anything else, check the baud rate settings.
+       9                                	;
+      10                                	; To check the input register, press the '0', then examine the
+      11                                	; receive register 0777562 and it should contain 060.
+      12                                	;
+      13                                	; Needles to say, if you are using any of the Qbus processors,
+      14                                	; or a PDP11/24, /44, /84 or /94 then you need the serial console
+      15                                	; working to do anything.
+      16                                	;
+      17                                	; As simple serial echo test would be:-
+      18                                
+      19                                	.asect
+      20                                
+      21 177560                         	kbs = 177560
+      22                                
+      23                                
+      24 001000                         	.=1000
+      25                                
+      26                                start:
+      27 001000 012700  177560          	mov #kbs, r0
+      28                                
+      29 001004 105710                  wait:	tstb (r0)	; character received?
+      30 001006 100376                  	bpl wait	; no, loop
+      31 001010 016060  000002  000006  	mov 2(r0),6(r0) ; transmit data
+      32                                
+      33 001016 000772                  	br wait 	; get next character
+      34                                
+      35                                	; Note:- PDP11 guru's will notice that I don't test for
+      36                                	; transmitter ready, as there is little point given that you
+      37                                	; cannot type fast enough for it to overrun!

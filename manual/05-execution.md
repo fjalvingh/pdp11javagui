@@ -30,7 +30,7 @@ while you are typing in it.
 | **New program** | Assemble the program in [the Assembler window](09-assembler.md), load it into the machine, reset, and set the PC to where it starts |
 
 **New program** is the whole edit-assemble-load-run cycle on one button. It needs a machine to load
-into, a source open in the assembler, and `macro11` on your `PATH`; it opens the assembler window
+into and a source open in the assembler; it opens the assembler window
 first, because that is where an error will be shown, and stops if the assembly fails.
 
 A status line at the bottom says what the machine is doing: *stopped at 001000*, *running*, *state

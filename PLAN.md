@@ -59,7 +59,7 @@ do, and they are worth more than the tick.
 | Assembler UI | One window, Source / Listing / Code as tabs |
 | Memory views | Unlimited, opened on demand (replaces fixed Mem1–Mem4) |
 | PDP-11/70 panel | **Dropped** |
-| MACRO-11 assembler | External binary, required on `PATH` |
+| MACRO-11 assembler | In the application: a Java port of the C `macro11` (amended - see phase 6) |
 | m4 preprocessor | Replaced by Java templating |
 | Parity testing | Port the `Fake*` consoles, test against them; golden transcripts deferred |
 | First console | SimH direct |
@@ -285,7 +285,7 @@ to.etc.pdp11.common.addr      Address, MemoryAddressType                      (p
 to.etc.pdp11.common.mem       MemoryCell, MemoryCellGroup, MemoryCellGroups    (pdp11-common)
 to.etc.pdp11.common.disas     Disassembler, DecodedInstruction                (pdp11-common)
 to.etc.pdp11.common.memfile   memory file formats                             (pdp11-common)
-to.etc.pdp11.common.macro11   MACRO-11 driver and listing parser              (pdp11-common)
+to.etc.pdp11.common.macro11   MACRO-11 assembler (.asm) and listing parser     (pdp11-common)
 to.etc.pdp11.common.microcode microcode documents, MicrocodeBrowser           (pdp11-common)
 to.etc.pdp11.common.util      Logger, ProgressMonitor, octal formatting       (pdp11-common)
 to.etc.pdp11.core.bits        BitfieldDef, BitfieldsDef, BitfieldsDefs
@@ -655,7 +655,8 @@ reference build could not be compiled for cross-checking. `tools/gen-disas-corpu
 carries the `libvdeplug` workaround in case the binary is replaced.
 
 **CI has no SimH, no `macro11` and no Free Pascal**, and is not going to get them. Anything
-that needs one is either a committed fixture (the disassembler corpus) or a script under
+that needs one is either a committed fixture (the disassembler corpus, the assembler's
+`CorpusTest` listings) or a script under
 `tools/` run by hand — see `tools/pascal-disas-diff.sh`. Keep that split; a cross-check that
 only runs on one machine must not be able to break the build on the others. **Extract `machines/*.ini` from the retrocmp.com installer and commit them** —
 they drive bitfield definitions, register-group windows, the I/O page scanner and the fakes'
@@ -1352,6 +1353,10 @@ deposits them, or verifies them against what the machine already holds.
 
 **Outcome so far, part 6 — the Assembler.** Three windows become one, an external program
 becomes a class, and the last of the Pascal's cross-window reach-ins goes with them.
+*(Since superseded in part: the external program is gone and the assembler is part of the
+application - see "Amended: the assembler is part of the application" under phase 6. The exit
+code and the unresolved-global points below are history; the window and the model are as
+described.)*
 `Macro11` runs the assembler; `Macro11ListingParser` reads what it wrote into memory cells;
 `AssemblerModel` is the program itself, on the `AppContext`; the window is three tabs over that.
 
@@ -1502,6 +1507,31 @@ a semicolon and everything else is a word". `AbstractTokenMaker` is the supporte
 one by hand, produces the same tokens, and leaves the build a plain compile.
 `Macro11TokenMaker` is ~200 lines, most of which is the instruction list.
 
+**Amended: the assembler is part of the application, not an external `macro11`.** Running the
+C tool cost a dependency that is missing on Windows and macOS (risk 4 in §7), a listing to be
+parsed back for everything the assembler already knew, and an exit code that said nothing.
+`to.etc.pdp11.common.macro11.asm` is a port of it, structured as Java rather than transliterated:
+
+- **One pass and a token reader.** The source is read once, through a `TokenReader` with token
+  lookahead, and a word that depends on something further down is a `CodeWord` patched at the
+  end. That works because a PDP-11 instruction's size depends only on how its operands are
+  written. What decides layout - `.=`, `.BLKW`, `.REPT`, `.IF` - must be known where it is used,
+  and saying so is an error with a message rather than DEC's quiet phase error.
+- **Every error, and warnings.** The C assembler let a great deal through (see its review in
+  `/home/jal/prj/macro11/review.md`). This one reports all of it, finds every error in one run,
+  and has 25 kinds of warning (`WarningKind`), each switchable and each with a test that shows it
+  the mistake it is for.
+- **No linker, so the program is absolute.** An undefined or external symbol is an error, and
+  relocatable sections are placed one after the other from address 0. The listing has the C
+  layout exactly, so `Macro11ListingParser` still reads saved listings, and `.END` now gives the
+  start address.
+- **Checked against the C assembler on 14,231 sources** of the trailing-edge archive: no crash
+  and no hang, and every program the C one assembles cleanly comes out the same except where the
+  C one is wrong (its floating point, assembling past `.END`) or where sections are placed
+  differently on purpose. `CorpusTest` keeps that comparison on the project's own programs.
+- **Still to do:** macro libraries (`.MLB`, `.LIBRARY`); `.MCALL` finds `NAME.MAC` beside the
+  source until then.
+
 **Phase 7 — Disc images.** `MediaImageDevicesU` (1,189), `SerialXferU` (939),
 `DiscImageBadBlockU` (746), `MediaImageBufferU` (373) and `FormDiscImageU` (2,061) — ~5,300
 lines, the hardest and least testable code. Rewrite `SerialXferU.pas:100-104`'s two codec
@@ -1611,9 +1641,8 @@ Run the app during development with
    reentrancy in at least two documented places. Getting the command-executor ordering wrong
    will produce intermittent, hard-to-reproduce protocol bugs. Build phase 4 against the fakes
    with tests before touching real hardware.
-4. **`macro11` on `PATH` is a user-visible regression on Windows and macOS**, where it is not
-   normally present. Acceptable per decision, but the app should detect its absence at startup
-   and say so clearly rather than failing at first assemble.
+4. ~~**`macro11` on `PATH` is a user-visible regression on Windows and macOS**~~ - resolved: the
+   assembler is part of the application (phase 6, amended).
 5. **Two codebases until parity.** The Lazarus version is actively developed (recent SimH
    direct work, per `CHANGES.md`). Decide explicitly whether Pascal-side development freezes
    during the port; if not, phases 4–7 will be chasing a moving target.

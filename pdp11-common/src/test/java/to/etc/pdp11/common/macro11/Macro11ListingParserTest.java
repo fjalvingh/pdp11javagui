@@ -136,7 +136,7 @@ class Macro11ListingParserTest {
 		assertEquals(ProblemKind.ERROR, p.kind());
 		assertEquals("t1.mac", p.file());
 		assertEquals(7, p.sourceLine());
-		assertEquals("***ERROR Instruction on odd address", p.message());
+		assertEquals("Instruction on odd address", p.message());
 		assertEquals(1, p.listingLine());
 		//-- And the code around it is still parsed: an error in one line does not lose the rest.
 		assertEquals(0012700, wordAt(g, 0173014));
@@ -155,7 +155,7 @@ class Macro11ListingParserTest {
 		Problem p = r.getFirstProblem();
 		assertEquals("D:\\pdp11\\pdp 11-44\\progs\\memoryaddress.mac", p.file());
 		assertEquals(11, p.sourceLine());
-		assertEquals("***ERROR Illegal addressing mode", p.message());
+		assertEquals("Illegal addressing mode", p.message());
 	}
 
 	/**

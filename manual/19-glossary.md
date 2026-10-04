@@ -34,7 +34,8 @@ PDP11GUI in [both board revisions](13-microcode.md#which-revision-and-why-the-ti
 lights. It is what makes [the microcode window](13-microcode.md#on-the-pdp-1105-this-is-a-debugger-not-a-reference)
 a debugger on that machine.
 
-**MACRO-11** — DEC's assembler for the PDP-11. PDP11GUI drives the external `macro11` program; see
+**MACRO-11** — DEC's assembler for the PDP-11. PDP11GUI has one built in, a port of the C
+`macro11`; see
 [the assembler](09-assembler.md).
 
 **Machine value** — what the PDP-11 last said a location contains. See

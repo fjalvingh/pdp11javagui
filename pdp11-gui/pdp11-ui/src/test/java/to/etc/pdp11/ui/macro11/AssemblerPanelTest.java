@@ -7,7 +7,6 @@ import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
-import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
@@ -25,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The Assembler window: source in one tab, the listing in the second, the code in the third.
@@ -36,8 +34,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * error and PC markers land on the right lines, and that depositing writes the program into a
  * machine.</p>
  *
- * <p>Most of it needs no {@code macro11} at all - a listing is a text file, and reading one is
- * the durable half of an assembly. The tests that do run the tool say so and skip themselves.</p>
+ * <p>Much of it works from a listing rather than a source - a listing is a text file, and reading
+ * one is the durable half of an assembly. The assembler is part of the application, so nothing
+ * here needs anything installed.</p>
  */
 class AssemblerPanelTest {
 	private static final long TIMEOUT_MS = 30_000;
@@ -417,11 +416,10 @@ class AssemblerPanelTest {
 	 * window open anywhere.
 	 *
 	 * <p>That is the whole reason the program is state on the context rather than the contents
-	 * of a window. Needs the real assembler, so it skips without one.</p>
+	 * of a window.</p>
 	 */
 	@Test
 	void theExecutionWindowCanAssembleLoadAndResetOnItsOwn(@TempDir Path dir) throws Exception {
-		assumeTrue(Macro11.isAvailable(), "macro11 is not on the PATH");
 		AppContext ctx = TestContext.create(dir);
 		ExecutionPanel execution = Edt.call(() -> new ExecutionPanel(ctx));
 		Edt.run(execution::attach);
@@ -466,8 +464,8 @@ class AssemblerPanelTest {
 	 * install their listing into the one code group. Two workers doing that at once is what the
 	 * detached parse cannot protect against on its own.</p>
 	 *
-	 * <p>No {@code macro11} needed: both calls are made inside one block on the event thread, so
-	 * the first worker cannot have got as far as its {@code onUi} step whatever it found.</p>
+	 * <p>Both calls are made inside one block on the event thread, so the first worker cannot have
+	 * got as far as its {@code onUi} step whatever it found.</p>
 	 */
 	@Test
 	void aSecondAssemblyIsRefusedWhileOneIsRunning(@TempDir Path dir) throws Exception {
@@ -513,7 +511,7 @@ class AssemblerPanelTest {
 	 * reported agreement. Same label as the Memory Loader's Verify, and now the same
 	 * semantics.</p>
 	 *
-	 * <p>Needs no {@code macro11}: a listing on disk is a whole program.</p>
+	 * <p>Works from a listing: a listing on disk is a whole program.</p>
 	 */
 	@Test
 	void verifyingComparesTheCodeWithTheMachineRatherThanReplacingIt(@TempDir Path dir) throws Exception {

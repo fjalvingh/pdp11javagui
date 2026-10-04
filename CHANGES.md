@@ -4,6 +4,39 @@
 
 ### The assembler
 
+- **MACRO-11 is assembled inside the application; `macro11` no longer has to be installed.**
+  `to.etc.pdp11.common.macro11.asm` is a MACRO-11 assembler in Java, ported from the C
+  `macro11` the application used to run, but not translated: it reads the source once, with a
+  token reader, and patches every word that depends on something further down at the end. It
+  knows the basic instruction set, EIS, FIS and FPP; macros with default, keyword, `\` and `?`
+  arguments, `.MCALL` from the source's directory, `.REPT`/`.IRP`/`.IRPC`, every conditional,
+  `.INCLUDE`, `.FLT2`/`.FLT4`, `.RAD50`, `.PACKED` and `.LIMIT`. Its listing has the C
+  assembler's layout, so a saved `.lst` reads back as before. Compile, and the Execution window's
+  "New program", are always available now, and the tests that needed the tool no longer skip.
+  Macro libraries (`.MLB`, `.LIBRARY`) are not supported yet.
+- **Every mistake is reported, including the ones `macro11` let through.** A digit that is not
+  in the radix (`.WORD 9` used to hang), a value that does not fit its field (`EMT 400` used to
+  assemble as `TRAP 0`), junk after the operands (often a missing `;` before a comment), an
+  undefined symbol (there is no linker to supply it), an unclosed conditional or macro, a branch
+  out of range or to an odd address. Every error is found in one assembly, a statement with an
+  error still takes its space so the rest of the program does not move, and an error inside a
+  macro is reported on the line that called it, saying where in the macro.
+- **Warnings for code that assembles but is probably wrong**, 25 kinds of them: an unused label
+  or symbol, unreachable code after a `BR`/`JMP`/`RTS`, an immediate destination (`CLR #5`), a
+  byte immediate that does not fit, a word access at an odd address, `DIV` on an odd register,
+  two statements storing at one address, a `.IF DF` on something defined further down, and more
+  (`WarningKind` lists them all). A warning does not stop a program from being loaded; the
+  listing and the status line show how many there are.
+- **The program starts where `.END` says.** The start address used to be the lowest address of
+  the code, because the listing did not say; now a program with its data in front of its entry
+  point starts at the entry point.
+- **Relocatable sections are placed one after another** from address 0, in the order the source
+  opens them, instead of all at 0 on top of each other.
+- **The C assembler was wrong in places the new one is not**, found by assembling the fourteen
+  thousand MACRO-11 sources of the trailing-edge archive with both: `.FLT2` and `^F` values
+  were halved, `.FLT4` lost its last bits through a `double`, and assembly went on past `.END`.
+  The comparison also found that a listing line whose source started with a digit gave the
+  listing loader one word too many; the loader now stops reading code at column 40.
 - **File → Load examples opens an example program in the Assembler window, ready to compile.**
   The examples are packaged in the jar, listed by `examples/index.txt`; the first is
   tic-tac-toe on the console terminal, for anything from an 11/05 up, started at `1000`. An

@@ -8,7 +8,6 @@ import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleException;
 import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
-import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.macro11.AssemblerModel;
@@ -190,10 +189,8 @@ public final class ExecutionPanel extends JPanel {
 		//-- the CPU runs produces a confusing nothing rather than an error. The Pascal learned
 		//-- this the same way ({@code :382-385}).
 		m_setPc.setEnabled(connected && !running);
-		//-- Compile, load and reset. Needs a machine to load into, a program to load, and the
-		//-- external assembler to make one with.
-		m_newProgram.setEnabled(connected && !running && m_context.getAssembler().canAssemble()
-			&& Macro11.isAvailable());
+		//-- Compile, load and reset. Needs a machine to load into and a program to load.
+		m_newProgram.setEnabled(connected && !running && m_context.getAssembler().canAssemble());
 
 		boolean hasSwitch = features.contains(ConsoleFeature.SWITCH_ENABLE_OR_HALT);
 		m_switchPanel.setVisible(hasSwitch);

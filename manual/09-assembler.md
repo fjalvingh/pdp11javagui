@@ -9,11 +9,11 @@ watch it run.
 
 ## Before you start
 
-Assembling needs **`macro11` on your `PATH`**. It is not bundled and not required for anything
-else; if it is missing, the **Compile** button says so in its tooltip and stays dead. Get it from
-<https://github.com/rhefner1/macro11>.
+The assembler is part of PDP11GUI: nothing has to be installed. It is DEC's MACRO-11 as the C
+`macro11` implements it, with every error reported and many warnings besides (see
+[Errors and warnings](#errors-and-warnings) below).
 
-You can still use the window without it: the **Listing** tab reads a `.lst` somebody else
+The window also works without a source: the **Listing** tab reads a `.lst` somebody else
 produced, and everything downstream of that — the code grid, depositing, verifying, the PC
 marker — works from the listing alone.
 
@@ -34,11 +34,13 @@ The three are always about the same program, which is why they are tabs rather t
 | **New** | Start an empty program (asking first if the current one is unsaved) |
 | **Open …** | Open a `.mac` source |
 | **Save** / **Save as …** | Write it out |
-| **Compile** | Save the source and run MACRO-11 over it |
+| **Compile** | Save the source and assemble it |
 
-MACRO-11 writes its listing beside the source, as `<name>.lst`, and has no option not to — so the
-source has to live in a directory you can write to. Assembling straight off a mounted disc image
-fails for that reason, and the message says which directory is the problem.
+The listing is also saved beside the source, as `<name>.lst`, so that it can be opened again
+later without the source. If that directory cannot be written to - a mounted disc image, say -
+the assembly still works and the log says the listing was not saved. `.INCLUDE` reads files
+relative to the source, and `.MCALL NAME` reads `NAME.MAC` from the source's directory; macro
+libraries (`.MLB`) are not supported yet.
 
 **An assembler error does not raise a dialog.** It marks the line, colours the status bar, and
 leaves you on the tab where you can fix it. A syntax error is an ordinary event in writing a
@@ -65,7 +67,7 @@ the 28K words below `160000`. With memory management it sees everything below th
 below the end of the program, which holds the vectors and the program itself, is not tested.
 
 The example is copied into `examples/` in the [data directory](17-settings-and-files.md) and
-opened from there, because MACRO-11 needs a file it can write a listing beside. That copy is
+opened from there, because the listing is saved beside it. That copy is
 yours to change and save. Load the same example again later and your changed copy is not
 overwritten without asking: **Yes** puts the original back, **No** opens your copy.
 
@@ -107,9 +109,31 @@ source line it is on.
 
 ## While it is assembling
 
-MACRO-11 is an external process and is given five seconds. A second **Compile** is refused while
-one is in flight. What the editor holds is what gets assembled — the text is written out first —
-so assembling from the execution window cannot quietly assemble yesterday's file.
+A second **Compile** is refused while one is in flight. What the editor holds is what gets
+assembled — the text is written out first — so assembling from the execution window cannot
+quietly assemble yesterday's file.
+
+## Errors and warnings
+
+Every error in the source is reported in one assembly, as a line of the listing in front of the
+line it is about, and the first one is marked in the source. A statement with an error still
+takes its space, so the rest of the program stays where it would have been. An error inside a
+macro is reported on the line that called the macro, and says where in the macro it is.
+
+The assembler is stricter than the C `macro11` was. Among the things it reports that `macro11`
+let through: a digit that is not in the radix (`9` in octal), a value too big for its field
+(`EMT 400`), anything after the operands - most often a comment without its `;` - and a symbol
+that is never defined, since there is no linker to supply it.
+
+A **warning** is something that assembles but is probably not meant: an unused label, code that
+cannot be reached after a `BR` or `RTS`, `CLR #5` writing into its own instruction, a byte
+instruction with an immediate that does not fit, two statements storing at the same address.
+Warnings are in the listing too, and counted in its status line, but a program with only
+warnings loads and runs.
+
+There is no linker, so the program is absolute. Code in relocatable sections (`.PSECT`, or no
+`.ASECT` at all) is placed from address 0, one section after the other in the order the source
+first opens them. The program starts where `.END` says, or else at its lowest address.
 
 ---
 

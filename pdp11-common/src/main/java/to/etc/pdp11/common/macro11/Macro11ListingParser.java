@@ -4,6 +4,9 @@ import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.common.macro11.Macro11Listing.Problem;
 import to.etc.pdp11.common.macro11.Macro11Listing.ProblemKind;
+import to.etc.pdp11.common.macro11.asm.AssemblyResult;
+import to.etc.pdp11.common.macro11.asm.Diagnostic;
+import to.etc.pdp11.common.macro11.asm.Location;
 import to.etc.pdp11.common.mem.CellValue;
 import to.etc.pdp11.common.mem.MemoryCell;
 import to.etc.pdp11.common.mem.MemoryCellGroup;
@@ -106,6 +109,14 @@ public final class Macro11ListingParser {
 	/** The code column starts at column 17. */
 	private static final int CODE_START = 16;
 
+	/**
+	 * The source text starts at column 41, so the code column ends before it.
+	 *
+	 * <p>Without this limit a source line that starts with digits - {@code 2605.}, an implicit
+	 * {@code .WORD} - was read as one more word of code.</p>
+	 */
+	private static final int SOURCE_START = 40;
+
 	/** Below this length a line cannot be one of MACRO-11's diagnostics. */
 	private static final int MIN_ERROR_LENGTH = 10;
 
@@ -156,13 +167,45 @@ public final class Macro11ListingParser {
 
 		private final MemoryAddressType m_type;
 
+		/** Where {@code .END} said to start, or null; a listing file does not say. */
+		private final Address m_transferAddress;
+
 		private Parsed(List<String> lines, int[] sourceLineOf, List<Problem> problems,
-			List<Word> words, MemoryAddressType type) {
+			List<Word> words, MemoryAddressType type, Address transferAddress) {
 			m_lines = lines;
 			m_sourceLineOf = sourceLineOf;
 			m_problems = problems;
 			m_words = words;
 			m_type = type;
+			m_transferAddress = transferAddress;
+		}
+
+		/** What the assembler made, in the same detached form a parsed listing has. */
+		static Parsed fromAssembly(AssemblyResult r, MemoryAddressType type) {
+			List<String> lines = r.getListing();
+			int[] sourceLineOf = new int[lines.size()];
+			for(int i = 0; i < sourceLineOf.length; i++)
+				sourceLineOf[i] = r.sourceLineOf(i);
+
+			List<Problem> problems = new ArrayList<>();
+			for(Diagnostic d : r.getDiagnostics()) {
+				Location root = d.location().root();
+				problems.add(new Problem(d.isError() ? ProblemKind.ERROR : ProblemKind.WARNING, root.source(), root.line(),
+					r.listingLineOf(d), d.describe()));
+			}
+
+			List<Word> words = new ArrayList<>();
+			for(AssemblyResult.Word w : r.getWords()) {
+				Address at = addressOrNull(type, w.address());
+				if(at == null)
+					continue;
+				Word word = new Word(at.val());
+				word.m_value = CellValue.of(w.value());
+				word.m_listingLine = w.listingLine();
+				words.add(word);
+			}
+			Address transfer = r.getTransferAddress().isPresent() ? addressOrNull(type, r.getTransferAddress().getAsInt()) : null;
+			return new Parsed(lines, sourceLineOf, List.copyOf(problems), words, type, transfer);
 		}
 
 		/** The address width this was parsed at; {@link #installInto} needs a group of the same. */
@@ -200,7 +243,7 @@ public final class Macro11ListingParser {
 				//-- it has been deposited, and it is the same rule the Memory Loader follows.
 				mc.setPdpValue(CellValue.UNKNOWN);
 			}
-			return new Macro11Listing(m_lines, m_sourceLineOf, m_problems, group);
+			return new Macro11Listing(m_lines, m_sourceLineOf, m_problems, group, m_transferAddress);
 		}
 	}
 
@@ -259,7 +302,7 @@ public final class Macro11ListingParser {
 
 			String lineNo = trimmedColumns(line, 0, LINENO_END);
 			String addrText = trimmedColumns(line, ADDR_START, ADDR_END);
-			String code = line.length() > CODE_START ? line.substring(CODE_START) : "";
+			String code = line.length() > CODE_START ? line.substring(CODE_START, Math.min(line.length(), SOURCE_START)) : "";
 
 			int parsed = parseDecimal(lineNo);
 			if(parsed >= 0)
@@ -276,7 +319,7 @@ public final class Macro11ListingParser {
 				continue;                                    // wider than this group's machine
 			scanCodeColumn(code, addr, words, type, i, currentSourceLine, problems);
 		}
-		return new Parsed(List.copyOf(lines), sourceLineOf, List.copyOf(problems), words.m_list, type);
+		return new Parsed(List.copyOf(lines), sourceLineOf, List.copyOf(problems), words.m_list, type, null);
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -448,7 +491,14 @@ public final class Macro11ListingParser {
 		if(sourceLine < 0)
 			return null;
 		String message = rest.substring(second + 1).trim();
-		return new Problem(ProblemKind.ERROR, file, sourceLine, listingLine, message);
+		ProblemKind kind = ProblemKind.ERROR;
+		if(message.startsWith("***WARNING")) {
+			kind = ProblemKind.WARNING;
+			message = message.substring("***WARNING".length()).trim();
+		} else if(message.startsWith("***ERROR")) {
+			message = message.substring("***ERROR".length()).trim();
+		}
+		return new Problem(kind, file, sourceLine, listingLine, message);
 	}
 
 	// -------------------------------------------------------------------------------------

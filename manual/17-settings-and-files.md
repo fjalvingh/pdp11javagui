@@ -61,7 +61,7 @@ and a window whose remembered position is off-screen is placed somewhere sensibl
 | Thing | Where |
 |---|---|
 | MACRO-11 source | Wherever you put it, usually `.mac` |
-| MACRO-11 listing | Beside the source, as `.lst` — `macro11` has no option to put it elsewhere, so the source must be in a writable directory |
+| MACRO-11 listing | Beside the source, as `.lst`, when the directory can be written to |
 | [Memory files](10-load-and-dump.md) | Wherever you choose; the suggested extensions are `.bin`, `.txt` and `.ptap` |
 | SimH `DO` script export | Wherever you choose, from the memory window's right-click menu |
 | Machine descriptions | The data directory, as `.ini` and `.modules` |

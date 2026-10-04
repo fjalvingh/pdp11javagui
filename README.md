@@ -157,7 +157,7 @@ share:
 
 | Module | Contains |
 |---|---|
-| `pdp11-common` | What both applications use: addresses, memory cells, the disassembler, memory file formats, the MACRO-11 driver, the microcode documents and the microcode browser. Headless; depends on nothing else here. |
+| `pdp11-common` | What both applications use: addresses, memory cells, the disassembler, memory file formats, the MACRO-11 assembler, the microcode documents and the microcode browser. Headless; depends on nothing else here. |
 | `pdp11-gui/pdp11-core` | What talks to a machine: transports, console protocols, simulated machines, machine descriptions, memory tests, the MMU. Headless. |
 | `pdp11-gui/pdp11-ui` | Swing windows, the window manager, settings binding. |
 | `pdp11-gui/pdp11-app` | `main()`, packaging, and the data resources. |
@@ -214,10 +214,11 @@ high byte file and its reader takes half the words, and each of those hides the 
 
 ## External tools
 
-`macro11` (the MACRO-11 assembler) and SimH's `pdp11` are invoked as external processes and
-must be on `PATH` **if you want to use them**. Neither is needed to build, to run the tests, or
-to drive a simulated machine. `m4` is not needed at all: machine-description preprocessing is
-reimplemented in Java.
+SimH's `pdp11` is invoked as an external process and must be on `PATH` **if you want to use
+it**. It is not needed to build, to run the tests, or to drive a simulated machine. The
+MACRO-11 assembler is part of the application (`to.etc.pdp11.common.macro11.asm`), so the C
+`macro11` is not needed any more, and `m4` is not needed at all: machine-description
+preprocessing is reimplemented in Java.
 
 ## Licence
 

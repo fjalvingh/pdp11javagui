@@ -1,0 +1,730 @@
+       1                                
+       2                                ; http://www.bitsavers.org/pdf/dec/pdp11/xxdp/listings/AC-E664G-MC_CXCPAG0-Processor-test_Sep78.pdf
+       3                                    .LIST   BIN
+       4                                ;**********************************************************************
+       5                                	.asect	100
+       6 000040                         	SPSIZ=040		; stack size
+       7                                
+       8                                ; is called on every error
+       9                                	.MACRO	HRDER$
+      10                                	HALT			; just halt on error
+      11                                	HALT			; force3 word size, like in original
+      12                                	HALT
+      13                                	.ENDM
+      14                                
+      15                                ;MODNAM: .ASCII  /CPAG / ;MODULE NAME
+      16                                ;**********************************************************************
+      17 000000 000224                  INIT:	START			;MODULE START ADDRE.
+      18 000002 000224                  SPOINT: MODSP			;MODULE STACK POINTER.
+      19 000004 000000                  PASCNT: 0			;PASS COUNTER.
+      20 000124                         	.=124			; generate sae adresses like in original
+      21                                
+      22                                	.REPT	SPSIZ		;MODULE STACK STARTS HERE
+      23                                	.NLIST
+      24                                	.WORD 0
+      25                                	.LIST
+      26                                	.ENDR
+       1                                	.NLIST
+       2 000124 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000126 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000130 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000132 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000134 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000136 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000140 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000142 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000144 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000146 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000150 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000152 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000154 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000156 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000160 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000162 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000164 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000166 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000170 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000172 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000174 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000176 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000200 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000202 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000204 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000206 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000210 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000212 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000214 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000216 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000220 000000                  	.WORD 0
+       3                                	.LIST
+       1                                	.NLIST
+       2 000222 000000                  	.WORD 0
+       3                                	.LIST
+      27                                	.asect	200
+      28                                
+      29                                MODSP:
+      30                                ;**********************************************************************
+      31                                ;CHECK BRANCH INSTRUCTIONS
+      32                                START:
+      33 000224 000257                  RESTRT: CCC
+      34 000226 103407                  	BCS	CC0
+      35 000230 102406                  	BVS	CC0
+      36 000232 001405                  	BEQ	CC0
+      37 000234 100404                  	BMI	CC0
+      38 000236 002403                  	BLT	CC0
+      39 000240 003402                  	BLE	CC0
+      40 000242 101401                  	BLOS	CC0
+      41 000244 101003                  	BHI	CON1
+      42                                CC0:
+      43                                	;**************************************************************
+      44                                	HRDER$,BEGIN,NULL	;
+       1 000246 000000                  	HALT			; just halt on error
+       2 000250 000000                  	HALT			; force3 word size, like in original
+       3 000252 000000                  	HALT
+      45                                	;**************************************************************
+      46                                
+      47                                ;CONTINUE
+      48 000254 000262                  CON1:	SEV			;CC'S=1010
+      49 000256 000270                  	SEN
+      50 000260 102003                  	BVC	CC2
+      51 000262 002402                  	BLT	CC2
+      52 000264 003401                  	BLE	CC2
+      53 000266 002003                  	BGE	CON3
+      54                                CC2:
+      55                                	;**************************************************************
+      56                                	HRDER$,BEGIN,NULL	;
+       1 000270 000000                  	HALT			; just halt on error
+       2 000272 000000                  	HALT			; force3 word size, like in original
+       3 000274 000000                  	HALT
+      57                                	;**************************************************************
+      58                                ;CONTINUE
+      59 000276 000264                  CON3:	SEZ			;CC'S=1111
+      60 000300 000261                  	SEC
+      61 000302 001003                  	BNE	CC4
+      62 000304 003002                  	BGT	CC4
+      63 000306 101001                  	BHI	CC4
+AC-E664G-MC_CXCPAG_Processor_Test_Sep78.mac:64: ***ERROR Junk at end of line (':')
+      64 000310 003403                  	BLE	YT15:
+      65                                CC4:
+      66                                	;**************************************************************
+      67                                	HRDER$,BEGIN,NULL	;
+       1 000312 000000                  	HALT			; just halt on error
+       2 000314 000000                  	HALT			; force3 word size, like in original
+       3 000316 000000                  	HALT
+      68                                	;**************************************************************
+      69                                
+      70                                
+      71                                
+      72                                
+      73                                ;CHECK UNARY WORD OPS USING ADDRESS MODES 3 AND 5
+      74 000320 000402                  YT15:	BR  1$
+      75 000322 000000                  	.WORD	0
+      76 000324 000000                  	.WORD	0
+      77 000326 010703                  1$:	MOV	PC,R3
+      78 000330 162703  000004          	SUB	#4,R3
+      79 000334 005013                  	CLR	(R3)
+      80 000336 010300                  	MOV	R3,R0
+      81 000340 005743                  	TST	-(R3)
+      82 000342 010013                  	MOV	R0,(R3)
+      83 000344 010304                  	MOV	R3,R4
+      84 000346 000257                  	CCC
+      85 000350 005733                  	TST	@(R3)+		;(R0)=000000,CC=0100
+      86 000352 001403                  	BEQ	2$
+      87                                	;**************************************************************
+      88                                	HRDER$,BEGIN,NULL	;
+       1 000354 000000                  	HALT			; just halt on error
+       2 000356 000000                  	HALT			; force3 word size, like in original
+       3 000360 000000                  	HALT
+      89                                	;**************************************************************
+      90                                
+      91 000362 000261                  2$:	SEC
+      92 000364 006053                  	ROR	@-(R3)		;(R0)=100000,CC=0101
+      93 000366 103402                  	BCS	ROR5
+      94 000370 102001                  	BVC	ROR5
+      95 000372 100403                  	BMI	RD
+      96                                ROR5:
+      97                                	;**************************************************************
+      98                                	HRDER$,BEGIN,NULL	;
+       1 000374 000000                  	HALT			; just halt on error
+       2 000376 000000                  	HALT			; force3 word size, like in original
+       3 000400 000000                  	HALT
+      99                                	;**************************************************************
+     100                                
+     101 000402 000257                  RD:	CCC
+     102 000404 006234                  	ASR	@(R4)+		;(R0)=140000,CC=1010
+     103 000406 102001                  	BVC	ASR3
+     104 000410 100403                  	BMI	RD1
+     105                                ASR3:
+     106                                	;**************************************************************
+     107                                	HRDER$,BEGIN,NULL	;
+       1 000412 000000                  	HALT			; just halt on error
+       2 000414 000000                  	HALT			; force3 word size, like in original
+       3 000416 000000                  	HALT
+     108                                	;**************************************************************
+     109                                
+     110 000420 000250                  RD1:	CLN
+     111 000422 006333                  	ASL	@(R3)+		;(R0)=100000,CC=1001
+     112 000424 103002                  	BCC	ASL3
+     113 000426 102401                  	BVS	ASL3
+     114 000430 100403                  	BMI	RD2
+     115                                ASL3:
+     116                                	;**************************************************************
+     117                                	HRDER$,BEGIN,NULL	;
+       1 000432 000000                  	HALT			; just halt on error
+       2 000434 000000                  	HALT			; force3 word size, like in original
+       3 000436 000000                  	HALT
+     118                                	;**************************************************************
+     119                                
+     120 000440 000277                  RD2:	SCC
+     121 000442 005354                  	DEC	@-(R4)		;(R0)=077777,CC=0010
+     122 000444 103003                  	BCC	DEC5
+     123 000446 102002                  	BVC	DEC5
+     124 000450 001401                  	BEQ	DEC5
+     125 000452 100003                  	BPL	RD3
+     126                                DEC5:
+     127                                	;**************************************************************
+     128                                	HRDER$,BEGIN,NULL	;
+       1 000454 000000                  	HALT			; just halt on error
+       2 000456 000000                  	HALT			; force3 word size, like in original
+       3 000460 000000                  	HALT
+     129                                	;**************************************************************
+     130                                
+     131 000462 005453                  RD3:	NEG	@-(R3)		;(R0)=100001, C=1001
+     132 000464 103002                  	BCC	NEG5
+     133 000466 102401                  	BVS	NEG5
+     134 000470 100403                  	BMI	RD4
+     135                                NEG5:
+     136                                	;**************************************************************
+     137                                	HRDER$,BEGIN,NULL	;
+       1 000472 000000                  	HALT			; just halt on error
+       2 000474 000000                  	HALT			; force3 word size, like in original
+       3 000476 000000                  	HALT
+     138                                	;**************************************************************
+     139                                
+     140 000500 000262                  RD4:	SEV
+     141 000502 005134                  	COM	@(R4)+		;(R0)=077776, C=0001
+     142 000504 103001                  	BCC	COM3
+     143 000506 102003                  	BVC	RD5
+     144                                COM3:
+     145                                	;**************************************************************
+     146                                	HRDER$,BEGIN,NULL	;
+       1 000510 000000                  	HALT			; just halt on error
+       2 000512 000000                  	HALT			; force3 word size, like in original
+       3 000514 000000                  	HALT
+     147                                	;**************************************************************
+     148                                
+     149 000516 005233                  RD5:	INC	@(R3)+		;(R0)=077777, C=0001
+     150 000520 103001                  	BCC	INC3
+     151 000522 100003                  	BPL	RD6
+     152                                INC3:
+     153                                	;**************************************************************
+     154                                	HRDER$,BEGIN,NULL	;
+       1 000524 000000                  	HALT			; just halt on error
+       2 000526 000000                  	HALT			; force3 word size, like in original
+       3 000530 000000                  	HALT
+     155                                	;**************************************************************
+     156                                
+     157 000532 005554                  RD6:	ADC	@-(R4)		;(R0)=100000, C=1010
+     158 000534 103402                  	BCS	ADC5
+     159 000536 102001                  	BVC	ADC5
+     160 000540 100403                  	BMI	RD7
+     161                                ADC5:
+     162                                	;**************************************************************
+     163                                	HRDER$,BEGIN,NULL	;
+       1 000542 000000                  	HALT			; just halt on error
+       2 000544 000000                  	HALT			; force3 word size, like in original
+       3 000546 000000                  	HALT
+     164                                	;**************************************************************
+     165                                
+     166 000550 000257                  RD7:	CCC
+     167 000552 006134                  	ROL	@(R4)+		;(R0)=000000, C=0111
+     168 000554 103002                  	BCC	ROL3
+     169 000556 102001                  	BVC	ROL3
+     170 000560 001403                  	BEQ	RD8
+     171                                ROL3:
+     172                                	;**************************************************************
+     173                                	HRDER$,BEGIN,NULL	;
+       1 000562 000000                  	HALT			; just halt on error
+       2 000564 000000                  	HALT			; force3 word size, like in original
+       3 000566 000000                  	HALT
+     174                                	;**************************************************************
+     175                                
+     176 000570 005253                  RD8:	INC	@-(R3)		;(R0)=000001, C=0001
+     177 000572 005654                  	SBC	@-(R4)		;(R0)=000000, C=0100
+     178 000574 103401                  	BCS	SBC5
+     179 000576 001403                  	BEQ	RD9
+     180                                SBC5:
+     181                                	;**************************************************************
+     182                                	HRDER$,BEGIN,NULL	;
+       1 000600 000000                  	HALT			; just halt on error
+       2 000602 000000                  	HALT			; force3 word size, like in original
+       3 000604 000000                  	HALT
+     183                                	;**************************************************************
+     184                                
+     185                                ;CHECK UNARY BYTE OPS USING ADDRESS MODES 3 AND 4
+     186 000606 000403                  RD9:	BR   1$ 		; RESERVE 3 WORDS
+     187 000610 000000                  	.WORD	0		;1 FOR EVEN BYTE ADDRESS
+     188 000612 000000                  	.WORD	0		;1 FOR ODD BYTE ADDRESS
+     189 000614 000000                  	.WORD	0		;AND 1 FOR DATA
+     190 000616 010702                  1$:	MOV	PC,R2
+     191 000620 005742                  	TST	-(R2)		;BACK R2 UP TO
+     192 000622 005742                  	TST	-(R2)		;DATA WORD
+     193 000624 010200                  	MOV	R2,R0		;R0 POINTS TO THE DATA WORD
+     194 000626 005010                  	CLR	(R0)		;PRESET DATA
+     195 000630 005742                  	TST	-(R2)		;BACK R2 UP TO
+     196 000632 005742                  	TST	-(R2)		;EVEN BYTE ADDRESS WORD
+     197 000634 010022                  	MOV	R0,(R2)+	;LOAD ADDRESS
+     198 000636 005200                  	INC	R0		;ODD BYTE ADDRESS
+     199 000640 010022                  	MOV	R0,(R2)+	;LOAD ODD BYTE ADDRESS
+     200 000642 010200                  	MOV	R2,R0		;RESET R0
+     201 000644 010205                  	MOV	R2,R5
+     202                                
+     203 000646 105152                  	COMB	@-(R2)		;(R0)=177400, CC=1001
+     204 000650 103001                  	BCC	COMB5
+     205 000652 100403                  	BMI	TE
+     206                                COMB5:
+     207                                	;**************************************************************
+     208                                	HRDER$,BEGIN,NULL	;
+       1 000654 000000                  	HALT			; just halt on error
+       2 000656 000000                  	HALT			; force3 word size, like in original
+       3 000660 000000                  	HALT
+     209                                	;**************************************************************
+     210                                
+     211 000662 105752                  TE:	TSTB	@-(R2)		;(R0)=177400, CC=0100
+     212 000664 001403                  	BEQ	1$
+     213                                	;**************************************************************
+     214                                	HRDER$,BEGIN,NULL	;
+       1 000666 000000                  	HALT			; just halt on error
+       2 000670 000000                  	HALT			; force3 word size, like in original
+       3 000672 000000                  	HALT
+     215                                	;**************************************************************
+     216                                
+     217 000674 000262                  1$:	SEV
+     218 000676 106255                  	ASRB	@-(R5)		;(R0)=177400, CC=1001
+     219 000700 103002                  	BCC	ASRB5
+     220 000702 102401                  	BVS	ASRB5
+     221 000704 100403                  	BMI	TE1
+     222                                ASRB5:
+     223                                	;**************************************************************
+     224                                	HRDER$,BEGIN,NULL	;
+       1 000706 000000                  	HALT			; just halt on error
+       2 000710 000000                  	HALT			; force3 word size, like in original
+       3 000712 000000                  	HALT
+     225                                	;**************************************************************
+     226                                
+     227 000714 105232                  TE1:	INCB	@(R2)+		;(R0)=177401, CC=000
+     228 000716 103001                  	BCC	INCB3
+     229 000720 100003                  	BPL	TE2
+     230                                INCB3:
+     231                                	;**************************************************************
+     232                                	HRDER$,BEGIN,NULL	;
+       1 000722 000000                  	HALT			; just halt on error
+       2 000724 000000                  	HALT			; force3 word size, like in original
+       3 000726 000000                  	HALT
+     233                                	;**************************************************************
+     234                                
+     235 000730 000241                  TE2:	CLC
+     236 000732 106055                  	RORB	@-(R5)		;(R0)=177400, CC=0111
+     237 000734 103003                  	BCC	RORB5
+     238 000736 102002                  	BVC	RORB5
+     239 000740 001001                  	BNE	RORB5
+     240 000742 100003                  	BPL	TE3
+     241                                RORB5:
+     242                                	;**************************************************************
+     243                                	HRDER$,BEGIN,NULL	;
+       1 000744 000000                  	HALT			; just halt on error
+       2 000746 000000                  	HALT			; force3 word size, like in original
+       3 000750 000000                  	HALT
+     244                                	;**************************************************************
+     245                                
+     246 000752 106332                  TE3:	ASLB	@(R2)+		;(R0)=177000, CC=1001
+     247 000754 103002                  	BCC	ASLB3
+     248 000756 102401                  	BVS	ASLB3
+     249 000760 100403                  	BMI	TE4
+     250                                ASLB3:
+     251                                	;**************************************************************
+     252                                	HRDER$,BEGIN,NULL	;
+       1 000762 000000                  	HALT			; just halt on error
+       2 000764 000000                  	HALT			; force3 word size, like in original
+       3 000766 000000                  	HALT
+     253                                	;**************************************************************
+     254                                
+     255 000770 105552                  TE4:	ADCB	@-(R2)		;(R0)=177400, CC=1000
+     256 000772 103401                  	BCS	ADCB5
+AC-E664G-MC_CXCPAG_Processor_Test_Sep78.mac:257: ***ERROR Junk at end of line (':')
+     257 000774 100403                  	BMI	TE5:
+     258                                ADCB5:
+     259                                	;**************************************************************
+     260                                	HRDER$,BEGIN,NULL	;
+       1 000776 000000                  	HALT			; just halt on error
+       2 001000 000000                  	HALT			; force3 word size, like in original
+       3 001002 000000                  	HALT
+     261                                	;**************************************************************
+     262                                
+     263 001004 000277                  TE5:	SCC
+     264 001006 106135                  	ROLB	@(R5)+		;(R0)=177401, CC=0000
+     265 001010 101402                  	BLOS	ROLB3		;BRANCH IF C OR Z IS SET
+     266 001012 102401                  	BVS	ROLB3
+     267 001014 100003                  	BPL	TE6
+     268                                ROLB3:
+     269                                	;**************************************************************
+     270                                	HRDER$,BEGIN,NULL	;
+       1 001016 000000                  	HALT			; just halt on error
+       2 001020 000000                  	HALT			; force3 word size, like in original
+       3 001022 000000                  	HALT
+     271                                	;**************************************************************
+     272                                
+     273 001024 000352                  TE6:	SWAB	@-(R2)		;(R0)=000777, C=1000
+     274 001026 100403                  	BMI	1$
+     275                                	;**************************************************************
+     276                                	HRDER$,BEGIN,NULL	;
+       1 001030 000000                  	HALT			; just halt on error
+       2 001032 000000                  	HALT			; force3 word size, like in original
+       3 001034 000000                  	HALT
+     277                                	;**************************************************************
+     278                                
+     279 001036 000261                  1$:	SEC
+     280 001040 105635                  	SBCB	@(R5)+		;(R0)=000377, CC=0100
+     281 001042 103401                  	BCS	SBCB3
+     282 001044 001403                  	BEQ	TE7
+     283                                SBCB3:
+     284                                	;**************************************************************
+     285                                	HRDER$,BEGIN,NULL	;
+       1 001046 000000                  	HALT			; just halt on error
+       2 001050 000000                  	HALT			; force3 word size, like in original
+       3 001052 000000                  	HALT
+     286                                	;**************************************************************
+     287                                
+     288 001054 105432                  TE7:	NEGB	@(R2)+		;(R0)=000001
+     289 001056 105352                  	DECB	@-(R2)		;(R0)=000000, CC=0101
+     290 001060 103001                  	BCC	DECB5
+     291 001062 001403                  	BEQ	B1
+     292                                DECB5:
+     293                                	;**************************************************************
+     294                                	HRDER$,BEGIN,NULL	;
+       1 001064 000000                  	HALT			; just halt on error
+       2 001066 000000                  	HALT			; force3 word size, like in original
+       3 001070 000000                  	HALT
+     295                                	;**************************************************************
+     296                                
+     297                                ;CHECK BINARY WORD OPS USING ADDRESS MODES 3 & b5.
+     298 001072 000404                  B1:	BR	1$		; RESERVE SPACE FOR DATA AND ADDRESSES
+     299 001074 000000                  	.WORD	0		;CONTAINS ADDRESS OF SOURCE DATA
+     300 001076 000000                  	.WORD	0		;CONTAINS ADDRESS OF DEST DATA
+     301 001100 000000                  	.WORD	0		;CONTAINS SOURCE DATA
+     302 001102 000000                  	.WORD	0		;CONTAINS  DEST DATA
+     303 001104 010701                  1$:	MOV	PC,R1
+     304 001106 010100                  	MOV	R1,R0		;SET SCOPE PTR
+     305 001110 024040                  	CMP	-(R0),-(R0)	;ADJUST R0
+     306 001112 010005                  	MOV	R0,R5		;R5 POINTS TO DEST DATA
+     307 001114 024545                  	CMP	-(R5),-(R5)	;SUB 4	FROM R5
+     308 001116 010015                  	MOV	R0,(R5) 	;R5 POINTS TO ADDRESS OF DEST DATA
+     309 001120 010502                  	MOV	R5,R2
+     310 001122 010004                  	MOV	R0,R4		;R4 POINTS TO DEST DATA
+     311 001124 005740                  	TST	-(R0)
+     312 001126 010003                  	MOV	R0,R3		;R3 POINTS TO SOURCE DATA
+     313 001130 010042                  	MOV	R0,-(R2)	;R2 POINTS TO ADDRESS OF SOURCE DATA
+     314 001132 005013                  	CLR	(R3)		;PRESET SOURCE DATA
+     315 001134 005014                  	CLR	(R4)		;PRESET DEST DATA
+     316                                
+     317 001136 000277                  	SCC
+     318 001140 000244                  	CLZ
+     319 001142 163235                  	SUB	@(R2)+,@(R5)+	;(R3)=000000,(R4)=000000, CC=0100
+     320 001144 103402                  	BCS	SUB3
+     321 001146 102401                  	BVS	SUB3
+     322 001150 001403                  	BEQ H3
+     323                                SUB3:
+     324                                	;**************************************************************
+     325                                	HRDER$,BEGIN,NULL	;
+       1 001152 000000                  	HALT			; just halt on error
+       2 001154 000000                  	HALT			; force3 word size, like in original
+       3 001156 000000                  	HALT
+     326                                	;**************************************************************
+     327                                
+     328 001160 052752  100000          H3:	BIS	#100000,@-(R2)	;(R3)=100000
+     329 001164 062755  000001          	ADD	#1,@-(R5)	;(R4)=000001
+     330 001170 163235                  	SUB	@(R2)+,@(R5)+	;(R3)=100000,(R4)=10001, CC=1011
+     331 001172 103002                  	BCC	SUB3A
+     332 001174 102001                  	BVC	SUB3A
+     333 001176 100403                  	BMI	H4
+     334                                SUB3A:
+     335                                	;**************************************************************
+     336                                	HRDER$,BEGIN,NULL	;
+       1 001200 000000                  	HALT			; just halt on error
+       2 001202 000000                  	HALT			; force3 word size, like in original
+       3 001204 000000                  	HALT
+     337                                	;**************************************************************
+     338                                
+     339 001206 005414                  H4:	NEG	(R4)		;(R4)=077777
+     340 001210 035255                  	BIT	@-(R2),@-(R5)	;(R3)=100000,(R4)=077777
+     341 001212 001403                  	BEQ	1$
+     342                                	;**************************************************************
+     343                                	HRDER$,BEGIN,NULL	;
+       1 001214 000000                  	HALT			; just halt on error
+       2 001216 000000                  	HALT			; force3 word size, like in original
+       3 001220 000000                  	HALT
+     344                                	;**************************************************************
+     345                                
+     346 001222 023235                  1$:	CMP	@(R2)+,@(R5)+
+     347 001224 102403                  	BVS	2$
+     348                                	;**************************************************************
+     349                                	HRDER$,BEGIN,NULL	;
+       1 001226 000000                  	HALT			; just halt on error
+       2 001230 000000                  	HALT			; force3 word size, like in original
+       3 001232 000000                  	HALT
+     350                                	;**************************************************************
+     351                                
+     352 001234 005152                  2$:	COM	@-(R2)
+     353 001236 000257                  	CCC
+     354 001240 063255                  	ADD	@(R2)+,@-(R5)
+     355 001242 102001                  	BVC	ADD3
+     356 001244 100403                  	BMI	H41
+     357                                ADD3:
+     358                                	;**************************************************************
+     359                                	HRDER$,BEGIN,NULL	;
+       1 001246 000000                  	HALT			; just halt on error
+       2 001250 000000                  	HALT			; force3 word size, like in original
+       3 001252 000000                  	HALT
+     360                                	;**************************************************************
+     361                                
+     362 001254 000261                  H41:	SEC
+     363 001256 045235                  	BIC	@-(R2),@(R5)+	;(R3)=077777,(R4)=100000
+     364 001260 103001                  	BCC	BIC3
+     365 001262 100403                  	BMI	H5
+     366                                BIC3:
+     367                                	;**************************************************************
+     368                                	HRDER$,BEGIN,NULL	;
+       1 001264 000000                  	HALT			; just halt on error
+       2 001266 000000                  	HALT			; force3 word size, like in original
+       3 001270 000000                  	HALT
+     369                                	;**************************************************************
+     370                                
+     371 001272 005155                  H5:	COM	@-(R5)		;(R4)=077777
+     372 001274 023235                  	CMP	@(R2)+,@(R5)+	;(R3)=077777,(R4)=077777
+     373 001276 001403                  	BEQ	H6
+     374                                	;**************************************************************
+     375                                	HRDER$,BEGIN,NULL	;
+       1 001300 000000                  	HALT			; just halt on error
+       2 001302 000000                  	HALT			; force3 word size, like in original
+       3 001304 000000                  	HALT
+     376                                	;**************************************************************
+     377                                
+     378                                	;CHECK BINARY BYTE OPS USING ADDRESS MODES 3 & 5
+     379 001306 000406                  H6:	BR	1$		;RESERVE SPACE FOR ADDRESSES & DATA
+     380 001310 000000                  	.WORD	0		;CONTAINS ADDRESS OF SOURCE DATA (EVEN BYTE)
+     381 001312 000000                  	.WORD	0		;CONTAINS ADDRESS OF SOURCE DATA (ODD BYTE)
+     382 001314 000000                  	.WORD	0		;CONTAINS ADDRESS OF DEST DATA (EVEN BYTE)
+     383 001316 000000                  	.WORD	0		;CONTAINS ADDRESS OF DEST DATA (ODD BYTE)
+     384 001320 000000                  	.WORD	0		;CONTAINS SOURCE DATA
+     385 001322 000000                  	.WORD	0		;CONTAINS DEST DATA
+     386 001324 010700                  1$:	MOV	PC,R0
+     387 001326 024040                  	CMP	-(R0),-(R0)	;R0=ADRESS OF DEST DATA
+     388 001330 010003                  	MOV	R0,R3		;R3    "       "
+     389 001332 010305                  	MOV	R3,R5		;R3    "       "
+     390 001334 005743                  	TST	-(R3)		; SUB2 FROm R3
+     391 001336 010043                  	MOV	R0,-(R3)	;R3 POINTS TO ADDRESS OF DEST DATA
+     392 001340 005213                  	INC	(R3)		;ODD BYTE
+     393 001342 010043                  	MOV	R0,-(R3)	;EVEN BYTE
+     394 001344 010304                  	MOV	R3,R4
+     395 001346 005740                  	TST	-(R0)		;R0=ADDRESS OF SOURCE DATA
+     396 001350 010044                  	MOV	R0,-(R4)	;R4 POINTS TO ADDRESS OF SOURCE DATA
+     397 001352 005214                  	INC	(R4)		;ODD BYTE
+     398 001354 010044                  	MOV	R0,-(R4)	;EVEN BYTE
+     399                                
+     400 001356 000261                  	SEC			;SET CARRY
+     401 001360 012734  177001          	MOV	#177001,@(R4)+
+     402 001364 112734  000200          	MOVB	#200,@(R4)+	;SOURCE DATA=100001
+     403 001370 115433                  	MOVB	@-(R4),@(R3)+	;
+     404 001372 115433                  	MOVB	@-(R4),@(R3)+	;DEST DATA=000600
+     405 001374 103403                  	BCS	2$
+     406                                	;**************************************************************
+     407                                	HRDER$,BEGIN,NULL	;
+       1 001376 000000                  	HALT			; just halt on error
+       2 001400 000000                  	HALT			; force3 word size, like in original
+       3 001402 000000                  	HALT
+     408                                	;**************************************************************
+     409                                
+     410 001404 022715  000600          2$:	CMP	#600,(R5)	;CHECK DEST DATA
+     411 001410 001403                  	BEQ	3$
+     412                                	;**************************************************************
+     413                                	HRDER$,BEGIN,NULL	;
+       1 001412 000000                  	HALT			; just halt on error
+       2 001414 000000                  	HALT			; force3 word size, like in original
+       3 001416 000000                  	HALT
+     414                                	;**************************************************************
+     415                                
+     416 001420 024343                  3$:	CMP	-(R3),-(R3)	;POINT R4 BACK TO EVEN BYTE
+     417 001422 153433                  	BISB	@(R4)+,@(R3)+
+     418 001424 153433                  	BISB	@(R4)+,@(R3)+	;DEST DATA=100601
+     419 001426 022715  100601          	CMP	#100601,(R5)	;CHECK RESULT
+     420 001432 001403                  	BEQ	4$
+     421                                	;**************************************************************
+     422                                	HRDER$,BEGIN,NULL	;
+       1 001434 000000                  	HALT			; just halt on error
+       2 001436 000000                  	HALT			; force3 word size, like in original
+       3 001440 000000                  	HALT
+     423                                	;**************************************************************
+     424                                
+     425 001442 145453                  4$:	BICB	@-(R4),@-(R3)
+     426 001444 145453                  	BICB	@-(R4),@-(R3)
+     427 001446 133433                  	BITB	@(R4)+,@(R3)+
+     428 001450 001002                  	BNE	BITB3
+     429 001452 135433                  	BITB	@-(R4),@(R3)+
+     430 001454 001003                  	BNE	H7
+     431                                BITB3:
+     432                                	;**************************************************************
+     433                                	HRDER$,BEGIN,NULL	;
+       1 001456 000000                  	HALT			; just halt on error
+       2 001460 000000                  	HALT			; force3 word size, like in original
+       3 001462 000000                  	HALT
+     434                                	;**************************************************************
+     435                                
+     436 001464 123453                  H7:	CMPB	@(R4)+,@-(R3)
+     437 001466 001002                  	BNE	CMPB3
+     438 001470 123453                  	CMPB	@(R4)+,@-(R3)
+     439 001472 001403                  	BEQ	JP1
+     440                                CMPB3:
+     441                                	;**************************************************************
+     442                                	HRDER$,BEGIN,NULL	;
+       1 001474 000000                  	HALT			; just halt on error
+       2 001476 000000                  	HALT			; force3 word size, like in original
+       3 001500 000000                  	HALT
+     443                                	;**************************************************************
+     444                                
+     445                                	;CHECK JUMP  INSTRUCTIONS
+     446 001502 010700                  JP1:	MOV	PC,R0
+     447 001504 062700  000012          	ADD	#12,R0		;SET ADDRESS FOR JUMP INST
+     448 001510 000277                  	SCC
+     449 001512 000110                  	JMP	(R0)
+     450 001514 000402                  2$:	BR	3$
+     451 001516 000250                  	CLN			;JMP INST JUMPS HERE
+     452 001520 000775                  	BR	2$
+     453                                
+     454 001522 103003                  3$:	BCC	JMP1
+     455 001524 102002                  	BVC	JMP1
+     456 001526 001001                  	BNE	JMP1
+     457 001530 100003                  	BPL	K2
+     458                                JMP1:
+     459                                	;**************************************************************
+     460                                	HRDER$,BEGIN,NULL	;
+       1 001532 000000                  	HALT			; just halt on error
+       2 001534 000000                  	HALT			; force3 word size, like in original
+       3 001536 000000                  	HALT
+     461                                	;**************************************************************
+     462                                
+     463 001540 005002                  K2:	CLR	R2		;SET INDICATOR
+     464 001542 010704                  	MOV	PC,R4		;SET UP JUMP REGISTER
+     465 001544 010400                  	MOV	R4,R0		;SET UP CHECK REGISTER
+     466 001546 000402                  	BR	1$
+     467 001550 005102                  	COM	R2		;COMPLEMENT INDICATOR
+     468 001552 000403                  	BR	2$
+     469 001554 022424                  1$:	CMP	(R4)+,(R4)+
+     470 001556 005724                  	TST	(R4)+		;R4=JMP ADDRESS
+     471 001560 000144                  	JMP	-(R4)		;USE R4 AS ADDRESS
+     472 001562 005202                  2$:	INC	R2		;CHECK INDICATOR
+     473 001564 001003                  	BNE	JMP4
+     474 001566 022020                  	CMP	(R0)+,(R0)+
+     475 001570 020004                  	CMP	R0,R4		;CHECK AUTO-DEC R4
+     476 001572 001403                  	BEQ	JSRTST
+     477                                JMP4:
+     478                                	;**************************************************************
+     479                                	HRDER$,BEGIN,NULL	;
+       1 001574 000000                  	HALT			; just halt on error
+       2 001576 000000                  	HALT			; force3 word size, like in original
+       3 001600 000000                  	HALT
+     480                                	;**************************************************************
+     481                                
+     482                                	;CHECK JSR INSTRUCTIONS
+     483 001602 012702  001624          JSRTST: MOV	#3$,R2		;FORM DEST ADRS
+     484 001606 000277                  	SCC			;PRESET CC'S
+     485 001610 000242                  	CLV
+     486 001612 004512                  	JSR	R5,(R2) 	;GO TO 3$ VIA R2
+     487 001614 005702                  1$:	TST	R2		;CHECK INDICATOR
+     488 001616 001012                  	BNE	JSR1		;R2 SHOULD=0
+     489 001620 000414                  	BR	EX
+     490 001622 000205                  2$:	RTS	R5		;RETURN FROM SUB ROUTINE
+     491 001624 103007                  3$:	BCC	JSR1		;CHECK THAT JSR DID NOT
+     492 001626 102406                  	BVS	JSR1
+     493 001630 001005                  	BNE	JSR1		;AFFECT CC'S
+     494 001632 100004                  	BPL	JSR1
+     495 001634 005002                  	CLR	R2		;CLEAR INDICATOR
+     496 001636 012704  001614          	MOV	#1$,R4		;GET RETURN ADDRESS
+     497 001642 000767                  	BR	2$
+     498                                JSR1:
+     499                                	;**************************************************************
+     500                                	HRDER$,BEGIN,NULL	;
+       1 001644 000000                  	HALT			; just halt on error
+       2 001646 000000                  	HALT			; force3 word size, like in original
+       3 001650 000000                  	HALT
+     501                                	;**************************************************************
+     502                                
+     503                                EX:
+     504 001652 000000G 000000G         	ENDIT$,BEGIN		;SIGNAL END OF ITERATION
+     505                                				;MONITOR SHALL TEst END OF PASS
+     506 001656 000000                  	HALT
+     507 001660 000167  000224'         ST:	JMP	RESTRT
+     508                                
+     509                                	.END
+     510                                
+     511                                
+     512                                

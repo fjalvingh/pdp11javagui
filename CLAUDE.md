@@ -21,7 +21,7 @@ enforced so), `pdp11-ui` (windows, window manager, settings), `pdp11-app` (`main
 resources). The second is `pdp11-web`, a DomUI web application of minicomputer tools that need
 no machine: the microcode browsers now, disassembling images and small assembly tasks later.
 What both use is `pdp11-common` (addresses, memory cells, the disassembler, memory file formats,
-the MACRO-11 driver, the microcode documents and browser). The dependencies run
+the MACRO-11 assembler, the microcode documents and browser). The dependencies run
 common ← core ← ui ← app and common ← web, and never the other way; `pdp11-web` may not reach
 `pdp11-core`, which an enforcer rule in its pom holds down.
 
@@ -169,7 +169,7 @@ silently diverging.
   console protocol; they exercise the real protocol code end to end, and a `ConnectionProfile`
   with `TransportKind.SIMULATED` drives the whole application against one.
 - **A test that needs an external program skips rather than fails** when it is missing — see
-  `SimhConsoleIT`. CI has no SimH, no `macro11` and no Free Pascal, and is not getting them.
+  `SimhConsoleIT`. CI has no SimH and no Free Pascal, and is not getting them.
 - **Anything with a reader and a writer is tested by round trip**, in one test that does both.
   Two bugs in the original's split-byte format survived for years because each hides the other:
   the writer produces an all-zero high byte file, the reader takes half the words, and reading
@@ -239,11 +239,18 @@ window seems to need it, the address is being compared at the wrong width somewh
 
 ## External tools
 
-`macro11` (MACRO-11 assembler) and SimH's `pdp11` are invoked as external processes and must
-be on `PATH` **to be used**; both are present at `/home/jal/bin/`. Neither is needed to build,
-to run the tests, or to drive a simulated machine — `TransportKind.SIMULATED` needs nothing at
-all, which is why the tests and the first-run experience both lean on it. The app should detect
-their absence when something asks for them and say so clearly rather than failing obscurely. `m4` is *not* a runtime
+SimH's `pdp11` is invoked as an external process and must be on `PATH` **to be used**; it is
+present at `/home/jal/bin/`. It is not needed to build, to run the tests, or to drive a simulated
+machine — `TransportKind.SIMULATED` needs nothing at all, which is why the tests and the
+first-run experience both lean on it. The app should detect its absence when something asks for
+it and say so clearly rather than failing obscurely.
+
+The MACRO-11 assembler is **not** external any more: `to.etc.pdp11.common.macro11.asm` is a
+Java port of the C `macro11` (`/home/jal/prj/macro11`, which is still the reference when the two
+disagree on what a program means). It reads the source once and patches forward references at
+the end, reports every error and many warnings the C one does not, and lays its listing out
+exactly as the C one does, so listings stay readable by `Macro11ListingParser`. `CorpusTest`
+holds it to the C assembler's output on the project's own programs. `m4` is *not* a runtime
 dependency of the Java version — machine-description preprocessing is reimplemented in Java
 (see PLAN.md §7, which also records that this feature is currently broken on Linux in the
 Pascal build).

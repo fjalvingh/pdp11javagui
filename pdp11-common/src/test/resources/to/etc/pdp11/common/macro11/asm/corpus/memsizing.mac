@@ -1,0 +1,35 @@
+	.title Memory Sizing Program
+	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+	; If the simple tests work,
+	; the next step is to find out how much memory is in the system.
+	; Without memory management on it will be limited to 56Kb
+	; (or 60Kb with memory boards that extend into the I/O page locations).
+	; Toggle in the following program :-
+
+	.asect
+	.=4
+	.word	betr	; Bus Error trap
+betr:	halt
+	.=10
+	.word	ritr	; Reserved instruction trap
+ritr:	halt
+	.=24
+	.word	pftr		; Power fail trap
+pftr:	halt
+
+	.=1000
+start:
+	mov #770,sp	; set the stack
+	clr r0		; set memory address
+loop:	tst (r0)+	; test memory, increment
+	br loop
+
+	; This program will loop until it generates a bus error trap
+	; when it tries to access non-existent memory.
+	; Register 0 will contain the the top address + 2.
+	; On a PDP11/20, the value will be in the data lights.
+	; On the older processors, examine memory location 777700;
+	; on 11/45/50/50 use the register examine switch;
+	; on the LSI based machines, examine $0
+
+	.end

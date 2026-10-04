@@ -1,0 +1,89 @@
+       1                                	.title Memory address program
+       2                                	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+       3                                
+       4                                	; The idea of this program is to load every memory location with
+       5                                	; it's address and then verify. It should normally halt at location 10.
+       6                                	; If there is an error, the address will be in register 1.
+       7                                	 .asect
+       8                                
+       9 000004                                 .=4                      ; bus error trap
+      10 000004 000226                          .word rldtvc
+      11 000006 000000                          halt
+      12                                
+      13 000010                                 .=10                     ; reserved instruction trap
+      14 000010 000012                          .word rsvint
+      15 000012 000000                  rsvint: halt
+      16                                
+      17 000200                                 .=200
+memoryaddress.mac:18: ***ERROR Junk at end of line ('s')
+      18 000200 012706  000410          	mov #410,sp	set the stack
+      19                                
+memoryaddress.mac:20: ***ERROR Junk at end of line ('s')
+      20 000204 012700  000420          	mov #420,r0	set target memory address
+      21                                
+memoryaddress.mac:22: ***ERROR Junk at end of line ('c')
+      22 000210 010001                  	mov r0, r1	copy memory address
+memoryaddress.mac:23: ***ERROR Junk at end of line ('w')
+      23 000212 010111                  loop1:	mov r1, (r1)	write memory
+memoryaddress.mac:24: ***ERROR Junk at end of line ('c')
+      24 000214 020111                  	cmp r1, (r1)	check write
+memoryaddress.mac:25: ***ERROR Junk at end of line ('O')
+      25 000216 001401                  	beq .+4 	OK
+memoryaddress.mac:26: ***ERROR Junk at end of line ('i')
+      26 000220 000000                  	halt		initial check error
+memoryaddress.mac:27: ***ERROR Junk at end of line ('c')
+      27 000222 005121                  	com (r1)+	complement the data
+memoryaddress.mac:28: ***ERROR Junk at end of line ('l')
+      28 000224 000772                  	br loop1	loop till bus error
+      29                                rldtvc:
+memoryaddress.mac:30: ***ERROR Junk at end of line ('r')
+      30 000226 012737  000006  000004  	mov #6,@#4	reload trap vector
+      31                                
+memoryaddress.mac:32: ***ERROR Junk at end of line ('c')
+      32 000234 010001                  	mov r0,r1	copy memory address
+memoryaddress.mac:33: ***ERROR Junk at end of line ('c')
+      33 000236 005111                  loop2:	com (r1)	complement memory
+memoryaddress.mac:34: ***ERROR Junk at end of line ('r')
+      34 000240 020111                  	cmp r1,(r1)	recheck memory
+memoryaddress.mac:35: ***ERROR Junk at end of line ('O')
+      35 000242 001401                  	beq .+4 	OK
+memoryaddress.mac:36: ***ERROR Junk at end of line ('m')
+      36 000244 000000                  	halt		memory addressing error
+memoryaddress.mac:37: ***ERROR Junk at end of line ('i')
+      37 000246 005721                  	tst (r1)+	increment memory address
+      38 000250 000772                  	br loop2
+      39                                
+      40                                
+      41                                
+      42                                
+      43 000740                                .=740
+      44                                aproc:
+      45 000740 000000                  	halt
+      46                                
+      47 001000                          .=1000
+      48                                1$:
+      49 001000 012706  000500          	mov #500,sp		  ; OK
+      50 001004 012703  001234           mov #1234,r3			  ; OK
+      51 001010 005203                   inc r3 			  ; nop
+      52 001012 006203                   asr	r3			  ; nop
+      53 001014 010302                   mov r3,r2			  ; OK
+      54 001016 060302                   add r3,r2			  ; nop
+      55 001020 000415                   br aprocx
+      56 001022 022703  001235            cmp	     #1235,r3		   ; nop, r3 = 0!!
+      57 001026 101364                    bhi	     1$
+      58 001030 001763                    beq	     1$
+      59 001032 000762                     br 1$
+      60 001034 022703  001233            cmp	     #1233,r3		     ; hit end of buffer (512. bytes)?
+      61 001040 101357                    bhi	     1$
+      62 001042 010304                   mov r3,r4
+      63 001044 005004                   clr r4
+      64 001046 010312                   mov  r3,(r2)
+      65 001050 005212                   inc  (r2)
+      66                                
+      67 001052 060304                   add r3,r4
+      68                                ; mov r3,@#100
+      69                                aprocx:
+      70 001054 000000                   halt
+      71                                
+      72                                	.end
+      73                                

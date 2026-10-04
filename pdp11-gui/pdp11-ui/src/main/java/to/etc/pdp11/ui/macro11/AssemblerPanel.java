@@ -6,7 +6,6 @@ import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.RTextScrollPane;
 import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.core.conn.ConnectionManager;
-import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.common.macro11.Macro11Listing;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
@@ -400,11 +399,14 @@ public final class AssemblerPanel extends JPanel {
 			m_listingStatus.setText("Nothing assembled yet");
 			m_listingStatus.setForeground(UiColors.SECONDARY_TEXT);
 		} else if(listing.isOk()) {
-			m_listingStatus.setText(m_model.getListingFile() + "  -  " + listing.getWordCount() + " words");
+			int warnings = listing.getWarningCount();
+			Path file = m_model.getListingFile();
+			m_listingStatus.setText((file == null ? "(listing not saved)" : file.toString()) + "  -  " + listing.getWordCount() + " words"
+				+ (warnings == 0 ? "" : ", " + warnings + " warning" + (warnings == 1 ? "" : "s")));
 			m_listingStatus.setForeground(UiColors.OK_TEXT);
 		} else {
-			m_listingStatus.setText(listing.getProblems().size() + " problem"
-				+ (listing.getProblems().size() == 1 ? "" : "s") + ": "
+			int errors = listing.getProblems().size() - listing.getWarningCount();
+			m_listingStatus.setText(errors + " error" + (errors == 1 ? "" : "s") + ": "
 				+ listing.getFirstProblem().describe());
 			m_listingStatus.setForeground(UiColors.ERROR_TEXT);
 		}
@@ -448,12 +450,9 @@ public final class AssemblerPanel extends JPanel {
 	private void updateButtons() {
 		boolean connected = m_context.getConnectionManager().isConnected();
 		boolean haveCode = m_model.hasCode();
-		boolean haveAssembler = Macro11.isAvailable();
 
 		m_save.setEnabled(m_model.isChanged() || m_model.getSourceFile() == null);
-		m_compile.setEnabled(m_model.canAssemble() && haveAssembler && !m_model.isAssembling());
-		if(!haveAssembler)
-			m_compile.setToolTipText(Macro11.notInstalledMessage());
+		m_compile.setEnabled(m_model.canAssemble() && !m_model.isAssembling());
 
 		m_depositAll.setEnabled(connected && haveCode);
 		m_depositChanged.setEnabled(connected && haveCode);

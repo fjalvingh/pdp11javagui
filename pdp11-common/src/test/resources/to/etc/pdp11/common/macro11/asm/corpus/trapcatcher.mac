@@ -1,0 +1,32 @@
+	.title Trap catcher program
+	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+
+	; The idea of a trap catcher is to load all the trap vectors so that
+	; a random trap can be detected. The first program will trap to 0 on
+	; any random trap.
+	; Remember on that 11/03 processors (and some other LSI as strap options),
+	; that the line time clock is always running unless disabled by the LTC switch
+	; on the front panel, and this will cause traps to location 0100.
+	.asect
+
+	; This slightly more complicated version will identity the trap location, with the processor halting with the trap location + 6 in the PC register.
+
+	.=1000
+start:
+	mov #770,sp	; set the stack pointer
+	clr r0		; memory pointer
+	mov #2,r1	; trap value
+
+loop:	mov r1,(r0)+	; set trap vector value
+	clr (r0)+	; set halt instruction in trap
+	add #4,r1	; update r1 for next trap
+
+	cmp sp,r0	; load up to stack pointer
+	bne loop
+	halt
+
+
+	; After loading memory with the trap catcher,
+	; deposit 777 into location 1000 as start (at location 1000).
+	; The processor should loop at 1000.
+

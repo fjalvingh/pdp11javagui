@@ -1,0 +1,37 @@
+
+	.title	Console serial port
+
+	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+	; Any DL-11 style serial port (including the console) can be simply
+	; tested by depositing 060 (octal) into its 'transmitter buffer ',
+	; 0777566 in the case of the console. A '0' should appear on the
+	; console. If it is anything else, check the baud rate settings.
+	;
+	; To check the input register, press the '0', then examine the
+	; receive register 0777562 and it should contain 060.
+	;
+	; Needles to say, if you are using any of the Qbus processors,
+	; or a PDP11/24, /44, /84 or /94 then you need the serial console
+	; working to do anything.
+	;
+	; As simple serial echo test would be:-
+
+	.asect
+
+	kbs = 177560
+
+
+	.=1000
+
+start:
+	mov #kbs, r0
+
+wait:	tstb (r0)	; character received?
+	bpl wait	; no, loop
+	mov 2(r0),6(r0) ; transmit data
+
+	br wait 	; get next character
+
+	; Note:- PDP11 guru's will notice that I don't test for
+	; transmitter ready, as there is little point given that you
+	; cannot type fast enough for it to overrun!

@@ -43,12 +43,11 @@ import java.util.function.Consumer;
  *
  * <h2>Which thread</h2>
  *
- * <p>{@link #assemble} starts an external process and waits up to five seconds for it, so it
- * runs on a worker; every callback and every listener runs on the event thread. Nothing here
- * touches the console except {@link #deposit}, which goes through
- * {@link AppContext#onConsole}.</p>
+ * <p>{@link #assemble} saves the source and writes the listing, so it runs on a worker; every
+ * callback and every listener runs on the event thread. Nothing here touches the console except
+ * {@link #deposit}, which goes through {@link AppContext#onConsole}.</p>
  *
- * <p>The worker parses the listing but does <b>not</b> put it into {@link #getGroup()}. That
+ * <p>The worker assembles but does <b>not</b> put the result into {@link #getGroup()}. That
  * group is on the propagation bus: the Code grid paints from it on the event thread and the
  * command thread walks the bus index during an examine, and nothing in the memory-cell layer is
  * synchronised. So the worker builds a detached {@link Macro11ListingParser.Parsed} and the
@@ -344,7 +343,7 @@ public final class AssemblerModel {
 	}
 
 	/**
-	 * Save if needed, run MACRO-11, parse what it wrote.
+	 * Save if needed, assemble, and write the listing beside the source.
 	 *
 	 * <p>Returns at once; {@code whenDone} runs on the event thread, with {@code ok} false when
 	 * anything went wrong - which has already been reported through
@@ -359,8 +358,8 @@ public final class AssemblerModel {
 			return;
 		}
 		if(m_sourceFile == null) {
-			fail(whenDone, "Save the source to a file before assembling it - MACRO-11 reads a file,"
-				+ " not an editor", null);
+			fail(whenDone, "Save the source to a file before assembling it: the listing is written beside it,"
+				+ " and .INCLUDE and .MCALL look in its directory", null);
 			return;
 		}
 		if(m_sourceText.isBlank()) {
@@ -381,21 +380,23 @@ public final class AssemblerModel {
 			try {
 				if(needsSave)
 					Files.writeString(source, text, StandardCharsets.ISO_8859_1);
-				Macro11.Result result = Macro11.assemble(source, m_context.getLogger());
-				//-- Parsed off the worker as well: it is a few hundred lines of string work and
-				//-- the event thread has nothing to add to it. Detached, though - the group it
-				//-- ends up in belongs to the event thread.
-				Macro11ListingParser.Parsed parsed = Macro11ListingParser.parse(result.listing(), type);
+				//-- Assembled from the text, not the file: they are the same once saved, and the
+				//-- text is what the user is looking at. Detached - the group it ends up in belongs
+				//-- to the event thread.
+				Macro11.Result result = Macro11.assemble(source, text, type);
+				Macro11ListingParser.Parsed parsed = result.parsed();
+				Path listingFile = writeListing(source, result.listing());
 				AppContext.onUi(() -> {
 					m_assembling = false;
 					Macro11Listing listing = parsed.installInto(group);
 					if(needsSave)
 						m_savedText = text;
 					m_listing = listing;
-					m_listingFile = result.listing();
+					m_listingFile = listingFile;
 					m_translated = listing.isOk();
-					m_context.getLogger().log(LogChannel.OTHER, "MACRO-11: %d words, %d problems",
-						listing.getWordCount(), listing.getProblems().size());
+					int warnings = listing.getWarningCount();
+					m_context.getLogger().log(LogChannel.OTHER, "MACRO-11: %d words, %d errors, %d warnings",
+						listing.getWordCount(), listing.getProblems().size() - warnings, warnings);
 					//-- A program says where it starts, and the window that starts things is a
 					//-- different window. Same route the Memory Loader uses.
 					Address start = listing.getStartAddress();
@@ -405,6 +406,7 @@ public final class AssemblerModel {
 					deliver(whenDone, new Outcome(m_translated, listing,
 						m_translated
 							? listing.getWordCount() + " words assembled"
+								+ (warnings == 0 ? "" : ", " + warnings + " warning" + (warnings == 1 ? "" : "s"))
 							: listing.getFirstProblem().describe()));
 				});
 			} catch(IOException | RuntimeException x) {
@@ -418,6 +420,24 @@ public final class AssemblerModel {
 		}, "macro11-assemble");
 		worker.setDaemon(true);
 		worker.start();
+	}
+
+	/**
+	 * Keep the listing beside the source, as the C assembler did: it is the durable half of an
+	 * assembly, which {@link #loadListing} can read back without the source. Not being able to
+	 * write it is worth a line in the log, not a failed assembly.
+	 *
+	 * @return the file, or null when it could not be written
+	 */
+	private Path writeListing(Path source, List<String> lines) {
+		Path file = Macro11.listingFileFor(source);
+		try {
+			Files.write(file, lines, StandardCharsets.ISO_8859_1);
+			return file;
+		} catch(IOException x) {
+			m_context.getLogger().log(LogChannel.OTHER, "Could not write the listing %s: %s", file, x.getMessage());
+			return null;
+		}
 	}
 
 	/**

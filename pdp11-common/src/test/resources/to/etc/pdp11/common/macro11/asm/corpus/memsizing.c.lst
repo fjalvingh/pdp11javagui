@@ -1,0 +1,35 @@
+       1                                	.title Memory Sizing Program
+       2                                	; http://www.psych.usyd.edu.au/pdp-11/hints.html
+       3                                	; If the simple tests work,
+       4                                	; the next step is to find out how much memory is in the system.
+       5                                	; Without memory management on it will be limited to 56Kb
+       6                                	; (or 60Kb with memory boards that extend into the I/O page locations).
+       7                                	; Toggle in the following program :-
+       8                                
+       9                                	.asect
+      10 000004                         	.=4
+      11 000004 000006                  	.word	betr	; Bus Error trap
+      12 000006 000000                  betr:	halt
+      13 000010                         	.=10
+      14 000010 000012                  	.word	ritr	; Reserved instruction trap
+      15 000012 000000                  ritr:	halt
+      16 000024                         	.=24
+      17 000024 000026                  	.word	pftr		; Power fail trap
+      18 000026 000000                  pftr:	halt
+      19                                
+      20 001000                         	.=1000
+      21                                start:
+      22 001000 012706  000770          	mov #770,sp	; set the stack
+      23 001004 005000                  	clr r0		; set memory address
+      24 001006 005720                  loop:	tst (r0)+	; test memory, increment
+      25 001010 000776                  	br loop
+      26                                
+      27                                	; This program will loop until it generates a bus error trap
+      28                                	; when it tries to access non-existent memory.
+      29                                	; Register 0 will contain the the top address + 2.
+      30                                	; On a PDP11/20, the value will be in the data lights.
+      31                                	; On the older processors, examine memory location 777700;
+      32                                	; on 11/45/50/50 use the register examine switch;
+      33                                	; on the LSI based machines, examine $0
+      34                                
+      35                                	.end

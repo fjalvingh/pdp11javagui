@@ -47,7 +47,13 @@ public final class Macro11Listing {
 		UNRESOLVED_GLOBAL,
 
 		/** The listing held something this parser does not understand. */
-		UNKNOWN_SUFFIX
+		UNKNOWN_SUFFIX,
+
+		/**
+		 * The assembler warned: the program assembled, but something in it is probably not
+		 * what was meant. Not a reason to refuse the program.
+		 */
+		WARNING
 	}
 
 	/**
@@ -60,11 +66,17 @@ public final class Macro11Listing {
 	 * @param message     what to show
 	 */
 	public record Problem(ProblemKind kind, String file, int sourceLine, int listingLine, String message) {
+		/** Whether this stops the program being used; a warning does not. */
+		public boolean isError() {
+			return kind != ProblemKind.WARNING;
+		}
+
 		/** How this reads in a status bar or a dialog. */
 		public String describe() {
+			String what = isError() ? "error" : "warning";
 			return sourceLine > 0
-				? "MACRO-11 error in line " + sourceLine + ": \"" + message + "\""
-				: "MACRO-11: " + message;
+				? "MACRO-11 " + what + " in line " + sourceLine + ": \"" + message + "\""
+				: "MACRO-11 " + what + ": " + message;
 		}
 	}
 
@@ -83,11 +95,16 @@ public final class Macro11Listing {
 
 	private final MemoryCellGroup m_group;
 
-	Macro11Listing(List<String> lines, int[] sourceLineOf, List<Problem> problems, MemoryCellGroup group) {
+	/** Where {@code .END} says the program starts, or null when it does not say. */
+	private final Address m_transferAddress;
+
+	Macro11Listing(List<String> lines, int[] sourceLineOf, List<Problem> problems, MemoryCellGroup group,
+		Address transferAddress) {
 		m_lines = List.copyOf(lines);
 		m_sourceLineOf = sourceLineOf;
 		m_problems = List.copyOf(problems);
 		m_group = group;
+		m_transferAddress = transferAddress;
 	}
 
 	/** The listing, one entry per line, as it will be shown. */
@@ -105,17 +122,27 @@ public final class Macro11Listing {
 	}
 
 	/**
-	 * The first complaint, or null.
+	 * The first error, or when there is none the first warning, or null.
 	 *
 	 * <p>The one the Pascal keeps - {@code FirstErrorMsg}/{@code FirstErrorLineNr} - and the one
 	 * worth putting in front of the user, since a MACRO-11 error usually cascades.</p>
 	 */
 	public Problem getFirstProblem() {
+		for(Problem p : m_problems) {
+			if(p.isError())
+				return p;
+		}
 		return m_problems.isEmpty() ? null : m_problems.get(0);
 	}
 
+	/** Whether the program can be used: no errors. Warnings do not count. */
 	public boolean isOk() {
-		return m_problems.isEmpty();
+		return m_problems.stream().noneMatch(Problem::isError);
+	}
+
+	/** How many of the problems are only warnings. */
+	public int getWarningCount() {
+		return (int) m_problems.stream().filter(p -> !p.isError()).count();
 	}
 
 	/** How many words of code came out. */
@@ -124,14 +151,17 @@ public final class Macro11Listing {
 	}
 
 	/**
-	 * The lowest address in the code, or null when there is none.
+	 * Where the program starts: the address {@code .END} gives, or else the lowest address in
+	 * the code; null when there is no code.
 	 *
-	 * <p>Which is what the Pascal shows as the program's start address
-	 * ({@code FormMacro11CodeU.pas:96}), reading it off cell 0. Reading it off the range instead
-	 * means an assembler that emitted its {@code .asect} out of order still gives the right
-	 * answer.</p>
+	 * <p>The lowest address is what the Pascal shows as the program's start address
+	 * ({@code FormMacro11CodeU.pas:96}), reading it off cell 0, because a listing does not say
+	 * what {@code .END} said. The assembler does, so a program whose entry point is not its first
+	 * word - one with its data in front - now starts where it says.</p>
 	 */
 	public Address getStartAddress() {
+		if(m_transferAddress != null)
+			return m_transferAddress;
 		return m_group.isEmpty() ? null : Address.of(m_group.getType(), m_group.getRange().lo());
 	}
 
