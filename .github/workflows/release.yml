@@ -111,6 +111,19 @@ jobs:
           -DprocessAllModules=true
           -DgenerateBackupPoms=false
 
+      # The web profile puts the domui/ submodule in the reactor, and versions:set renumbers it
+      # along with everything else, groupId filter or not - after which DomUI's modules ask for
+      # each other at the release version and cannot find the 1.2-SNAPSHOT that was installed.
+      # DomUI is not ours to version: put it back, and fail if anything outside it was missed.
+      - name: Leave DomUI's own version alone
+        run: |
+          set -euo pipefail
+          git -C domui checkout -- .
+          if git -C domui status --porcelain | grep -q .; then
+            echo "::error::domui/ still differs from its commit after restoring it" >&2
+            exit 1
+          fi
+
       - name: Build and test
         run: ./mvnw -B --no-transfer-progress clean verify
 
