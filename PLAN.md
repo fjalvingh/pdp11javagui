@@ -401,11 +401,15 @@ loader (`FastLoader`, `fastload.mac`):
 - **The loader is MACRO-11 source, assembled at the address it is put** by the project's own
   assembler, not shipped as words and relocated. It is about 60 words of code, deposited the slow
   way, plus a 64-word receive buffer that is never deposited.
-- **It goes where nothing being deposited is**: the highest gap below the image's top address that
-  it fits in. Memory on a UNIBUS machine is contiguous from zero, so anything below a deposited
-  word exists; nothing above the top one is guessed at, because depositing into nonexistent memory
-  stops the console emulator for good. With no gap, it overlays the top of the image, and those
-  words are deposited the slow way after it has finished. What the application knew about the
+- **It goes where nothing being deposited is**: the highest gap it fits in below whichever is
+  higher of the image's top address and 8KW (`040000`). Memory on a UNIBUS machine is contiguous
+  from zero, so anything below a deposited word exists, and every PDP-11 has at least 8KW; nothing
+  beyond both is guessed at, because depositing into nonexistent memory stops the console emulator
+  for good. So an image smaller than 8KW has the loader just under `040000`. Only when no gap
+  is big enough does it overlay the top of the image, and those ~130 words are deposited the slow
+  way after it has finished. The first version did not count the 8KW and overlaid two thirds of
+  the library's images (992 of 1,478), which showed on the 11/05 as a slow tail at the end of
+  every load; with it, 156 still need the overlay, all of them images that go past 8KW. What the application knew about the
   memory it sat in is forgotten (`SharedMemory.forgetMachineValuesAt`).
 - **The protocol is binary, with a block checksum and an answer per block.** Two characters a
   word, so about 120 words a second at 2400 baud: about 40 s instead of 4 minutes for the median

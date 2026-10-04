@@ -161,29 +161,43 @@ class M9312FastLoadTest {
 		}
 	}
 
+	/** An image below 8KW - most of them - has the loader just under 8KW, and nothing slow after it. */
+	@Test
+	void underEightKwTheLoaderGoesAboveTheImage() throws Exception {
+		try(Rig rig = new Rig()) {
+			MemoryCellGroup g = rig.program("diag", 0, 3000, 13);
+			List<Integer> want = edits(g);
+			int before = rig.wire.length();
+			rig.deposit(g);
+			String said = rig.wire.substring(before);
+			String afterExit = said.substring(said.lastIndexOf(String.valueOf(FastLoader.ACK)));
+			assertFalse(afterExit.contains("D "), "nothing deposited one word at a time after the loader");
+			FastLoader.Image image = FastLoader.assemble(040000 - FastLoader.SIZE, 0165020);
+			for(FastLoader.Word w : image.code()) {
+				assertEquals(w.value(), rig.fake.getMem(Address.of(MAT, w.address())));
+			}
+			rig.assertReadsBack(g, want);
+		}
+	}
+
 	/**
-	 * The loader goes into the highest gap below the image that it fits in, and what the
+	 * Above 8KW the loader goes into the highest gap below the image that it fits in, and what the
 	 * application knew of that memory is forgotten, since the loader is there now.
 	 */
 	@Test
 	void theLoaderGoesInAGapAndWhatWasKnownThereIsForgotten() throws Exception {
 		try(Rig rig = new Rig()) {
 			MemoryCellGroup gap = rig.groups.addGroup(MAT, "gap");
-			gap.add(04000, 02000);                         // 04000..07776
+			gap.add(044000, 02000);                         // 044000..047776
 			rig.connection.run(() -> rig.console.examine(gap, false, ProgressMonitor.NULL));
 			assertTrue(gap.cell(0).getPdpValue().isKnown());
 
-			MemoryCellGroup low = rig.program("low", 01000, 01000, 4);   // 01000..02776
-			MemoryCellGroup high = rig.program("high", 010000, 01000, 5); // 010000..011776
-			List<Integer> wantLow = edits(low);
+			MemoryCellGroup high = rig.program("high", 050000, 01000, 5); // 050000..051776
 			List<Integer> wantHigh = edits(high);
-			rig.deposit(low);
 			rig.deposit(high);
-			rig.assertHolds(low, wantLow);
 			rig.assertHolds(high, wantHigh);
 
-			//-- The high group's highest gap below it runs from 03000 up to 010000.
-			int origin = 010000 - FastLoader.SIZE;
+			int origin = 050000 - FastLoader.SIZE;
 			FastLoader.Image image = FastLoader.assemble(origin, 0165020);
 			for(FastLoader.Word w : image.code()) {
 				assertEquals(w.value(), rig.fake.getMem(Address.of(MAT, w.address())));
@@ -194,11 +208,11 @@ class M9312FastLoadTest {
 		}
 	}
 
-	/** An image from address 0 up has no gap: the loader sits on its top and those words go last. */
+	/** An image from 0 past 8KW has no gap: the loader sits on its top and those words go last. */
 	@Test
 	void withNoGapTheLoaderOverlaysTheTopAndThoseWordsAreDepositedAfter() throws Exception {
 		try(Rig rig = new Rig()) {
-			MemoryCellGroup g = rig.program("from zero", 0, 1000, 6);
+			MemoryCellGroup g = rig.program("from zero", 0, 9000, 6);
 			List<Integer> want = edits(g);
 			rig.deposit(g);
 			assertTrue(rig.usedLoader());

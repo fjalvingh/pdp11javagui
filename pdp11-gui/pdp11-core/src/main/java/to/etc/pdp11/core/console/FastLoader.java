@@ -68,6 +68,9 @@ public final class FastLoader {
 	/** The bytes that finish any block the loader may be inside, however it got there. */
 	public static final int RESYNC_PADDING = 1 + 2 * (BLOCK_WORDS + 2);
 
+	/** 8KW: the least memory any PDP-11 has, and so memory that is there whatever the image. */
+	public static final int GUARANTEED_MEMORY = 040000;
+
 	/** Where memory ends and the I/O page begins, in a 16-bit address space. */
 	public static final int IOPAGE_BASE = 0160000;
 
@@ -130,10 +133,12 @@ public final class FastLoader {
 	 * Where the loader goes when it carries these words, or -1 for nowhere.
 	 *
 	 * <p>Only memory known to exist is used, and none the image is about to need: the highest gap
-	 * below the image's top address that the image does not write, and that the loader fits in
-	 * whole. Memory on a UNIBUS machine is contiguous from zero, so everything below a word being
-	 * deposited is there - which is not true of anything above the top one, and guessing wrong
-	 * there would deposit the loader into nonexistent memory and stop the console emulator dead.</p>
+	 * the image does not write that the loader fits in whole, below whichever is higher of the
+	 * image's top and {@link #GUARANTEED_MEMORY}. Memory on a UNIBUS machine is contiguous from
+	 * zero, so everything below a word being deposited is there, and so is the first 8KW on any
+	 * PDP-11. Above both nothing is guessed at: depositing the loader into nonexistent memory
+	 * stops the console emulator dead. For an image smaller than 8KW, which is most of them, the
+	 * space just above it is where the loader goes.</p>
 	 *
 	 * <p>When no gap is big enough, the loader overlays the top of the image itself, and the words
 	 * it covers are deposited the slow way after it has finished. That costs a few seconds and
@@ -146,21 +151,20 @@ public final class FastLoader {
 	public static int place(NavigableSet<Integer> targets, int size) {
 		if(targets.isEmpty())
 			return -1;
-		//-- Walk the gaps from the top down: between each target and the one below it, and
-		//-- finally between the lowest and zero.
-		Integer above = targets.last();
-		Integer below = targets.lower(above);
-		while(above != null) {
+		int top = targets.last() + 2;                       // exclusive
+		//-- Walk the gaps from the top down: from the end of known memory to the top target,
+		//-- then between each target and the one below it, and finally down to zero.
+		int gapEnd = Math.max(top, GUARANTEED_MEMORY);
+		Integer below = targets.last();
+		for(;;) {
 			int gapLow = below == null ? 0 : below + 2;
-			int gapEnd = above;                             // exclusive
 			if(gapEnd - gapLow >= size)
 				return gapEnd - size;
 			if(below == null)
 				break;
-			above = below;
-			below = targets.lower(above);
+			gapEnd = below;
+			below = targets.lower(below);
 		}
-		int top = targets.last() + 2;
 		return top >= size ? top - size : -1;
 	}
 

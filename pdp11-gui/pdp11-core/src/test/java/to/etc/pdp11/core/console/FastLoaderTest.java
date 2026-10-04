@@ -56,31 +56,53 @@ class FastLoaderTest {
 		assertEquals(000137, code.get(code.size() - 2).value(), "JMP @#");
 	}
 
+	/**
+	 * Every PDP-11 has 8KW, so an image that ends below that has the space above it free, and
+	 * that is where the loader goes - at the top of it, out of the image's way.
+	 */
 	@Test
-	void itGoesInTheHighestGapItFits() {
-		TreeSet<Integer> t = words(01000, 0100);           // 01000..01176, and 0..776 free below it
-		t.addAll(words(02000, 0400));                       // 02000..02776: 01200..01776 free, 384 bytes
-		t.addAll(words(03000, 0400));                       // touching: no gap
-		assertEquals(02000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
+	void anImageBelow8kwHasTheLoaderJustUnder8kw() {
+		assertEquals(040000 - FastLoader.SIZE, FastLoader.place(words(0, 01000), FastLoader.SIZE));
+		TreeSet<Integer> t = words(0, 01000);
+		t.addAll(words(030000, 0100));                      // a gap in between does not matter
+		assertEquals(040000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
+	}
+
+	/** An image that ends just under 8KW leaves too little: then the gaps below. */
+	@Test
+	void anImageEndingJustUnder8kwFallsBackToAGap() {
+		TreeSet<Integer> t = words(0, 01000);               // 0..01776, then 02000..
+		t.addAll(words(010000, (040000 - 010000) / 2 - 010)); // up to 037756: 16 bytes left above
+		assertEquals(010000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
+	}
+
+	/** Above 8KW nothing is known beyond the image's top, so the highest gap below it. */
+	@Test
+	void aBigImageUsesItsHighestGapItFits() {
+		TreeSet<Integer> t = words(0, 024000);               // 0..047776
+		t.addAll(words(051000, 0100));                      // 050000..050776 free, 512 bytes
+		t.addAll(words(052000, 0400));                      // 051200..051776 free, 384 bytes
+		t.addAll(words(053000, 0400));                      // touching: no gap
+		assertEquals(052000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
 	}
 
 	@Test
 	void aGapTooSmallIsPassedOverForALowerOne() {
-		TreeSet<Integer> t = words(02000, 0400);            // gap below: 0..01776
-		t.addAll(words(02000 + 01000 + 0100, 0400));        // a 64-byte gap above it
-		assertEquals(02000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
+		TreeSet<Integer> t = words(0, 020000);              // 0..037776
+		t.addAll(words(042000, 0400));                      // 040000..041776 free
+		t.addAll(words(043000 + 0100, 0400));               // a 64-byte gap above it
+		assertEquals(042000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
 	}
 
-	/** Nothing below and nothing between: the top of the image, never above it. */
+	/** Above 8KW, with nothing below and nothing between: the top of the image, never above it. */
 	@Test
-	void withNoGapItOverlaysTheTopOfTheImage() {
-		TreeSet<Integer> t = words(0, 01000);               // 0..01776
-		assertEquals(02000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
+	void aBigImageWithNoGapIsOverlaidAtItsTop() {
+		TreeSet<Integer> t = words(0, 024000);              // 0..047776
+		assertEquals(050000 - FastLoader.SIZE, FastLoader.place(t, FastLoader.SIZE));
 	}
 
 	@Test
-	void anImageSmallerThanTheLoaderHasNowhereToPutIt() {
-		assertEquals(-1, FastLoader.place(words(0, 10), FastLoader.SIZE));
+	void nothingToDepositHasNowhereToPutIt() {
 		assertEquals(-1, FastLoader.place(new TreeSet<>(), FastLoader.SIZE));
 	}
 

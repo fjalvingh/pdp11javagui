@@ -42,8 +42,8 @@ On an **M9312**, depositing a large program - 128 words or more, such as a diagn
 assembled program - does not send it word by word. PDP11GUI first deposits a small loader, starts
 it, and sends the program to it in binary, about six times as fast; the loader then returns to
 the `@` prompt. You will see `*`, then a `.` per block, in the terminal while that happens. The
-loader occupies about 260 bytes of memory that the program does not use, so whatever was there
-before is lost. The console port must be strapped for 8 data bits. If it is not, PDP11GUI notices
+loader occupies about 260 bytes of memory that the program does not use - just below 8KW for a
+program smaller than that - so whatever was there before is lost. The console port must be strapped for 8 data bits. If it is not, PDP11GUI notices
 before sending anything and deposits the slow way.
 
 ## Transports
