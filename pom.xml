@@ -40,10 +40,8 @@
     </developers>
 
     <modules>
-	<module>domui</module>
         <module>pdp11-common</module>
         <module>pdp11-gui</module>
-        <module>pdp11-web</module>
     </modules>
 
     <properties>
@@ -364,6 +362,26 @@
     </build>
 
     <profiles>
+        <!--
+            The web application and the DomUI submodule it is built on. On by default; -DskipWeb
+            leaves both out of the reactor, so the desktop IDE builds and tests without DomUI
+            installed and without running DomUI's own test suites. CI does that on macOS and
+            Windows, where DomUI's tests fail for reasons of DomUI's own (line endings in the
+            syntaxer's expected output, locale-dependent number formats in the demo's Selenium
+            tests) that say nothing about this project.
+        -->
+        <profile>
+            <id>web</id>
+            <activation>
+                <property>
+                    <name>!skipWeb</name>
+                </property>
+            </activation>
+            <modules>
+                <module>domui</module>
+                <module>pdp11-web</module>
+            </modules>
+        </profile>
         <!--
             Tests get an X server of their own rather than the developer's.
 

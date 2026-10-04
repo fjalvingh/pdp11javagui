@@ -25,9 +25,12 @@ the MACRO-11 assembler, the microcode documents and browser). The dependencies r
 common ← core ← ui ← app and common ← web, and never the other way; `pdp11-web` may not reach
 `pdp11-core`, which an enforcer rule in its pom holds down.
 
-DomUI is the git submodule `domui/` (branch `domui-fixed`), not a reactor module and not on
-Maven Central: `tools/build-domui.sh` installs the parts the web needs into the local repository,
-once after cloning and again after the submodule moves. CI does the same.
+DomUI is the git submodule `domui/` (branch `domui-fixed`), not on Maven Central:
+`tools/build-domui.sh` installs the parts the web needs into the local repository, once after
+cloning and again after the submodule moves. CI does the same on Linux. `domui` and `pdp11-web`
+are reactor modules only through the root pom's `web` profile, on unless `-DskipWeb` is given;
+CI gives it on macOS and Windows. DomUI's own tests never run here: `.mvn/maven.config` sets
+`-Ddomui.test.skip=true`, DomUI's switch for its unit tests, Selenium ITs and Jetty.
 
 ## Read the plan first
 

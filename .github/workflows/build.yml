@@ -51,12 +51,17 @@ jobs:
           sudo apt-get install -y xvfb
 
       # DomUI is not on Maven Central: install the parts of the submodule the web application
-      # uses into the local repository before the reactor needs them.
+      # uses into the local repository before the reactor needs them. Linux only: the web
+      # application is a server, deployed on Linux, and is left out of the other builds.
       - name: Install DomUI
+        if: runner.os == 'Linux'
         run: tools/build-domui.sh
 
+      # On macOS and Windows -DskipWeb leaves pdp11-web and the DomUI submodule out of the
+      # reactor (the root pom's web profile): DomUI's own test suites fail there, and what those
+      # platforms are here to check is the desktop IDE.
       - name: Build
-        run: ./mvnw -B --no-transfer-progress verify
+        run: ./mvnw -B --no-transfer-progress verify ${{ runner.os != 'Linux' && '-DskipWeb' || '' }}
 
       - name: Upload the fat jar
         if: runner.os == 'Linux'
