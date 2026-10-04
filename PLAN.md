@@ -393,7 +393,7 @@ default-charset conversion near it.
 ```
 to.etc.pdp11.common.addr      Address, MemoryAddressType                      (pdp11-common)
 to.etc.pdp11.common.mem       MemoryCell, MemoryCellGroup, MemoryCellGroups    (pdp11-common)
-to.etc.pdp11.common.disas     Disassembler, DecodedInstruction                (pdp11-common)
+to.etc.pdp11.common.disas     Disassembler, DecodedInstruction, WellKnownAddresses (pdp11-common)
 to.etc.pdp11.common.memfile   memory file formats                             (pdp11-common)
 to.etc.pdp11.common.macro11   MACRO-11 assembler (.asm) and listing parser     (pdp11-common)
 to.etc.pdp11.common.microcode microcode documents, MicrocodeBrowser           (pdp11-common)

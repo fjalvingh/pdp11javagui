@@ -360,10 +360,11 @@ class DisassemblerPanelTest {
 		AppContext ctx = TestContext.create(dir);
 		DisassemblerPanel panel = Edt.call(() -> new DisassemblerPanel(ctx));
 		Edt.run(() -> panel.showPc(v(01000)));
-		//-- A small program either side of the PC: clr r0 / inc r0 / cmp r0,#10 / bne .-4 / halt
-		poke(panel, 0766, 005000, 005200, 020027, 000010, 001374, 000000, 000777, 010001, 010203, 0, 0);
+		//-- A small program either side of the PC: clr r0 / inc r0 / cmp r0,#10 / bne .-4 / halt,
+		//-- and a tstb @#177564 to show a well-known address commented.
+		poke(panel, 0766, 005000, 005200, 020027, 000010, 001374, 000000, 0105737, 0177564, 010203, 0, 0);
 		Edt.run(panel::updateDisplay);
-		Path file = UiRenderer.renderToFile(panel, 640, 440, Path.of("target", "ui-render", "disassembler-panel.png"));
+		Path file = UiRenderer.renderToFile(panel, 860, 440, Path.of("target", "ui-render", "disassembler-panel.png"));
 		assertTrue(Files.size(file) > 0);
 	}
 }

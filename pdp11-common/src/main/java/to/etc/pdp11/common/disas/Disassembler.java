@@ -399,7 +399,7 @@ public final class Disassembler {
 
 		//-- Word count from how far the cursor moved, wrapping at 64 KB like the machine does.
 		int consumed = ((cur.pos - addr) & 0xFFFF) / 2;
-		return new DecodedInstruction(addr, consumed, entry.name(), operands, true);
+		return new DecodedInstruction(addr, consumed, entry.name(), operands, true, cur.refs);
 	}
 
 	/**
@@ -454,6 +454,8 @@ public final class Disassembler {
 
 		private boolean ok = true;
 
+		private final List<DecodedInstruction.Reference> refs = new ArrayList<>(2);
+
 		private Cursor(int pos) {
 			this.pos = pos;
 		}
@@ -491,14 +493,17 @@ public final class Disassembler {
 			case 2:
 				if(reg != 7)
 					return "(" + regName(reg) + ")+";
-				//-- (PC)+ is immediate: the operand is the word that follows.
-				return "#" + octW(fetch(mem, cur));
+				//-- (PC)+ is immediate: the operand is the word that follows. A float's is the
+				//-- top word of a float literal, which names nothing.
+				if(!isInteger)
+					return "#" + octW(fetch(mem, cur));
+				return "#" + octW(reference(fetch(mem, cur), DecodedInstruction.ReferenceKind.IMMEDIATE, cur));
 
 			case 3:
 				if(reg != 7)
 					return "@(" + regName(reg) + ")+";
 				//-- @(PC)+ is absolute: the following word is the address.
-				return "@#" + octW(fetch(mem, cur));
+				return "@#" + octW(reference(fetch(mem, cur), DecodedInstruction.ReferenceKind.ABSOLUTE, cur));
 
 			case 4:
 				return "-(" + regName(reg) + ")";
@@ -514,7 +519,7 @@ public final class Disassembler {
 					return octW(nval) + "(" + regName(reg) + ")";
 				//-- Index off PC is relative: the cursor has already advanced past the
 				//-- extension word, so it holds the PC value the machine will add to.
-				return octW(nval + cur.pos);
+				return octW(reference(nval + cur.pos, DecodedInstruction.ReferenceKind.RELATIVE, cur));
 			}
 
 			case 7: {
@@ -523,7 +528,7 @@ public final class Disassembler {
 					return "";
 				if(reg != 7)
 					return "@" + octW(nval) + "(" + regName(reg) + ")";
-				return "@" + octW(nval + cur.pos);
+				return "@" + octW(reference(nval + cur.pos, DecodedInstruction.ReferenceKind.RELATIVE, cur));
 			}
 
 			default:
@@ -540,6 +545,13 @@ public final class Disassembler {
 		int v = mem.readWord(cur.pos);
 		cur.pos = (cur.pos + 2) & 0xFFFF;
 		return v;
+	}
+
+	/** Note that an operand names {@code value}, and hand it back. Not when decoding has failed. */
+	private static int reference(int value, DecodedInstruction.ReferenceKind kind, Cursor cur) {
+		if(cur.ok)
+			cur.refs.add(new DecodedInstruction.Reference(value & 0xFFFF, kind));
+		return value;
 	}
 
 	private static String regName(int r) {

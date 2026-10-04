@@ -26,6 +26,19 @@
   Memory Loader or Assembler window with changes it has not deposited asks whether to undo or keep
   them, and so does quitting. Assembling again drops what the previous assembly left behind.
 
+### The disassembler
+
+- **Well-known addresses are named.** An instruction that refers to a standard address gets a
+  comment saying what is there: `tstb @#177564  ; TPS: Console transmitter status`. The table
+  covers the trap and interrupt vectors, the CPU and cache registers, every MMU register, the
+  console DL11, the line and programmable clocks, the paper tape, line printer and card reader,
+  and the factory addresses of the RK11, RK611, RL11, RX11, RH disc and tape, TM11/TS11, MSCP,
+  TMSCP, DEUNA and DEQNA controllers, and the bootstrap ROMs. Absolute and PC-relative operands
+  are commented, and so is an immediate in the I/O page, which is how a bootstrap loads a CSR
+  address; an odd address is named as the high byte of its register. The table is
+  `well-known-addresses.txt` in `pdp11-common`, one line per address. The Disassembler window
+  now opens wider to leave room for the comments.
+
 ### Diagnostics
 
 - **A standalone diagnostic can be run straight from the library**, with nothing but deposits

@@ -41,15 +41,35 @@ public final class DisassemblyListing {
 	 * @param atPc    whether the program counter is here
 	 * @param pending whether any of its words is an edit the machine does not hold yet - code
 	 *                loaded or assembled and not deposited, which the CPU would not execute
+	 * @param comment what the well-known addresses it names are, without the {@code ;}; empty
+	 *                when it names none. See {@link WellKnownAddresses}.
 	 */
-	public record Line(Address address, String words, String text, boolean atPc, boolean pending) {
+	public record Line(Address address, String words, String text, boolean atPc, boolean pending, String comment) {
+		/** The column a comment starts in, counted from the start of the instruction text. */
+		static final int COMMENT_COLUMN = 28;
+
+		public Line(Address address, String words, String text, boolean atPc, boolean pending) {
+			this(address, words, text, atPc, pending, "");
+		}
+
 		public Line(Address address, String words, String text, boolean atPc) {
 			this(address, words, text, atPc, false);
 		}
 
-		/** The whole line, in the layout {@code Disas11} produces. */
+		/**
+		 * The whole line, in the layout {@code Disas11} produces, and then the comment if there
+		 * is one - lined up, as a MACRO-11 listing's are.
+		 */
 		public String toDisplayString() {
-			return address.toOctal() + ": " + words + " " + text;
+			String line = address.toOctal() + ": " + words + " " + text;
+			if(comment.isEmpty())
+				return line;
+			StringBuilder sb = new StringBuilder(address.toOctal()).append(": ").append(words).append(' ').append(text.stripTrailing());
+			int col = line.length() - text.length() + COMMENT_COLUMN;
+			do {
+				sb.append(' ');
+			} while(sb.length() < col);
+			return sb.append("; ").append(comment).toString();
 		}
 
 		@Override
@@ -221,7 +241,8 @@ public final class DisassemblyListing {
 			for(int w = 0; w < di.words(); w++) {
 				edited |= pending.contains((addr + 2 * w) & 0xFFFF);
 			}
-			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc, edited));
+			lines.add(new Line(Address.of(MemoryAddressType.VIRTUAL, addr), wordsOf(image, di), di.text(), atPc, edited,
+				WellKnownAddresses.builtin().comment(di)));
 			addr += di.words() * 2;
 			//-- Not simply addr: a run of unread words at the end is not part of the listing, and
 			//-- the next page must not begin past the last instruction it actually showed.

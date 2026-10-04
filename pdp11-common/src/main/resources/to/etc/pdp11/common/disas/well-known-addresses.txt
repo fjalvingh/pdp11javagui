@@ -1,0 +1,353 @@
+# Well-known PDP-11 addresses, for the comments the disassembler puts after an instruction that
+# names one.
+#
+# One line each:   address[-last]  NAME  description
+#
+# Addresses are octal and 16-bit, which is what a disassembly is in: the I/O page is 160000-177777
+# whatever the width of the machine. A range names a block (a ROM) rather than a register, and a
+# name of "-" means the description says it all. Where two devices share an address - TM11 and
+# TS11 do - give the address twice and both are shown. Only fixed, factory-default addresses
+# belong here: a floating-address device (DZ11, DH11, ...) is wherever its owner put it, and a
+# comment naming it would be a guess. WellKnownAddressesTest reads this file and fails on a
+# mistake in it.
+
+#-- Trap and interrupt vectors. The first word is the new PC, the second the new PSW.
+000004  -  Bus error / CPU error trap vector
+000010  -  Reserved instruction trap vector
+000014  -  BPT / trace trap vector
+000020  -  IOT trap vector
+000024  -  Power fail trap vector
+000030  -  EMT trap vector
+000034  -  TRAP trap vector
+000060  -  Console receiver interrupt vector
+000064  -  Console transmitter interrupt vector
+000070  -  PC11 paper tape reader interrupt vector
+000074  -  PC11 paper tape punch interrupt vector
+000100  -  KW11-L line clock interrupt vector
+000104  -  KW11-P programmable clock interrupt vector
+000114  -  Memory parity error trap vector
+000154  -  MSCP disc controller (UDA50, RQDX) interrupt vector
+000160  -  RL11 interrupt vector
+000200  -  LP11 line printer interrupt vector
+000210  -  RK611 interrupt vector
+000220  -  RK11 interrupt vector
+000224  -  TM11 / TS11 / TU16 magtape interrupt vector
+000230  -  CR11 card reader interrupt vector
+000240  -  PIRQ program interrupt request vector
+000244  -  Floating point exception trap vector
+000250  -  MMU abort trap vector
+000254  -  RH70 / RP disc interrupt vector
+000264  -  RX11 / RX211 floppy interrupt vector
+
+#-- Bootstrap and diagnostic ROMs
+165000-165776  -  M9312 diagnostic / console emulator ROM
+173000-173776  -  Bootstrap ROM (M9312, M9301)
+
+#-- Unibus map
+170200-170376  -  Unibus map registers
+
+#-- Memory parity CSRs (MS11 and friends; the first is the usual one)
+172100  MPCSR0  Memory parity CSR 0
+172102  MPCSR1  Memory parity CSR 1
+172104  MPCSR2  Memory parity CSR 2
+172106  MPCSR3  Memory parity CSR 3
+
+#-- MSCP disc controller, UDA50 / RQDX3 / KDA50 default
+172150  IP  MSCP initialization and polling register
+172152  SA  MSCP status, address and purge register
+
+#-- MMU: supervisor page registers
+172200  SIPDR0  Supervisor I page descriptor 0
+172202  SIPDR1  Supervisor I page descriptor 1
+172204  SIPDR2  Supervisor I page descriptor 2
+172206  SIPDR3  Supervisor I page descriptor 3
+172210  SIPDR4  Supervisor I page descriptor 4
+172212  SIPDR5  Supervisor I page descriptor 5
+172214  SIPDR6  Supervisor I page descriptor 6
+172216  SIPDR7  Supervisor I page descriptor 7
+172220  SDPDR0  Supervisor D page descriptor 0
+172222  SDPDR1  Supervisor D page descriptor 1
+172224  SDPDR2  Supervisor D page descriptor 2
+172226  SDPDR3  Supervisor D page descriptor 3
+172230  SDPDR4  Supervisor D page descriptor 4
+172232  SDPDR5  Supervisor D page descriptor 5
+172234  SDPDR6  Supervisor D page descriptor 6
+172236  SDPDR7  Supervisor D page descriptor 7
+172240  SIPAR0  Supervisor I page address 0
+172242  SIPAR1  Supervisor I page address 1
+172244  SIPAR2  Supervisor I page address 2
+172246  SIPAR3  Supervisor I page address 3
+172250  SIPAR4  Supervisor I page address 4
+172252  SIPAR5  Supervisor I page address 5
+172254  SIPAR6  Supervisor I page address 6
+172256  SIPAR7  Supervisor I page address 7
+172260  SDPAR0  Supervisor D page address 0
+172262  SDPAR1  Supervisor D page address 1
+172264  SDPAR2  Supervisor D page address 2
+172266  SDPAR3  Supervisor D page address 3
+172270  SDPAR4  Supervisor D page address 4
+172272  SDPAR5  Supervisor D page address 5
+172274  SDPAR6  Supervisor D page address 6
+172276  SDPAR7  Supervisor D page address 7
+
+#-- MMU: kernel page registers
+172300  KIPDR0  Kernel I page descriptor 0
+172302  KIPDR1  Kernel I page descriptor 1
+172304  KIPDR2  Kernel I page descriptor 2
+172306  KIPDR3  Kernel I page descriptor 3
+172310  KIPDR4  Kernel I page descriptor 4
+172312  KIPDR5  Kernel I page descriptor 5
+172314  KIPDR6  Kernel I page descriptor 6
+172316  KIPDR7  Kernel I page descriptor 7
+172320  KDPDR0  Kernel D page descriptor 0
+172322  KDPDR1  Kernel D page descriptor 1
+172324  KDPDR2  Kernel D page descriptor 2
+172326  KDPDR3  Kernel D page descriptor 3
+172330  KDPDR4  Kernel D page descriptor 4
+172332  KDPDR5  Kernel D page descriptor 5
+172334  KDPDR6  Kernel D page descriptor 6
+172336  KDPDR7  Kernel D page descriptor 7
+172340  KIPAR0  Kernel I page address 0
+172342  KIPAR1  Kernel I page address 1
+172344  KIPAR2  Kernel I page address 2
+172346  KIPAR3  Kernel I page address 3
+172350  KIPAR4  Kernel I page address 4
+172352  KIPAR5  Kernel I page address 5
+172354  KIPAR6  Kernel I page address 6
+172356  KIPAR7  Kernel I page address 7
+172360  KDPAR0  Kernel D page address 0
+172362  KDPAR1  Kernel D page address 1
+172364  KDPAR2  Kernel D page address 2
+172366  KDPAR3  Kernel D page address 3
+172370  KDPAR4  Kernel D page address 4
+172372  KDPAR5  Kernel D page address 5
+172374  KDPAR6  Kernel D page address 6
+172376  KDPAR7  Kernel D page address 7
+
+#-- TU16 / TM02 magtape on an RH11 / RH70
+172440  MTCS1  TU16 control and status 1
+172442  MTWC  TU16 word count
+172444  MTBA  TU16 bus address
+172446  MTFC  TU16 frame count
+172450  MTCS2  TU16 control and status 2
+172452  MTDS  TU16 drive status
+172454  MTER  TU16 error
+172456  MTAS  TU16 attention summary
+172460  MTCC  TU16 check character
+172462  MTDB  TU16 data buffer
+172464  MTMR  TU16 maintenance
+172466  MTDT  TU16 drive type
+172470  MTSN  TU16 serial number
+172472  MTTC  TU16 tape control
+
+#-- MMU status register 3
+172516  MMR3  MMU status register 3
+
+#-- TM11 magtape, and TS11 / TSV05, which use the same address
+172520  MTS  TM11 status
+172520  TSDB  TS11 data buffer
+172522  MTC  TM11 command
+172522  TSSR  TS11 status
+172524  MTBRC  TM11 byte record counter
+172526  MTCMA  TM11 current memory address
+172530  MTD  TM11 data buffer
+172532  MTRD  TM11 TU10 read lines
+
+#-- RL11 / RLV12 disc controller
+174400  RLCS  RL11 control/status
+174402  RLBA  RL11 bus address
+174404  RLDA  RL11 disc address
+174406  RLMP  RL11 multipurpose
+174410  RLBAE  RLV12 bus address extension
+
+#-- DEQNA / DELQA Ethernet, first unit
+174440  -  DEQNA station address 0
+174442  -  DEQNA station address 1
+174444  -  DEQNA receive BDL start (low)
+174446  -  DEQNA receive BDL start (high)
+174450  -  DEQNA transmit BDL start (low)
+174452  -  DEQNA transmit BDL start (high)
+174454  QEVAR  DEQNA vector address
+174456  QECSR  DEQNA control/status
+
+#-- TMSCP tape controller, TK50 / TU81 / KLESI default
+174500  IP  TMSCP initialization and polling register
+174502  SA  TMSCP status, address and purge register
+
+#-- DEUNA / DELUA Ethernet
+174510  PCSR0  DEUNA port control/status 0
+174512  PCSR1  DEUNA port control/status 1
+174514  PCSR2  DEUNA port control/status 2
+174516  PCSR3  DEUNA port control/status 3
+
+#-- Second DL11, the TU58 console port on many machines
+176500  RCSR  DL11 #2 receiver status
+176502  RBUF  DL11 #2 receiver buffer
+176504  XCSR  DL11 #2 transmitter status
+176506  XBUF  DL11 #2 transmitter buffer
+
+#-- RP04/05/06, RM02/03/05/80 discs on an RH11 / RH70
+176700  RPCS1  RH disc control and status 1
+176702  RPWC  RH disc word count
+176704  RPBA  RH disc bus address
+176706  RPDA  RH disc desired sector/track
+176710  RPCS2  RH disc control and status 2
+176712  RPDS  RH disc drive status
+176714  RPER1  RH disc error 1
+176716  RPAS  RH disc attention summary
+176720  RPLA  RH disc look-ahead
+176722  RPDB  RH disc data buffer
+176724  RPMR  RH disc maintenance
+176726  RPDT  RH disc drive type
+176730  RPSN  RH disc serial number
+176732  RPOF  RH disc offset
+176734  RPDC  RH disc desired cylinder
+176736  RPCC  RH disc current cylinder
+176740  RPER2  RH disc error 2
+176742  RPER3  RH disc error 3
+176744  RPEC1  RH disc ECC position
+176746  RPEC2  RH disc ECC pattern
+176750  RPBAE  RH70 bus address extension
+176752  RPCS3  RH70 control and status 3
+
+#-- CR11 card reader
+177160  CRS  CR11 card reader status
+177162  CRB1  CR11 card reader buffer
+177164  CRB2  CR11 card reader buffer, compressed
+
+#-- RX11 / RX211 / RXV21 floppy
+177170  RXCS  RX11 floppy control/status
+177172  RXDB  RX11 floppy data buffer
+
+#-- KE11-A extended arithmetic element
+177300  DIV  KE11 divide
+177302  AC  KE11 accumulator
+177304  MQ  KE11 multiplier-quotient
+177306  MUL  KE11 multiply
+177310  SC  KE11 step counter / status
+177312  NOR  KE11 normalize
+177314  LSH  KE11 logical shift
+177316  ASH  KE11 arithmetic shift
+
+#-- RK11 disc controller
+177400  RKDS  RK11 drive status
+177402  RKER  RK11 error
+177404  RKCS  RK11 control/status
+177406  RKWC  RK11 word count
+177410  RKBA  RK11 bus address
+177412  RKDA  RK11 disc address
+177414  RKMR  RK11 maintenance
+177416  RKDB  RK11 data buffer
+
+#-- RK611 disc controller (RK06/RK07)
+177440  RKCS1  RK611 control/status 1
+177442  RKWC  RK611 word count
+177444  RKBA  RK611 bus address
+177446  RKDA  RK611 desired sector/track
+177450  RKCS2  RK611 control/status 2
+177452  RKDS  RK611 drive status
+177454  RKER  RK611 error
+177456  RKASOF  RK611 attention summary / offset
+177460  RKDC  RK611 desired cylinder
+177464  RKDB  RK611 data buffer
+177466  RKMR1  RK611 maintenance 1
+177470  RKECPS  RK611 ECC position
+177472  RKECPT  RK611 ECC pattern
+177474  RKMR2  RK611 maintenance 2
+177476  RKMR3  RK611 maintenance 3
+
+#-- LP11 line printer
+177514  LPS  LP11 line printer status
+177516  LPB  LP11 line printer buffer
+
+#-- KW11-P programmable clock
+177540  KWPCSR  KW11-P clock control/status
+177542  KWPCSB  KW11-P clock count set buffer
+177544  KWPCTR  KW11-P clock counter
+
+#-- KW11-L line clock
+177546  LKS  KW11-L line clock status
+
+#-- PC11 paper tape reader and punch
+177550  PRS  PC11 paper tape reader status
+177552  PRB  PC11 paper tape reader buffer
+177554  PPS  PC11 paper tape punch status
+177556  PPB  PC11 paper tape punch buffer
+
+#-- Console DL11
+177560  TKS  Console receiver status
+177562  TKB  Console receiver buffer
+177564  TPS  Console transmitter status
+177566  TPB  Console transmitter buffer
+
+#-- Console switches and lights
+177570  SR  Console switch / display register
+
+#-- MMU status registers 0-2
+177572  MMR0  MMU status register 0
+177574  MMR1  MMU status register 1
+177576  MMR2  MMU status register 2, virtual PC
+
+#-- MMU: user page registers
+177600  UIPDR0  User I page descriptor 0
+177602  UIPDR1  User I page descriptor 1
+177604  UIPDR2  User I page descriptor 2
+177606  UIPDR3  User I page descriptor 3
+177610  UIPDR4  User I page descriptor 4
+177612  UIPDR5  User I page descriptor 5
+177614  UIPDR6  User I page descriptor 6
+177616  UIPDR7  User I page descriptor 7
+177620  UDPDR0  User D page descriptor 0
+177622  UDPDR1  User D page descriptor 1
+177624  UDPDR2  User D page descriptor 2
+177626  UDPDR3  User D page descriptor 3
+177630  UDPDR4  User D page descriptor 4
+177632  UDPDR5  User D page descriptor 5
+177634  UDPDR6  User D page descriptor 6
+177636  UDPDR7  User D page descriptor 7
+177640  UIPAR0  User I page address 0
+177642  UIPAR1  User I page address 1
+177644  UIPAR2  User I page address 2
+177646  UIPAR3  User I page address 3
+177650  UIPAR4  User I page address 4
+177652  UIPAR5  User I page address 5
+177654  UIPAR6  User I page address 6
+177656  UIPAR7  User I page address 7
+177660  UDPAR0  User D page address 0
+177662  UDPAR1  User D page address 1
+177664  UDPAR2  User D page address 2
+177666  UDPAR3  User D page address 3
+177670  UDPAR4  User D page address 4
+177672  UDPAR5  User D page address 5
+177674  UDPAR6  User D page address 6
+177676  UDPAR7  User D page address 7
+
+#-- General registers, as the console addresses them (byte addresses, one per register)
+177700  R0  Register R0
+177701  R1  Register R1
+177702  R2  Register R2
+177703  R3  Register R3
+177704  R4  Register R4
+177705  R5  Register R5
+177706  SP  Kernel stack pointer
+177707  PC  Program counter
+177716  SSP  Supervisor stack pointer
+177717  USP  User stack pointer
+
+#-- Cache and memory system (11/44, 11/70)
+177740  LEAR  Low error address
+177742  HEAR  High error address
+177744  MSER  Memory system error
+177746  CCR  Cache control
+177750  MAINT  Maintenance register
+177752  HMR  Cache hit/miss register
+
+#-- CPU
+177760  LSR  Lower size register
+177762  USR  Upper size register
+177764  SYSID  System ID
+177766  CPUERR  CPU error register
+177770  MBR  Microprogram break register
+177772  PIRQ  Program interrupt request
+177774  SLR  Stack limit register
+177776  PSW  Processor status word

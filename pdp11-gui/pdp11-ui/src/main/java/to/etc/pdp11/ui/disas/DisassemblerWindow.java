@@ -15,7 +15,7 @@ public final class DisassemblerWindow extends ToolWindow {
 		super(key, context);
 		m_panel = new DisassemblerPanel(context);
 		setContentPane(m_panel);
-		setSize(new Dimension(640, 440));
+		setSize(new Dimension(860, 440));
 		setMinimumSize(new Dimension(420, 220));
 	}
 

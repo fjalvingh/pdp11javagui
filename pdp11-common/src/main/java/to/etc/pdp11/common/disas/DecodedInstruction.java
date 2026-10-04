@@ -2,6 +2,7 @@ package to.etc.pdp11.common.disas;
 
 import to.etc.pdp11.common.util.Octal;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -17,8 +18,33 @@ import java.util.Locale;
  * @param operands   the operand text, possibly empty ({@code "R0,R1"})
  * @param recognized {@code false} when the word is not a known opcode, or a needed extension
  *                   word was not valid memory, and this is the {@code .WORD} fallback
+ * @param references the addresses and numbers its operands name, in operand order - what
+ *                   {@link WellKnownAddresses} comments on
  */
-public record DecodedInstruction(int address, int words, String mnemonic, String operands, boolean recognized) {
+public record DecodedInstruction(int address, int words, String mnemonic, String operands, boolean recognized,
+	List<Reference> references) {
+	/** How an operand names a value. Only the modes through the PC carry one in the instruction. */
+	public enum ReferenceKind {
+		/** {@code #n}, mode 2 on the PC: a number, which may or may not be an address. */
+		IMMEDIATE,
+		/** {@code @#n}, mode 3 on the PC: the address of the operand. */
+		ABSOLUTE,
+		/** {@code n} or {@code @n}, mode 6 or 7 on the PC: the address of the operand, or of a pointer to it. */
+		RELATIVE
+	}
+
+	/** One value an operand names, already resolved: a relative operand's is its target address. */
+	public record Reference(int address, ReferenceKind kind) {
+	}
+
+	public DecodedInstruction {
+		references = List.copyOf(references);
+	}
+
+	public DecodedInstruction(int address, int words, String mnemonic, String operands, boolean recognized) {
+		this(address, words, mnemonic, operands, recognized, List.of());
+	}
+
 	/**
 	 * The instruction as the Pascal formats it: {@code LowerCase(Format('%-8s%s', [mnemonic,
 	 * operands]))} ({@code Pdp11DisasU.pas:583}). Kept byte-identical, trailing spaces
