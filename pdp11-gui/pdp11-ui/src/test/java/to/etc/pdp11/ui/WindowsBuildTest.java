@@ -156,6 +156,8 @@ class WindowsBuildTest {
 	void connectingRecordsTheProfileOnTheEventThread(@TempDir Path dir) throws Exception {
 		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
 		AppContext ctx = context(dir);
+		//-- The first simulated machine is SimH, and connecting to it opens this window.
+		SimhConsoleWindow.register(ctx);
 		MainWindow w = onEdt(() -> new MainWindow(ctx));
 		try {
 			onEdt(() -> {

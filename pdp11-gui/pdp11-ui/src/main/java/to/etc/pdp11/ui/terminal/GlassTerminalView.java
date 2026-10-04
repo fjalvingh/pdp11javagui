@@ -11,6 +11,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.text.AttributeSet;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.Document;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -247,9 +248,20 @@ public final class GlassTerminalView implements TerminalView {
 		m_filter.reset();
 	}
 
-	/** Everything on screen, for a test that wants to know what was shown. */
+	/**
+	 * Everything on screen, for a test that wants to know what was shown.
+	 *
+	 * <p>Read from the document, not with {@code JTextPane.getText()}: that goes through the
+	 * editor kit, which writes the platform's line separator, so on Windows every line came back
+	 * ending in CR LF.</p>
+	 */
 	public String getText() {
-		return m_pane.getText();
+		Document doc = m_pane.getDocument();
+		try {
+			return doc.getText(0, doc.getLength());
+		} catch(BadLocationException x) {
+			throw new IllegalStateException(x);
+		}
 	}
 
 	/** Ask for the keyboard. The main window does this when it opens. */
