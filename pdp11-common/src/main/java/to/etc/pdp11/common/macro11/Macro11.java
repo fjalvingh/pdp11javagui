@@ -5,6 +5,7 @@ import to.etc.pdp11.common.macro11.asm.AssemblerOptions;
 import to.etc.pdp11.common.macro11.asm.AssemblyResult;
 import to.etc.pdp11.common.macro11.asm.FileSourceResolver;
 import to.etc.pdp11.common.macro11.asm.Macro11Assembler;
+import to.etc.pdp11.common.macro11.asm.MacroLibrary;
 import to.etc.pdp11.common.macro11.asm.SourceResolver;
 
 import java.nio.file.Path;
@@ -53,9 +54,19 @@ public final class Macro11 {
 	 * @param type   the address width the cells get
 	 */
 	public static Result assemble(Path source, String text, MemoryAddressType type) {
+		return assemble(source, text, type, List.of());
+	}
+
+	/**
+	 * Assemble a source that lives in a file, with macro libraries.
+	 *
+	 * @param libraries searched by {@code .MCALL}, in order, after any the source names with
+	 *                  {@code .LIBRARY} and before {@code NAME.MAC} files beside the source
+	 */
+	public static Result assemble(Path source, String text, MemoryAddressType type, List<MacroLibrary> libraries) {
 		Path dir = source.toAbsolutePath().getParent();
 		SourceResolver resolver = new FileSourceResolver(dir, List.of(dir));
-		return assemble(source.getFileName().toString(), text, resolver, type);
+		return assemble(source.getFileName().toString(), text, resolver, type, libraries);
 	}
 
 	/**
@@ -65,7 +76,12 @@ public final class Macro11 {
 	 * @param resolver where {@code .INCLUDE} and {@code .MCALL} look
 	 */
 	public static Result assemble(String name, String text, SourceResolver resolver, MemoryAddressType type) {
-		AssemblyResult r = new Macro11Assembler(AssemblerOptions.DEFAULT, resolver).assemble(name, text);
+		return assemble(name, text, resolver, type, List.of());
+	}
+
+	public static Result assemble(String name, String text, SourceResolver resolver, MemoryAddressType type,
+		List<MacroLibrary> libraries) {
+		AssemblyResult r = new Macro11Assembler(AssemblerOptions.DEFAULT, resolver, libraries).assemble(name, text);
 		return new Result(r, Macro11ListingParser.Parsed.fromAssembly(r, type));
 	}
 

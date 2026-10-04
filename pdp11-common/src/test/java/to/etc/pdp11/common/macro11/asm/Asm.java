@@ -102,7 +102,18 @@ final class Asm {
 
 	/** A resolver holding sources in a map: name to text, for includes and macros alike. */
 	static SourceResolver resolver(Map<String, String> files) {
+		return resolver(files, Map.of());
+	}
+
+	/** The same, with macro libraries: name to bytes. */
+	static SourceResolver resolver(Map<String, String> files, Map<String, byte[]> libraries) {
 		return new SourceResolver() {
+			@Override
+			public Optional<LibraryFile> library(String name) {
+				byte[] data = libraries.get(name);
+				return data == null ? Optional.empty() : Optional.of(new LibraryFile(name, data));
+			}
+
 			@Override
 			public Optional<Source> include(String name) {
 				return open(name);

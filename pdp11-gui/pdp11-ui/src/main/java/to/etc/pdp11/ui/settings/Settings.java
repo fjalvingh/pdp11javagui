@@ -60,6 +60,15 @@ public final class Settings {
 	private String lastSourceFile;
 
 	/**
+	 * The macro libraries ({@code .MLB}, {@code .SML}) every assembly searches for {@code .MCALL},
+	 * in order; null in a file written before there were any.
+	 *
+	 * <p>A library that no longer exists is not an error here: the assembly that needs it says
+	 * which one it could not read.</p>
+	 */
+	private List<String> macroLibraries;
+
+	/**
 	 * Which microcode the Microcode window was showing last, by the name of the entry in its own
 	 * combo, or null for the default.
 	 *
@@ -145,6 +154,15 @@ public final class Settings {
 
 	public void setLastSourceFile(String lastSourceFile) {
 		this.lastSourceFile = lastSourceFile;
+	}
+
+	/** The macro libraries every assembly searches, in order; never null. */
+	public List<String> getMacroLibraries() {
+		return macroLibraries == null ? List.of() : List.copyOf(macroLibraries);
+	}
+
+	public void setMacroLibraries(List<String> libraries) {
+		macroLibraries = new ArrayList<>(libraries);
 	}
 
 	public void setLastProfileName(String lastProfileName) {

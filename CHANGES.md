@@ -13,7 +13,12 @@
   `.INCLUDE`, `.FLT2`/`.FLT4`, `.RAD50`, `.PACKED` and `.LIMIT`. Its listing has the C
   assembler's layout, so a saved `.lst` reads back as before. Compile, and the Execution window's
   "New program", are always available now, and the tests that needed the tool no longer skip.
-  Macro libraries (`.MLB`, `.LIBRARY`) are not supported yet.
+- **Macro libraries.** `.MCALL` finds macros in `.MLB` and `.SML` libraries, RT-11's and RSX's,
+  named in the source with `.LIBRARY` or listed with the Assembler window's new **Libraries …**
+  button, which remembers them. A library copied as text, with a line end after every block as
+  most of the RSX ones in the trailing-edge archive have, reads as it was. Checked on that
+  archive's 84 libraries: every module of the 82 intact ones reads, the RT-11 ones exactly as
+  the C `macro11` extracts them, and the two damaged files say what is wrong with them.
 - **Every mistake is reported, including the ones `macro11` let through.** A digit that is not
   in the radix (`.WORD 9` used to hang), a value that does not fit its field (`EMT 400` used to
   assemble as `TRAP 0`), junk after the operands (often a missing `;` before a comment), an

@@ -35,12 +35,28 @@ The three are always about the same program, which is why they are tabs rather t
 | **Open …** | Open a `.mac` source |
 | **Save** / **Save as …** | Write it out |
 | **Compile** | Save the source and assemble it |
+| **Libraries …** | The macro libraries `.MCALL` searches - see [Macro libraries](#macro-libraries) |
 
 The listing is also saved beside the source, as `<name>.lst`, so that it can be opened again
 later without the source. If that directory cannot be written to - a mounted disc image, say -
 the assembly still works and the log says the listing was not saved. `.INCLUDE` reads files
-relative to the source, and `.MCALL NAME` reads `NAME.MAC` from the source's directory; macro
-libraries (`.MLB`) are not supported yet.
+relative to the source.
+
+## Macro libraries
+
+`.MCALL NAME` looks for the macro in three places, in this order:
+
+1. the libraries the source names with `.LIBRARY /FILE.MLB/` - the last one named first; the
+   name is relative to the source, and `.MLB` is added when it has no extension;
+2. the libraries listed under **Libraries …**, top to bottom - the place for a system library
+   such as RT-11's `SYSMAC.SML`, which every program uses;
+3. a file `NAME.MAC` beside the source.
+
+Both RT-11 and RSX libraries can be read (`.MLB` and `.SML`), and so can one that was copied as a
+text file and gained a line end after every block, as many in public archives have. A file that
+is not a library is refused when it is added to the list, with the reason. **Libraries …** keeps
+the list in the settings; `.ENABL MCL` makes an unknown operation look for a macro of that name
+in the same places, as if it had been `.MCALL`ed.
 
 **An assembler error does not raise a dialog.** It marks the line, colours the status bar, and
 leaves you on the tab where you can fix it. A syntax error is an ordinary event in writing a

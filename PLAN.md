@@ -1529,8 +1529,13 @@ parsed back for everything the assembler already knew, and an exit code that sai
   and no hang, and every program the C one assembles cleanly comes out the same except where the
   C one is wrong (its floating point, assembling past `.END`) or where sections are placed
   differently on purpose. `CorpusTest` keeps that comparison on the project's own programs.
-- **Still to do:** macro libraries (`.MLB`, `.LIBRARY`); `.MCALL` finds `NAME.MAC` beside the
-  source until then.
+- **Macro libraries** (`MacroLibrary`) in both formats: RT-11's, whose modules are plain text,
+  and RSX's, whose modules are length-prefixed records behind a module header and whose blocks
+  count from 1. No document describes the RSX one closely enough; it was worked out from the 80
+  RSX libraries in the trailing-edge archive, every module of which it reads, and the RT-11
+  reading matches what the C `macro11` extracts. `.MCALL` searches `.LIBRARY` libraries (the
+  last named first), then the ones configured in the Assembler window, then `NAME.MAC` beside
+  the source.
 
 **Phase 7 — Disc images.** `MediaImageDevicesU` (1,189), `SerialXferU` (939),
 `DiscImageBadBlockU` (746), `MediaImageBufferU` (373) and `FormDiscImageU` (2,061) — ~5,300

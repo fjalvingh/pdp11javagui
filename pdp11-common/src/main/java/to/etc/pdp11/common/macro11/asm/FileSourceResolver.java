@@ -17,6 +17,9 @@ import java.util.stream.Stream;
  * directories, the first one that has it; the name is matched without regard to case, because
  * these files come from systems that had none.</p>
  *
+ * <p>A {@code .LIBRARY} name is found like an {@code .INCLUDE} one, and when it has no
+ * extension and no such file exists, with {@code .MLB} added, as DEC's assembler does.</p>
+ *
  * <p>Files are read as ISO-8859-1: they are bytes from a time before character sets, and a stray
  * high byte must not stop an assembly.</p>
  */
@@ -40,6 +43,16 @@ public final class FileSourceResolver implements SourceResolver {
 		if(!Files.isRegularFile(p))
 			return Optional.empty();
 		return Optional.of(new Source(name, Files.newBufferedReader(p, StandardCharsets.ISO_8859_1)));
+	}
+
+	@Override
+	public Optional<LibraryFile> library(String name) throws IOException {
+		Path p = m_baseDirectory.resolve(name);
+		if(!Files.isRegularFile(p) && !p.getFileName().toString().contains("."))
+			p = m_baseDirectory.resolve(name + ".MLB");
+		if(!Files.isRegularFile(p))
+			return Optional.empty();
+		return Optional.of(new LibraryFile(name, Files.readAllBytes(p)));
 	}
 
 	@Override

@@ -17,6 +17,7 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
@@ -94,6 +95,9 @@ public final class AssemblerPanel extends JPanel {
 
 	private final JButton m_compile = new JButton("Compile");
 
+	/** Which macro libraries {@code .MCALL} searches. */
+	private final JButton m_libraries = new JButton("Libraries ...");
+
 	private final JLabel m_sourceStatus = new JLabel();
 
 	//-- Listing tab
@@ -155,12 +159,13 @@ public final class AssemblerPanel extends JPanel {
 
 	private JComponent buildSourceTab() {
 		JPanel p = new JPanel(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][]16[]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][]16[][]", "[]"));
 		bar.add(m_new);
 		bar.add(m_open);
 		bar.add(m_save);
 		bar.add(m_saveAs);
 		bar.add(m_compile);
+		bar.add(m_libraries);
 		p.add(bar, "growx, wrap");
 
 		m_source.setSyntaxEditingStyle(Macro11TokenMaker.SYNTAX_STYLE);
@@ -199,7 +204,8 @@ public final class AssemblerPanel extends JPanel {
 		m_save.addActionListener(e -> saveSource(false));
 		m_saveAs.addActionListener(e -> saveSource(true));
 		m_compile.addActionListener(e -> compile());
-		m_compile.setToolTipText("Save the source and run MACRO-11 over it");
+		m_compile.setToolTipText("Save the source and assemble it");
+		m_libraries.addActionListener(e -> chooseLibraries());
 		return p;
 	}
 
@@ -447,12 +453,25 @@ public final class AssemblerPanel extends JPanel {
 		updateButtons();
 	}
 
+	/** Let the user change the macro libraries, in a dialog over this window. */
+	private void chooseLibraries() {
+		MacroLibrariesPanel panel = new MacroLibrariesPanel(m_model.getMacroLibraries());
+		int answer = JOptionPane.showConfirmDialog(this, panel, "Macro libraries", JOptionPane.OK_CANCEL_OPTION,
+			JOptionPane.PLAIN_MESSAGE);
+		if(answer == JOptionPane.OK_OPTION)
+			m_model.setMacroLibraries(panel.getLibraries());
+	}
+
 	private void updateButtons() {
 		boolean connected = m_context.getConnectionManager().isConnected();
 		boolean haveCode = m_model.hasCode();
 
 		m_save.setEnabled(m_model.isChanged() || m_model.getSourceFile() == null);
 		m_compile.setEnabled(m_model.canAssemble() && !m_model.isAssembling());
+		List<Path> libraries = m_model.getMacroLibraries();
+		m_libraries.setToolTipText(libraries.isEmpty()
+			? "No macro libraries: .MCALL finds NAME.MAC beside the source"
+			: "Macro libraries .MCALL searches: " + libraries.stream().map(p -> p.getFileName().toString()).toList());
 
 		m_depositAll.setEnabled(connected && haveCode);
 		m_depositChanged.setEnabled(connected && haveCode);

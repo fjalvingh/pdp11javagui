@@ -50,6 +50,9 @@ final class AssemblyRun {
 
 	private final SourceResolver m_resolver;
 
+	/** The macro libraries {@code .MCALL} searches, in order: {@code .LIBRARY} ones first, the last one first. */
+	private final List<MacroLibrary> m_libraries;
+
 	private final Diagnostics m_diagnostics;
 
 	private final AssemblyState m_state;
@@ -94,9 +97,10 @@ final class AssemblyRun {
 	/** The last instruction always transferred control, so the next one needs a label. */
 	private boolean m_afterTransfer;
 
-	AssemblyRun(AssemblerOptions options, SourceResolver resolver) {
+	AssemblyRun(AssemblerOptions options, SourceResolver resolver, List<MacroLibrary> libraries) {
 		m_options = options;
 		m_resolver = resolver;
+		m_libraries = new ArrayList<>(libraries);
 		m_diagnostics = new Diagnostics(options.disabledWarnings());
 		m_state = new AssemblyState(m_diagnostics);
 		m_instructions = new InstructionAssembler(this);
@@ -479,8 +483,7 @@ final class AssemblyRun {
 			case NCHR -> nchr(r, at);
 			case NTYPE -> ntype(r, at);
 			case INCLUDE -> include(r, at);
-			case LIBRARY -> throw new AsmException(at.location(), "Macro libraries (.LIBRARY) are not supported yet; "
-				+ "put the macros in a directory and use .MCALL");
+			case LIBRARY -> library(r, at);
 			case MCALL -> m_macros.mcall(r, at);
 			case MDELETE -> m_macros.delete(r);
 			case MACRO, MACR -> m_macros.define(r, at);
@@ -1038,6 +1041,34 @@ final class AssemblyRun {
 		pushSource(new TokenReader(source.get().reader(), source.get().name(), at.location()), Kind.FILE, 0);
 	}
 
+	/**
+	 * {@code .LIBRARY /name/}: a macro library {@code .MCALL} searches before the others, as DEC's
+	 * assembler does with the last one named first.
+	 */
+	private void library(TokenReader r, Token at) throws AsmException {
+		TokenReader.Delimited d = r.readDelimited();
+		if(d == null || !d.terminated() || d.text().isBlank())
+			throw new AsmException(at.location(), ".LIBRARY needs a file name between delimiters, as in .LIBRARY /MYMACS.MLB/");
+		expectEnd(r);
+		Optional<SourceResolver.LibraryFile> file;
+		try {
+			file = m_resolver.library(d.text());
+		} catch(IOException x) {
+			throw new AsmException(d.location(), "Cannot read " + d.text() + ": " + x.getMessage());
+		}
+		if(file.isEmpty())
+			throw new AsmException(d.location(), "There is no macro library " + d.text());
+		for(MacroLibrary known : m_libraries) {
+			if(known.getName().equals(file.get().name()))
+				return;
+		}
+		try {
+			m_libraries.add(0, MacroLibrary.read(file.get().name(), file.get().data()));
+		} catch(IOException x) {
+			throw new AsmException(d.location(), x.getMessage());
+		}
+	}
+
 	/** Leave the innermost macro or repeat expansion. */
 	private void mexit(Token at) throws AsmException {
 		InputSource target = null;
@@ -1154,6 +1185,10 @@ final class AssemblyRun {
 
 	SourceResolver getResolver() {
 		return m_resolver;
+	}
+
+	List<MacroLibrary> getLibraries() {
+		return m_libraries;
 	}
 
 	AssemblyState getState() {

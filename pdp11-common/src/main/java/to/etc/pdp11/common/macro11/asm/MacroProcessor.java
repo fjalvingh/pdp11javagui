@@ -4,6 +4,7 @@ import to.etc.pdp11.common.macro11.asm.InputSource.Kind;
 import to.etc.pdp11.common.macro11.asm.Macro.Parameter;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -192,11 +193,18 @@ final class MacroProcessor {
 	}
 
 	/**
-	 * Find a macro through the {@link SourceResolver} and define it.
+	 * Find a macro that is not defined yet and define it: first in the macro libraries, then as
+	 * a file {@code NAME.MAC} through the {@link SourceResolver}.
 	 *
 	 * @return the macro, or null when there is none
 	 */
 	Macro loadFromLibrary(String name, Location at) throws AsmException {
+		for(MacroLibrary library : m_run.getLibraries()) {
+			Optional<String> text = library.getText(name);
+			if(text.isPresent())
+				return defineFrom(new StringReader(text.get()), library.getName() + "(" + name + ")", name, at);
+		}
+
 		Optional<SourceResolver.Source> source;
 		try {
 			source = m_run.getResolver().macro(name);
@@ -205,7 +213,16 @@ final class MacroProcessor {
 		}
 		if(source.isEmpty())
 			return null;
-		TokenReader lr = new TokenReader(source.get().reader(), source.get().name(), at);
+		return defineFrom(source.get().reader(), source.get().name(), name, at);
+	}
+
+	/**
+	 * Define macro {@code name} from text that holds its definition, perhaps among others.
+	 *
+	 * @param where what to call the text, in locations and messages
+	 */
+	private Macro defineFrom(Reader text, String where, String name, Location at) throws AsmException {
+		TokenReader lr = new TokenReader(text, where, at);
 		try {
 			while(lr.nextLine()) {
 				Directive d = directiveOf(lr);
@@ -218,7 +235,7 @@ final class MacroProcessor {
 		} finally {
 			lr.close();
 		}
-		throw new AsmException(at, source.get().name() + " has no .MACRO " + name);
+		throw new AsmException(at, where + " has no .MACRO " + name);
 	}
 
 	/** {@code .MDELETE a,b}: forget macros. */

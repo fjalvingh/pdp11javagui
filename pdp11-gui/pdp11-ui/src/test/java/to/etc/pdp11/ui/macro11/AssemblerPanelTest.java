@@ -487,6 +487,9 @@ class AssemblerPanelTest {
 			ctx.getAssembler().assemble(outcome -> assertFalse(outcome.ok()));
 		});
 		assertTrue(reported.toString().contains("already running"), reported.toString());
+		//-- Let the first one finish: it writes the listing into the directory, which JUnit is
+		//-- about to delete.
+		until("the first assembly to finish", () -> !ctx.getAssembler().isAssembling());
 	}
 
 	/** Assembling with no source file says so rather than running the assembler on nothing. */

@@ -38,6 +38,17 @@ final class Rad50 {
 		return OptionalInt.of(word);
 	}
 
+	/**
+	 * The three characters in a word; a word too large to be RAD50, or the unused code, comes
+	 * out as {@code ?}.
+	 */
+	static String decode(int word) {
+		int w = word & 0xFFFF;
+		if(w >= 050 * 050 * 050)
+			return "???";
+		return "" + CHARACTERS.charAt(w / (050 * 050)) + CHARACTERS.charAt(w / 050 % 050) + CHARACTERS.charAt(w % 050);
+	}
+
 	/** Whether every character of the text can be encoded. */
 	static boolean canEncode(String s) {
 		for(int i = 0; i < s.length(); i++) {

@@ -21,6 +21,14 @@ public interface SourceResolver {
 	record Source(String name, Reader reader) {
 	}
 
+	/**
+	 * A macro library file, as bytes: it is binary.
+	 *
+	 * @param name how it is called in messages
+	 */
+	record LibraryFile(String name, byte[] data) {
+	}
+
 	/** A resolver that finds nothing. */
 	SourceResolver NONE = new SourceResolver() {
 		@Override
@@ -42,4 +50,13 @@ public interface SourceResolver {
 	 * none. The text may hold other things too: the assembler looks for {@code .MACRO name}.
 	 */
 	Optional<Source> macro(String name) throws IOException;
+
+	/**
+	 * The macro library {@code .LIBRARY} names, or empty when there is none.
+	 *
+	 * <p>Finding none by default, so that a resolver that has no libraries need not say so.</p>
+	 */
+	default Optional<LibraryFile> library(String name) throws IOException {
+		return Optional.empty();
+	}
 }

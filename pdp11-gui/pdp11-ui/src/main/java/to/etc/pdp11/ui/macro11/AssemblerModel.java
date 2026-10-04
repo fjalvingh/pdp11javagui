@@ -5,6 +5,7 @@ import to.etc.pdp11.common.addr.MemoryAddressType;
 import to.etc.pdp11.common.macro11.Macro11;
 import to.etc.pdp11.common.macro11.Macro11Listing;
 import to.etc.pdp11.common.macro11.Macro11ListingParser;
+import to.etc.pdp11.common.macro11.asm.MacroLibrary;
 import to.etc.pdp11.common.mem.MemoryCellGroup;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -330,6 +332,19 @@ public final class AssemblerModel {
 		}
 	}
 
+	/** The macro libraries every assembly searches for {@code .MCALL}, in order. */
+	public List<Path> getMacroLibraries() {
+		return m_context.getSettings().getMacroLibraries().stream().map(Path::of).toList();
+	}
+
+	/** Change the macro libraries, and remember them. Event thread. */
+	public void setMacroLibraries(List<Path> libraries) {
+		m_context.getSettings().setMacroLibraries(libraries.stream().map(Path::toString).toList());
+		m_context.saveSettings();
+		m_context.getLogger().log(LogChannel.OTHER, "Macro libraries: %s", libraries.isEmpty() ? "none" : libraries);
+		fire();
+	}
+
 	private void rememberSourceFile() {
 		m_context.getSettings().setLastSourceFile(m_sourceFile == null ? null : m_sourceFile.toString());
 	}
@@ -373,6 +388,7 @@ public final class AssemblerModel {
 		//-- width, and nothing else about it.
 		MemoryCellGroup group = getGroup();
 		MemoryAddressType type = group.getType();
+		List<Path> libraryFiles = getMacroLibraries();
 		m_assembling = true;
 		fire();
 
@@ -380,10 +396,20 @@ public final class AssemblerModel {
 			try {
 				if(needsSave)
 					Files.writeString(source, text, StandardCharsets.ISO_8859_1);
+				//-- Read for every assembly rather than once: they are small, and a library that was
+				//-- rebuilt while the application ran should be the one used.
+				List<MacroLibrary> libraries = new ArrayList<>();
+				for(Path file : libraryFiles) {
+					try {
+						libraries.add(MacroLibrary.read(file));
+					} catch(IOException x) {
+						throw new IOException("Cannot read the macro library " + file + ": " + x.getMessage(), x);
+					}
+				}
 				//-- Assembled from the text, not the file: they are the same once saved, and the
 				//-- text is what the user is looking at. Detached - the group it ends up in belongs
 				//-- to the event thread.
-				Macro11.Result result = Macro11.assemble(source, text, type);
+				Macro11.Result result = Macro11.assemble(source, text, type, libraries);
 				Macro11ListingParser.Parsed parsed = result.parsed();
 				Path listingFile = writeListing(source, result.listing());
 				AppContext.onUi(() -> {

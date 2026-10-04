@@ -2,6 +2,7 @@ package to.etc.pdp11.common.macro11.asm;
 
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -22,9 +23,21 @@ public final class Macro11Assembler {
 
 	private final SourceResolver m_resolver;
 
-	public Macro11Assembler(AssemblerOptions options, SourceResolver resolver) {
+	private final List<MacroLibrary> m_libraries;
+
+	/**
+	 * @param libraries macro libraries {@code .MCALL} searches, in this order, after any the
+	 *                  source names with {@code .LIBRARY}. Read once and used for any number of
+	 *                  assemblies, as DEC's system library is.
+	 */
+	public Macro11Assembler(AssemblerOptions options, SourceResolver resolver, List<MacroLibrary> libraries) {
 		m_options = Objects.requireNonNull(options, "options");
 		m_resolver = Objects.requireNonNull(resolver, "resolver");
+		m_libraries = List.copyOf(libraries);
+	}
+
+	public Macro11Assembler(AssemblerOptions options, SourceResolver resolver) {
+		this(options, resolver, List.of());
 	}
 
 	/** Default options, and no {@code .INCLUDE} or {@code .MCALL}. */
@@ -39,7 +52,7 @@ public final class Macro11Assembler {
 	 * @param source the source; read to the end and closed
 	 */
 	public AssemblyResult assemble(String name, Reader source) {
-		return new AssemblyRun(m_options, m_resolver).run(name, source);
+		return new AssemblyRun(m_options, m_resolver, m_libraries).run(name, source);
 	}
 
 	public AssemblyResult assemble(String name, String source) {
