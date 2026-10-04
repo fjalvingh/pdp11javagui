@@ -15,6 +15,14 @@ package to.etc.pdp11.common.util;
  * because it cannot work out its own version number would be an absurd thing to ship.</p>
  */
 public final class AppVersion {
+	/**
+	 * What the application calls itself wherever a person reads it: titles, dialogs, the About box,
+	 * the log. Not "PDP11GUI", which is the Pascal original this is a rewrite of; the two are
+	 * different programs and a user, or a bug report, should be able to tell which is meant.
+	 * Directory and jar names keep {@code pdp11gui}, so an upgrade still finds its settings.
+	 */
+	public static final String NAME = "Pdp11 Java GUI";
+
 	/** What {@link #get()} answers when this is not a release build. */
 	public static final String DEVELOPMENT = "development build";
 

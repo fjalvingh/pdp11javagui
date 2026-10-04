@@ -6,20 +6,20 @@
 
 ## What you need
 
-A **Java 21 runtime** and nothing else. PDP11GUI ships as a single jar with everything it needs
+A **Java 21 runtime** and nothing else. Pdp11 Java GUI ships as a single jar with everything it needs
 inside it.
 
 One external program is used if you have it, and is not needed otherwise:
 
 | Program | Needed for | Where to get it |
 |---|---|---|
-| SimH's `pdp11` | Connecting to a real SimH simulator that PDP11GUI launches | <https://github.com/open-simh/simh> |
+| SimH's `pdp11` | Connecting to a real SimH simulator that Pdp11 Java GUI launches | <https://github.com/open-simh/simh> |
 
 It must be on your `PATH` to be used. It is not needed to run the program, nor for the
 simulated machines built into it. If it is missing, the button that would have used it says so
 rather than failing obscurely.
 
-The MACRO-11 assembler is part of PDP11GUI; nothing has to be installed to
+The MACRO-11 assembler is part of Pdp11 Java GUI; nothing has to be installed to
 [assemble](09-assembler.md).
 
 ## Running it

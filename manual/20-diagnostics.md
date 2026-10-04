@@ -8,7 +8,7 @@
 downloads them, takes every program off every disk, tape and floppy image, and keeps them in a
 library on this machine, sorted by what each one is for.
 
-PDP11GUI does not come with any diagnostics. They are DEC's, and they are not this project's to
+Pdp11 Java GUI does not come with any diagnostics. They are DEC's, and they are not this project's to
 hand out. But people have been preserving them for decades, and the window knows where they put
 them: bitsavers' copies of the XXDP distributions and diagnostic floppies and tapes, and Don
 North's (AK6DN) bootable TU58 sets and tests he wrote himself. Nothing is fetched until you
@@ -76,7 +76,7 @@ lists, which kits DEC shipped it on, and every medium it was found on here.
 ### Families
 
 DEC named every diagnostic with four letters, and the first says what it is for. The titles come
-from DEC's *PDP-11 Diagnostic Index* of 1990 (AH-FG66P-MC), which is built into PDP11GUI: it
+from DEC's *PDP-11 Diagnostic Index* of 1990 (AH-FG66P-MC), which is built into Pdp11 Java GUI: it
 lists about 1,150 diagnostics, so most of what you collect gets a title.
 
 | First letter | Family |
@@ -143,14 +143,14 @@ seconds — deposits are sent a hundred at a time. Over a serial ODT console eve
 so the same program takes several minutes at 9600 baud; the progress dialog shows how far it is and
 can cancel. A cancelled load is never started.
 
-The program, its family and its switches are DEC's; PDP11GUI only puts it in memory. Tested: the
+The program, its family and its switches are DEC's; Pdp11 Java GUI only puts it in memory. Tested: the
 PDP-11/34 basic instruction test `FKAAC0`, loaded this way into SimH set to an 11/34, announces
 itself and prints `END PASS`.
 
 ## Where it is kept
 
 **Open folder** shows the library in your file manager. It is laid out to be used without
-PDP11GUI:
+Pdp11 Java GUI:
 
 ```
 diagnostics/

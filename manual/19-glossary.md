@@ -13,7 +13,7 @@ a program on it. Which dialect it speaks — ODT, an 11/44 console processor, Si
 — is one half of [a connection](03-connecting.md).
 
 **Deposit** — write a value into a memory location through the console. The opposite of
-examine. In PDP11GUI, typing a value does not deposit it; a button does.
+examine. In Pdp11 Java GUI, typing a value does not deposit it; a button does.
 
 **Edit value** — what a memory cell *should* contain, as opposed to what the machine last said it
 does. See [what a cell's two values mean](04-memory.md#what-a-cells-two-values-mean).
@@ -28,13 +28,13 @@ any console protocol here needs.
 all of it is what [the I/O page scanner](12-io-page-scanner.md) does.
 
 **KD11-B** — the processor board set of the PDP-11/05, on module M7261. Its microcode ships with
-PDP11GUI in [both board revisions](13-microcode.md#which-revision-and-why-the-title-says-so).
+Pdp11 Java GUI in [both board revisions](13-microcode.md#which-revision-and-why-the-title-says-so).
 
 **KM11** — a maintenance module which, plugged into a PDP-11/05, puts the microprogram counter on
 lights. It is what makes [the microcode window](13-microcode.md#on-the-pdp-1105-this-is-a-debugger-not-a-reference)
 a debugger on that machine.
 
-**MACRO-11** — DEC's assembler for the PDP-11. PDP11GUI has one built in, a port of the C
+**MACRO-11** — DEC's assembler for the PDP-11. Pdp11 Java GUI has one built in, a port of the C
 `macro11`; see
 [the assembler](09-assembler.md).
 
@@ -73,11 +73,11 @@ protocol plus a transport plus its settings.
 **Propagation** — how a value read or written at an address reaches every window showing that
 address, without any window knowing about any other.
 
-**SimH** — the historical-computer simulator. PDP11GUI can launch its `pdp11` binary and drive the
+**SimH** — the historical-computer simulator. Pdp11 Java GUI can launch its `pdp11` binary and drive the
 simulated machine through SimH's own `sim>` remote console; see
 [the SimH console window](14-terminal-log-simh.md#the-simh-console-window).
 
-**Simulated machine** — a PDP-11 simulated inside PDP11GUI itself, needing nothing installed. One
+**Simulated machine** — a PDP-11 simulated inside Pdp11 Java GUI itself, needing nothing installed. One
 exists for every console protocol, and it is [the first thing to try](18-troubleshooting.md) when
 something is not working.
 
@@ -93,7 +93,7 @@ so that disagreements colour themselves. Distinct from Examine, which replaces b
 **Virtual address** — the 16-bit address a program uses, before the MMU translates it. The
 [disassembler](06-disassembler.md) works in these.
 
-**Word** — 16 bits, at an even address. All PDP-11 memory in PDP11GUI is shown by the word.
+**Word** — 16 bits, at an even address. All PDP-11 memory in Pdp11 Java GUI is shown by the word.
 
 ---
 

@@ -89,7 +89,7 @@ public final class MainWindow extends JFrame {
 	private ConnectionManager.State m_lastState = ConnectionManager.State.DISCONNECTED;
 
 	public MainWindow(AppContext context) {
-		super("PDP11GUI");
+		super(AppVersion.NAME);
 		m_context = context;
 		setIconImages(AppIcon.images());
 		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
@@ -250,7 +250,7 @@ public final class MainWindow extends JFrame {
 		manual.addActionListener(e -> openManual());
 		m_manualItem = manual;
 
-		JMenuItem about = new JMenuItem("About PDP11GUI");
+		JMenuItem about = new JMenuItem("About " + AppVersion.NAME);
 		about.addActionListener(e -> showAbout());
 		JMenu help = new JMenu("Help");
 		help.setMnemonic(KeyEvent.VK_H);
@@ -624,9 +624,9 @@ public final class MainWindow extends JFrame {
 			m_panel.getTerminal().setProfile(manager.hasSeparateMachineConsole()
 				? TerminalProfile.of(true, true)
 				: console.terminalProfile());
-			setTitle("PDP11GUI - " + console.name());
+			setTitle(AppVersion.NAME + " - " + console.name());
 		} else {
-			setTitle("PDP11GUI");
+			setTitle(AppVersion.NAME);
 		}
 		//-- Only on arrival, not on every report of the state. Two things call this for one
 		//-- connection - the ConnectionManager listener when the state changes, and the connect
@@ -672,7 +672,7 @@ public final class MainWindow extends JFrame {
 			TerminalStyle.SYSTEM);
 		JOptionPane.showMessageDialog(dialogOwner(),
 			message + (cause == null ? "" : "\n\n" + cause.getMessage()),
-			"PDP11GUI", JOptionPane.ERROR_MESSAGE);
+			AppVersion.NAME, JOptionPane.ERROR_MESSAGE);
 	}
 
 	/**
@@ -726,7 +726,7 @@ public final class MainWindow extends JFrame {
 		}
 		JOptionPane.showMessageDialog(this,
 			"No browser could be opened here. The manual is at:\n\n" + url + copied,
-			"PDP11GUI", JOptionPane.INFORMATION_MESSAGE);
+			AppVersion.NAME, JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -748,12 +748,12 @@ public final class MainWindow extends JFrame {
 
 	private void showAbout() {
 		JOptionPane.showMessageDialog(this,
-			"PDP11GUI " + AppVersion.get() + "\n\n"
+			AppVersion.NAME + " " + AppVersion.get() + "\n\n"
 				+ "An IDE for real and simulated PDP-11 computers.\n"
 				+ "Java/Swing rewrite of Joerg Hoppe's original.\n\n"
 				+ "Settings: " + m_context.getSettingsStore().getFile() + "\n"
 				+ "Running on Java " + Runtime.version() + ".",
-			"About PDP11GUI", JOptionPane.INFORMATION_MESSAGE);
+			"About " + AppVersion.NAME, JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -761,7 +761,7 @@ public final class MainWindow extends JFrame {
 	 * caller is a button or a menu item.
 	 */
 	private boolean askBeforeDiscarding(String question) {
-		return JOptionPane.showConfirmDialog(this, question, "PDP11GUI",
+		return JOptionPane.showConfirmDialog(this, question, AppVersion.NAME,
 			JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 

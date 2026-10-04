@@ -32,7 +32,7 @@ public final class UrlFetcher implements HttpFetcher {
 	private final String m_userAgent;
 
 	public UrlFetcher() {
-		m_userAgent = "PDP11GUI/" + AppVersion.get() + " (diagnostics collector)";
+		m_userAgent = "Pdp11JavaGui/" + AppVersion.get() + " (diagnostics collector)";
 	}
 
 	@Override

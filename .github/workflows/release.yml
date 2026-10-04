@@ -2,7 +2,7 @@ name: release
 
 # Two ways in, both ending in the same place:
 #
-#   git tag -a v1.2.0 -m 'PDP11GUI 1.2.0' && git push origin v1.2.0
+#   git tag -a v1.2.0 -m 'Pdp11 Java GUI 1.2.0' && git push origin v1.2.0
 #   gh workflow run release.yml -f version=1.2.0
 #
 # The second creates the tag itself, on the commit the run was started from, so nothing has to
@@ -140,9 +140,9 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           set -euo pipefail
-          args=(--title "PDP11GUI $VERSION" --generate-notes --target "$GITHUB_SHA")
+          args=(--title "Pdp11 Java GUI $VERSION" --generate-notes --target "$GITHUB_SHA")
           if [ "$PRERELEASE" = 'true' ]; then args+=(--prerelease); fi
           # On a dispatch run the tag does not exist yet; gh creates it at --target.
           gh release create "$TAG" "pdp11gui-${VERSION}.jar" "${args[@]}"
-          echo "### PDP11GUI $VERSION released" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Pdp11 Java GUI $VERSION released" >> "$GITHUB_STEP_SUMMARY"
           gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

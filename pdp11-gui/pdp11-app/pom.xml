@@ -50,7 +50,7 @@
                                         one shade reads.
                                     -->
                                     <manifestEntries>
-                                        <Implementation-Title>PDP11GUI</Implementation-Title>
+                                        <Implementation-Title>Pdp11 Java GUI</Implementation-Title>
                                         <Implementation-Version>${project.version}</Implementation-Version>
                                         <Implementation-Vendor>etc.to</Implementation-Vendor>
                                     </manifestEntries>

@@ -4,7 +4,7 @@
 
 ---
 
-A **machine description** tells PDP11GUI which devices a particular PDP-11 has and where they are
+A **machine description** tells Pdp11 Java GUI which devices a particular PDP-11 has and where they are
 jumpered. It is what produces:
 
 * the **Device registers** submenu and [its windows](07-registers-and-bitfields.md);

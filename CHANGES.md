@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Name
+
+- **The application is now called "Pdp11 Java GUI"**, in its window titles, dialogs, About box,
+  log and release titles, so it is not mistaken for Joerg Hoppe's original PDP11GUI it is a
+  rewrite of. The settings directory and the jar keep the name `pdp11gui`, so existing settings
+  are still found.
+
 ### Shared memory
 
 - **Every window now shows the same memory.** What the Memory Loader reads from a file, what the

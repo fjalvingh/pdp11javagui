@@ -16,13 +16,13 @@ is sent to it.
 * **Typing is not echoed locally.** The machine echoes; echoing here as well would double every
   character.
 * **Typing is enabled only when there is a machine console to type at.** On a SimH connection
-  that PDP11GUI did not launch there is no such wire — only SimH's administrative `sim>` channel,
+  that Pdp11 Java GUI did not launch there is no such wire — only SimH's administrative `sim>` channel,
   which is not a place to put keystrokes — and the terminal says so when you connect.
 * There is no ANSI emulation, and none is needed: no console protocol emits escape sequences. The
   consoles disagree about line endings, and that is handled for you.
 * The scrollback is bounded.
 
-What the terminal does **not** show is the protocol conversation PDP11GUI itself has with the
+What the terminal does **not** show is the protocol conversation Pdp11 Java GUI itself has with the
 console — the examines and deposits it issues on your behalf. That is in
 [the Log window](14-terminal-log-simh.md#the-log-window), and for SimH in
 [the SimH console window](14-terminal-log-simh.md#the-simh-console-window).
@@ -43,7 +43,7 @@ would simply grey out, which on its own looks like the program broke.
 | **Connection settings …** | | Open [the connection dialog](03-connecting.md) |
 | **Connect to simulated ▸** | | One entry per console protocol, connecting to a machine simulated inside this program |
 | **Disconnect** | | Close the connection |
-| **Load examples ▸** | | One entry per example program that comes with PDP11GUI; see [the assembler](09-assembler.md#example-programs) |
+| **Load examples ▸** | | One entry per example program that comes with Pdp11 Java GUI; see [the assembler](09-assembler.md#example-programs) |
 | **Collect diagnostics …** | | Find XXDP and MAINDEC diagnostics on the Internet and keep them; see [collecting diagnostics](20-diagnostics.md) |
 | **Quit** | Ctrl/Cmd+Q | Save everything and go |
 
@@ -77,14 +77,14 @@ Rebuilt every time it is opened, so it is never out of date. It has three parts:
 | Item | Shortcut | What it does |
 |---|---|---|
 | **User manual** | F1 | Open this manual on GitHub, in your browser |
-| **About PDP11GUI** | | The version, where the settings file is, and which Java is running it |
+| **About Pdp11 Java GUI** | | The version, where the settings file is, and which Java is running it |
 
 **User manual** opens the manual **for the release you are running**: a 1.2.0 jar opens the manual
 as it was at the `v1.2.0` tag, not whatever `main` has become since, so it cannot describe windows
 your copy does not have. A build made from a working copy opens `main`. If no browser can be
 opened here, the address is shown in a dialog and copied to the clipboard.
 
-**About PDP11GUI** says *development build* rather than claiming a version it does not have when
+**About Pdp11 Java GUI** says *development build* rather than claiming a version it does not have when
 the jar was not made by the release workflow.
 
 ## How tool windows behave

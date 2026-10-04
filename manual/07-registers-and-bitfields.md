@@ -10,7 +10,7 @@ memory that way.
 
 Both are built from [the loaded machine description](16-machine-descriptions.md) — the `.ini` file
 that says what devices this machine has and where they are jumpered. The one shipped with
-PDP11GUI describes a generic PDP-11 and declares seventeen device groups.
+Pdp11 Java GUI describes a generic PDP-11 and declares seventeen device groups.
 
 ## Device register windows
 

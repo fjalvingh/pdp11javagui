@@ -3,6 +3,7 @@ package to.etc.pdp11.ui.diag;
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.diag.DiagnosticSource;
 import to.etc.pdp11.common.diag.IndexPageScanner;
+import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.JButton;
@@ -57,7 +58,7 @@ final class CollectTab extends JPanel {
 		m_sources = new SourceModel(sources, ticked, chosen);
 		m_sourceTable = new JTable(m_sources);
 
-		add(new JLabel("Where to look. Nothing is downloaded until you press Collect; DEC's diagnostics are not shipped with PDP11GUI."),
+		add(new JLabel("Where to look. Nothing is downloaded until you press Collect; DEC's diagnostics are not shipped with " + AppVersion.NAME + "."),
 			"wrap");
 		m_sourceTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		m_sourceTable.setFillsViewportHeight(true);

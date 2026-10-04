@@ -37,7 +37,7 @@ The protocol and transport you picked cannot go together. See
 
 **The terminal will not let me type**
 Either you are not connected, or this connection has no machine console. That happens with a SimH
-that PDP11GUI did not launch: the only wire is the `sim>` channel, which is in
+that Pdp11 Java GUI did not launch: the only wire is the `sim>` channel, which is in
 [the SimH console window](14-terminal-log-simh.md#the-simh-console-window). The terminal says so
 when you connect.
 

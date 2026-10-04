@@ -1,6 +1,7 @@
 package to.etc.pdp11.ui.settings;
 
 import net.miginfocom.swing.MigLayout;
+import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.core.conn.TransportConfig;
@@ -304,7 +305,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 	}
 
 	private boolean askOnScreen(String question) {
-		return JOptionPane.showConfirmDialog(this, question, "PDP11GUI",
+		return JOptionPane.showConfirmDialog(this, question, AppVersion.NAME,
 			JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 

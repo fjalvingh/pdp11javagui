@@ -3,6 +3,7 @@ package to.etc.pdp11.ui;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionManager;
+import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.bits.BitfieldsWindow;
 import to.etc.pdp11.ui.diag.DiagnosticsWindow;
@@ -85,7 +86,7 @@ class WindowsBuildTest {
 		assumeFalse(GraphicsEnvironment.isHeadless(), "no display");
 		MainWindow w = onEdt(() -> new MainWindow(context(dir)));
 		try {
-			assertEquals("PDP11GUI", w.getTitle());
+			assertEquals(AppVersion.NAME, w.getTitle());
 			assertNotNull(w.getJMenuBar());
 			assertEquals(4, w.getJMenuBar().getMenuCount(), "File, Memory, Windows, Help");
 			assertEquals("Memory", w.getJMenuBar().getMenu(1).getText());

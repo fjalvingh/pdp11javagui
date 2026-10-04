@@ -9,7 +9,7 @@ watch it run.
 
 ## Before you start
 
-The assembler is part of PDP11GUI: nothing has to be installed. It is DEC's MACRO-11 as the C
+The assembler is part of Pdp11 Java GUI: nothing has to be installed. It is DEC's MACRO-11 as the C
 `macro11` implements it, with every error reported and many warnings besides (see
 [Errors and warnings](#errors-and-warnings) below).
 
@@ -67,7 +67,7 @@ bring it back. Quitting with unsaved changes asks first.
 
 ## Example programs
 
-**File → Load examples** lists the example programs that come with PDP11GUI. Choosing one opens
+**File → Load examples** lists the example programs that come with Pdp11 Java GUI. Choosing one opens
 it in this window, ready for **Compile**. The first is a game of tic-tac-toe on the console
 terminal. It needs no operating system and runs on anything from an 11/05 up; start it at `1000`.
 

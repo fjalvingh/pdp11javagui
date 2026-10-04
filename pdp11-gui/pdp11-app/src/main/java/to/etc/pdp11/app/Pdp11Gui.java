@@ -64,7 +64,7 @@ public final class Pdp11Gui {
 			//-- Before the main window, so its Windows menu has the device groups in it the
 			//-- first time it is opened.
 			MachineDescriptionStore.installAndLoad(context);
-			logger.log(LogChannel.OTHER, "PDP11GUI " + AppVersion.get()
+			logger.log(LogChannel.OTHER, AppVersion.NAME + " " + AppVersion.get()
 				+ " starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
 			new MainWindow(context).setVisible(true);
@@ -114,7 +114,7 @@ public final class Pdp11Gui {
 			//-- On macOS the menu bar belongs to the screen and follows the focused window,
 			//-- which is the platform-correct behaviour for a multi-window app like this one.
 			System.setProperty("apple.laf.useScreenMenuBar", "true");
-			System.setProperty("apple.awt.application.name", "PDP11GUI");
+			System.setProperty("apple.awt.application.name", AppVersion.NAME);
 		}
 	}
 

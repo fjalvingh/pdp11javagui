@@ -3,6 +3,7 @@ package to.etc.pdp11.common.diag;
 import to.etc.pdp11.common.diag.media.AbsoluteLoaderImage;
 import to.etc.pdp11.common.diag.media.MediaFile;
 import to.etc.pdp11.common.diag.media.MediaVolume;
+import to.etc.pdp11.common.util.AppVersion;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -48,7 +49,7 @@ import java.util.Map;
 public final class DiagnosticLibrary {
 	public static final String INDEX_FILE = "library.tsv";
 
-	private static final String HEADER = "# PDP11GUI diagnostic library, format 1";
+	private static final String HEADER = "# " + AppVersion.NAME + " diagnostic library, format 1";
 
 	private final Path m_root;
 

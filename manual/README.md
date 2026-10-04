@@ -1,6 +1,6 @@
-# PDP11GUI user manual
+# Pdp11 Java GUI user manual
 
-PDP11GUI is an IDE for real and simulated PDP-11 computers. It connects to a machine's console —
+Pdp11 Java GUI is an IDE for real and simulated PDP-11 computers. It connects to a machine's console —
 over a serial line, over telnet, to a SimH simulator it launches itself, or to a machine simulated
 inside the program — and from there lets you look at memory, change it, assemble a MACRO-11
 program and load it, run and single-step it, disassemble what is there, and find out which part of

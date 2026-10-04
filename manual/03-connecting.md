@@ -12,7 +12,7 @@ separately rather than from one long list of sentences.
 
 | Protocol | What it is | Address width |
 |---|---|---|
-| **SimH** | SimH's remote console (`sim>`), driven by PDP11GUI | 22 bit |
+| **SimH** | SimH's remote console (`sim>`), driven by Pdp11 Java GUI | 22 bit |
 | **PDP-11 ODT, 16 bit** | Microcode ODT on a 16-bit machine | 16 bit |
 | **PDP-11 ODT, 18 bit (11/23)** | Microcode ODT on an 18-bit machine | 18 bit |
 | **PDP-11 ODT, 22 bit (11/73, 11/93)** | Microcode ODT on a 22-bit machine | 22 bit |
@@ -33,24 +33,24 @@ The **M9312 and M9301** consoles are not ODT, although they also prompt with `@`
 are a small program in the boot ROM, run by the CPU, and they can examine, deposit and start a
 program, and nothing else. Anything that stops the CPU stops the console as well: a program
 reaching a HALT, an odd address, or an address with nothing behind it. After that, only booting
-from the front panel brings the prompt back. PDP11GUI refuses odd addresses and the CPU registers
+from the front panel brings the prompt back. Pdp11 Java GUI refuses odd addresses and the CPU registers
 before it sends them. It cannot tell in advance which addresses exist, so on these consoles the
 memory, register and MMU windows read the machine only when you press **Examine all** or
 **Refresh**.
 
 On an **M9312**, depositing a large program - 128 words or more, such as a diagnostic or an
-assembled program - does not send it word by word. PDP11GUI first deposits a small loader, starts
+assembled program - does not send it word by word. Pdp11 Java GUI first deposits a small loader, starts
 it, and sends the program to it in binary, about six times as fast; the loader then returns to
 the `@` prompt. You will see `*`, then a `.` per block, in the terminal while that happens. The
 loader occupies about 260 bytes of memory that the program does not use - just below 8KW for a
-program smaller than that - so whatever was there before is lost. The console port must be strapped for 8 data bits. If it is not, PDP11GUI notices
+program smaller than that - so whatever was there before is lost. The console port must be strapped for 8 data bits. If it is not, Pdp11 Java GUI notices
 before sending anything and deposits the slow way.
 
 ## Transports
 
 | Transport | What it means |
 |---|---|
-| **SimH, launched by us** | PDP11GUI starts `pdp11` as a child process and drives its remote console |
+| **SimH, launched by us** | Pdp11 Java GUI starts `pdp11` as a child process and drives its remote console |
 | **Telnet** | A telnet port somebody else is listening on — a SimH started elsewhere, a terminal server, a console concentrator |
 | **Serial port** | A real serial line to a real machine |
 | **Simulated machine (no hardware)** | A PDP-11 simulated inside this JVM. Needs nothing at all |
@@ -98,7 +98,7 @@ Connecting runs in the background — launching SimH or opening a port takes as 
 with the menu greyed out and a wait cursor. When it succeeds:
 
 * the status bar turns green and names the connection;
-* the window title becomes `PDP11GUI - <console name>`;
+* the window title becomes `Pdp11 Java GUI - <console name>`;
 * the terminal gets a `[connected: …]` line;
 * on a SimH connection, [the SimH console window](14-terminal-log-simh.md#the-simh-console-window)
   opens by itself, because that is where SimH's side of the conversation is;

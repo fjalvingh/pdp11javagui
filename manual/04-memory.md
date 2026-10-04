@@ -12,7 +12,7 @@ editable octal word per square.
 
 ## What a cell's two values mean
 
-Every window in PDP11GUI that shows memory shows the same kind of cell, and each cell carries
+Every window in Pdp11 Java GUI that shows memory shows the same kind of cell, and each cell carries
 **two** values:
 
 * the **machine value** — what the PDP-11 last said was there;

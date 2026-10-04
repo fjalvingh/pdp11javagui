@@ -1,4 +1,4 @@
-# PDP11GUI (Java/Swing)
+# Pdp11 Java GUI
 
 An IDE for real and simulated PDP-11 computers: write MACRO-11, load it onto the machine, run
 and single-step it, disassemble, and inspect memory and registers.
@@ -126,7 +126,7 @@ run one with `java -jar pdp11gui-1.2.0.jar`.
 To make one, tag it:
 
 ```
-git tag -a v1.2.0 -m 'PDP11GUI 1.2.0'
+git tag -a v1.2.0 -m 'Pdp11 Java GUI 1.2.0'
 git push origin v1.2.0
 ```
 

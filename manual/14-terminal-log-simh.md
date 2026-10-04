@@ -11,14 +11,14 @@ most of the skill of debugging a flaky console.
 |---|---|
 | The main window's **terminal** | The PDP-11's own console, as an operator would see it |
 | **SimH console** | SimH's administrative `sim>` channel, in full |
-| **Log** | Everything, in columns, including PDP11GUI's own protocol conversation |
+| **Log** | Everything, in columns, including Pdp11 Java GUI's own protocol conversation |
 
 ## The terminal
 
 Described under [the main window](02-main-window.md#the-terminal). It is the machine's console:
 what the machine prints, and what you type at it.
 
-It does **not** show PDP11GUI's own commands — the examines and deposits it issues on your behalf.
+It does **not** show Pdp11 Java GUI's own commands — the examines and deposits it issues on your behalf.
 Those are in the Log.
 
 ## The SimH console window
@@ -31,9 +31,9 @@ A SimH connection has two wires:
   window's terminal, because the rule this program follows is that the main terminal is the
   machine's console, whatever the machine is;
 * the **remote** channel — SimH's `sim>` prompt, which no real PDP-11 ever had, and which
-  PDP11GUI drives to examine and deposit memory.
+  Pdp11 Java GUI drives to examine and deposit memory.
 
-This window is the second one. It shows the raw channel exactly as it arrives — PDP11GUI's own
+This window is the second one. It shows the raw channel exactly as it arrives — Pdp11 Java GUI's own
 commands, SimH's replies, everything — which is how a misbehaving connection gets diagnosed.
 
 | Control | What it does |
