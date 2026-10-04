@@ -30,9 +30,6 @@ import java.util.List;
  * {@link MemoryFileFormat#definesOwnAddresses()}.</p>
  */
 public final class MemoryFileLoader {
-	/** The paper tape buffer covers a 16-bit address space, as the format's addresses do. */
-	private static final int PAPERTAPE_BUFFER_SIZE = 0x10000;
-
 	/**
 	 * @param wordsLoaded  how many cells the file produced
 	 * @param entryAddress where the file says execution starts, or null if it does not say
@@ -222,11 +219,11 @@ public final class MemoryFileLoader {
 	/**
 	 * Read a paper tape image back into memory.
 	 *
-	 * <p>Ported from {@code TMemoryLoader_StandardAbsolutePapertape.Load} ({@code :612-847}) and
-	 * its state machine, which comes in turn from Mattis Lind's {@code maindec.c}. Bytes are
-	 * read into a 64 KB buffer with a validity flag each and only then turned into words, because
-	 * a block may start at an odd address and two blocks may meet inside one word - the format is
-	 * byte-addressed and memory is not.</p>
+	 * <p>Ported from {@code TMemoryLoader_StandardAbsolutePapertape.Load} ({@code :612-847}); the
+	 * reading is {@link AbsoluteLoaderTape}'s, shared with the diagnostics runner. Bytes are read
+	 * into a 64 KB buffer with a validity flag each and only then turned into words, because a
+	 * block may start at an odd address and two blocks may meet inside one word - the format is
+	 * byte-addressed and memory is not. The load stops at the entry block, as the loader does.</p>
 	 *
 	 * <p>A block whose data length is zero carries the entry address rather than data, and is
 	 * checksummed like any other. A checksum that does not come to zero stops the load: a paper
@@ -235,121 +232,20 @@ public final class MemoryFileLoader {
 	 */
 	private static Result loadPaperTape(MemoryCellGroup group, Path file, Address startAddr)
 		throws IOException {
-		byte[] data = Files.readAllBytes(file);
-		byte[] buffer = new byte[PAPERTAPE_BUFFER_SIZE];
-		boolean[] valid = new boolean[PAPERTAPE_BUFFER_SIZE];
-		List<String> warnings = new ArrayList<>();
-		Address entry = null;
-
-		int state = 0;
-		int sum = 0;
-		int blockByteIdx = 0;
-		int blockSize = 0;
-		int dataBytes = 0;
-		long address = 0;
-		for(int pos = 0; pos < data.length; pos++) {
-			int b = data[pos] & 0xFF;
-			switch(state) {
-				case 0 -> {
-					//-- Skip everything until a block header. Leader tape, stuff bytes, anything.
-					sum = 0;
-					if(b == 1) {
-						state = 1;
-						blockByteIdx = 1;
-						sum += b;
-					}
-				}
-				case 1 -> {
-					if(b != 0) {
-						state = 0;                          // not a header after all
-					} else {
-						state = 2;
-						blockByteIdx++;
-						sum += b;
-					}
-				}
-				case 2 -> {
-					blockSize = b;
-					sum += b;
-					blockByteIdx++;
-					state = 3;
-				}
-				case 3 -> {
-					blockSize |= b << 8;
-					dataBytes = blockSize - 6;
-					sum += b;
-					blockByteIdx++;
-					state = 4;
-				}
-				case 4 -> {
-					address = b;
-					sum += b;
-					blockByteIdx++;
-					state = 5;
-				}
-				case 5 -> {
-					address |= (long) b << 8;
-					sum += b;
-					blockByteIdx++;
-					if(blockByteIdx > blockSize) {
-						warnings.add("Skipped a block at " + Octal.format(address, 6)
-							+ " whose size field says " + blockSize + " bytes");
-						state = 0;
-					} else if(dataBytes == 0) {
-						//-- A block with no data is where to start executing. Its checksum byte
-						//-- is still to come, and going straight back to state 0 left that byte
-						//-- to be read as the start of the next block: when it happens to be 01 -
-						//-- every entry address whose two bytes sum to 248 mod 256, 000370 among
-						//-- them - the bytes after it were misparsed and a good tape came back
-						//-- with a warning on it (FABLE-ISSUES #58). State 7 consumes it and
-						//-- checks it, which is also the only thing that ever verified it.
-						entry = Address.of(startAddr.type(), address);
-						state = 7;
-					} else {
-						state = 6;
-					}
-				}
-				case 6 -> {
-					if(address >= PAPERTAPE_BUFFER_SIZE)
-						throw new IOException("The image loads at " + Octal.format(address, 1)
-							+ ", past the 16 bit address space a paper tape can describe");
-					sum += b;
-					buffer[(int) address] = (byte) b;
-					valid[(int) address] = true;
-					address++;
-					blockByteIdx++;
-					if(blockByteIdx >= blockSize)
-						state = 7;
-				}
-				//-- State 7: the checksum byte that ends every block, data or entry.
-				default -> {
-					sum += b;
-					if((sum & 0xFF) != 0)
-						throw new IOException("Checksum error in " + file.getFileName()
-							+ " at byte " + pos + "; the image is damaged");
-					sum = 0;
-					state = 0;
-				}
-			}
-		}
-		if(state != 0)
-			warnings.add("The image ends in the middle of a block");
-
+		AbsoluteLoaderTape tape = AbsoluteLoaderTape.parse(Files.readAllBytes(file), file.getFileName().toString());
+		Address entry = tape.getTransferAddress() == null ? null : Address.of(startAddr.type(), tape.getTransferAddress());
 		group.clear();
 		group.shiftRange(startAddr, 0, false);
 		int loaded = 0;
-		for(int a = 0; a + 1 < PAPERTAPE_BUFFER_SIZE; a += 2) {
+		for(AbsoluteLoaderTape.Word w : tape.words()) {
 			//-- One valid byte is enough: a block can end mid-word, and the missing half is zero,
 			//-- which is what the loader would have left there.
-			if(!valid[a] && !valid[a + 1])
-				continue;
-			int w = (buffer[a] & 0xFF) | ((buffer[a + 1] & 0xFF) << 8);
-			addCell(group, startAddr, a, w);
+			addCell(group, startAddr, w.address(), w.value());
 			loaded++;
 		}
 		if(loaded == 0)
 			throw new IOException("No data blocks were found in " + file.getFileName());
-		return new Result(loaded, entry, warnings);
+		return new Result(loaded, entry, new ArrayList<>(tape.getWarnings()));
 	}
 
 	// -------------------------------------------------------------------------------------

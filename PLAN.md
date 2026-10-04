@@ -1588,8 +1588,18 @@ collects them, on request, from the archives that keep them. Decisions, and what
 - **The reader is tested by round trip against a test-only writer, and pinned to reality by
   `RealMediaIT`**, which reads real downloaded media when `PDP11_DIAG_SAMPLES` points at them and
   skips otherwise - the repository cannot hold them.
-- Not done: booting or loading a collected diagnostic from the library (the media are kept ready
-  for SimH, and a `.BIN` can be loaded with the Memory Loader); a source list the user can edit;
+- **Running a standalone diagnostic** is deposits and a start, nothing else, so it works over
+  every console. `ProgramCheck` (common) decides what is standalone - not a DRS program (a header
+  at 002000 and nothing below it but the hooks at 40-56), not XXDP's own; `ProgramLoader` (core)
+  deposits through a temporary cell group and starts. Programs that need the DRS supervisor or
+  the XXDP monitor are deliberately not run: loading the supervisor beside them is a different
+  feature, and an uncertain one.
+- **SimH's remote console answers in ~50 ms whatever the command**, and reads everything queued,
+  so `SimhConsole` deposits a group a hundred commands at a time (`DO` would be one command but
+  is not allowed on the remote console). Checked against SimH 4.1: five minutes became three
+  seconds for a 5,802-word program. ODT over serial is still a deposit at a time; that is the
+  line speed, not a round trip.
+- Not done: loading DRS programs with their supervisor; a source list the user can edit;
   recovering files from an image whose directory is overwritten (one RKDP pack on bitsavers).
 
 **Phase 8 — Packaging.** `jpackage` installers per platform, signing/notarization as needed.

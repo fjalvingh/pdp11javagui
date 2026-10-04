@@ -41,6 +41,16 @@ class LibraryListingTest {
 	}
 
 	@Test
+	void standaloneOnlyLeavesWhatCanBeRun() {
+		List<LibraryListing.Row> rows = LibraryListing.rows(List.of(file("FKAAC0.BIC"), file("ZRQBC1.BIN"), file("HELP.TXT")),
+			DiagnosticCatalog.builtIn(), (f, id) -> f.name().startsWith("FKAA")
+				? new ProgramCheck.Brief(ProgramCheck.Kind.STANDALONE, "", 0200)
+				: new ProgramCheck.Brief(ProgramCheck.Kind.NEEDS_SUPERVISOR, "", 02000));
+		assertEquals(List.of("FKAAC0.BIC"), names(LibraryListing.filter(rows, null, "", true)));
+		assertEquals(3, LibraryListing.filter(rows, null, "", false).size());
+	}
+
+	@Test
 	void countsArePerFamily() {
 		Map<DiagnosticFamily, Integer> counts = LibraryListing.counts(ROWS);
 		assertEquals(2, counts.get(DiagnosticFamily.PDP11_34));

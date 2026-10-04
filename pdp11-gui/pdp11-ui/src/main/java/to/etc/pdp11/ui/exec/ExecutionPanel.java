@@ -434,21 +434,8 @@ public final class ExecutionPanel extends JPanel {
 		updateDisplay();
 	}
 
-	/**
-	 * Refuse to act while the operator has not said where the switch is.
-	 *
-	 * <p>{@code CheckRunMode} ({@code :265-275}) raises an exception here, which is right: on a
-	 * machine with a physical switch, a console told the wrong position will issue commands the
-	 * machine ignores, and the user is left with a UI that appears broken.</p>
-	 */
 	private boolean checkRunMode() {
-		Console console = m_context.getConnectionManager().getConsole();
-		if(console == null || !console.features().contains(ConsoleFeature.SWITCH_ENABLE_OR_HALT))
-			return true;
-		if(console.getRunMode() != ConsoleRunMode.UNKNOWN)
-			return true;
-		m_context.reportFailure("Set RUN or HALT to match the switch on the machine's console first", null);
-		return false;
+		return m_context.checkRunMode();
 	}
 
 	/** A virtual address from a text field, complaining rather than throwing if it is not one. */

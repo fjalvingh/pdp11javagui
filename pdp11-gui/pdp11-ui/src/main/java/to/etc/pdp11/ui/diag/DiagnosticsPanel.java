@@ -8,21 +8,31 @@ import to.etc.pdp11.common.diag.DiagnosticSource;
 import to.etc.pdp11.common.diag.HttpFetcher;
 import to.etc.pdp11.common.diag.IndexPageScanner;
 import to.etc.pdp11.common.diag.LibraryListing;
+import to.etc.pdp11.common.diag.LibraryFile;
 import to.etc.pdp11.common.diag.LibraryMedium;
+import to.etc.pdp11.common.diag.ProgramCheck;
 import to.etc.pdp11.common.diag.UrlFetcher;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.memfile.AbsoluteLoaderTape;
 import to.etc.pdp11.common.util.LogChannel;
+import to.etc.pdp11.core.run.ProgramLoader;
 import to.etc.pdp11.common.util.OperationCancelledException;
 import to.etc.pdp11.common.util.ProgressMonitor;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Browser;
+import to.etc.pdp11.ui.MachineState;
+import to.etc.pdp11.ui.ProgressDialog;
 
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingUtilities;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -103,7 +113,7 @@ public final class DiagnosticsPanel extends JPanel {
 			m_context.getSettings().setDiagnosticSourceChosen(s.id(), on);
 			m_context.saveSettings();
 		});
-		m_libraryTab = new LibraryTab(this::openFolder);
+		m_libraryTab = new LibraryTab(this::openFolder, this::runProgram);
 		m_libraryTab.setLocation(m_root.toString());
 
 		m_tabs.addTab("Library", m_libraryTab);
@@ -143,7 +153,9 @@ public final class DiagnosticsPanel extends JPanel {
 			media.put(m.key(), m);
 			urls.add(m.url());
 		}
-		return new Snapshot(LibraryListing.rows(m_library.files(), m_catalog), media, urls, m_library.getUnreadableLines());
+		DiagnosticLibrary lib = m_library;
+		List<LibraryListing.Row> rows = LibraryListing.rows(lib.files(), m_catalog, (f, id) -> LibraryListing.check(lib, f, id));
+		return new Snapshot(rows, media, urls, lib.getUnreadableLines());
 	}
 
 	private void show(Snapshot s) {
@@ -268,6 +280,79 @@ public final class DiagnosticsPanel extends JPanel {
 			p.m_cancelled = true;
 			m_collectTab.setStatus("Stopping ...", false);
 		}
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Running a standalone program
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Deposit a standalone program into the machine and, when asked, start it.
+	 *
+	 * <p>Only what {@link ProgramCheck} calls standalone gets here: a program that needs XXDP or
+	 * its DRS supervisor cannot be run by depositing it, and is never offered. The file is read
+	 * and checked again on the worker - the one in the list was checked when the library was
+	 * read, and a file can change - and the deposits and the start then go to the command thread
+	 * as one job, behind a {@link ProgressDialog}: modal, because while the machine is being
+	 * loaded there is nothing else useful to ask of it.</p>
+	 */
+	void runProgram(LibraryListing.Row row, int start, Integer switches, boolean andStart) {
+		if(m_context.getMachineState().getState() == MachineState.ExecutionState.RUNNING) {
+			m_libraryTab.setRunStatus("The machine is running. Halt it first: a program cannot be deposited under a running one.", true);
+			return;
+		}
+		if(m_context.getConnectionManager().getConsole() == null) {
+			m_libraryTab.setRunStatus("Not connected to a machine.", true);
+			return;
+		}
+		if(andStart && !m_context.checkRunMode())
+			return;
+		LibraryFile file = row.file();
+		m_libraryTab.setRunStatus("Reading " + file.name() + " ...", false);
+		m_worker.execute(() -> {
+			ProgramCheck.Verdict v;
+			try {
+				byte[] data = Files.readAllBytes(library().resolve(file.path()));
+				v = ProgramCheck.check(file.name(), data, file.damaged(), row.identification());
+			} catch(Exception x) {
+				AppContext.onUi(() -> m_libraryTab.setRunStatus("Cannot read " + file.name() + ": " + x.getMessage(), true));
+				return;
+			}
+			if(!v.isRunnable()) {
+				ProgramCheck.Verdict why = v;
+				AppContext.onUi(() -> m_libraryTab.setRunStatus("Cannot be run here: " + why.reason(), true));
+				return;
+			}
+			AbsoluteLoaderTape tape = v.tape();
+			AppContext.onUi(() -> deposit(file.name(), tape, start, switches, andStart));
+		});
+	}
+
+	/** On the event thread: queue the deposits, and the start, for the command thread. */
+	private void deposit(String name, AbsoluteLoaderTape tape, int start, Integer switches, boolean andStart) {
+		ProgressDialog progress = new ProgressDialog(SwingUtilities.getWindowAncestor(this));
+		Address startPc = Address.of(MemoryAddressType.VIRTUAL, start);
+		m_libraryTab.setRunStatus("Loading " + name + " ...", false);
+		boolean queued = m_context.onConsole("Loading " + name, console -> {
+			ProgramLoader.Loaded loaded = ProgramLoader.load(console, m_context.getMemoryCellGroups(), tape, switches, progress);
+			//-- The Execution window offers this as its start PC from now on, as it does for a
+			//-- program the Memory Loader or the assembler put there.
+			m_context.getMachineState().setStartPc(startPc);
+			String said = name + ": " + loaded.words() + " words deposited" + (switches == null ? "" : ", 176 set to "
+				+ String.format(Locale.ROOT, "%06o", switches));
+			if(andStart) {
+				ProgramLoader.start(console, start);
+				m_context.getMachineState().running();
+				said += ", started at " + startPc.toOctal() + ". Its output is on the console terminal.";
+			} else {
+				said += ". Start it at " + startPc.toOctal() + " when ready.";
+			}
+			m_context.getLogger().log(LogChannel.OTHER, "Diagnostics: %s", said);
+			String done = said;
+			AppContext.onUi(() -> m_libraryTab.setRunStatus(done, false));
+		});
+		if(!queued)
+			m_libraryTab.setRunStatus("Not connected to a machine.", true);
 	}
 
 	/** Show the library's directory in the platform's file manager. */

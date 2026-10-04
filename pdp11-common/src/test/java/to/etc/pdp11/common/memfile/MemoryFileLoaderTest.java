@@ -293,6 +293,27 @@ class MemoryFileLoaderTest {
 		assertTrue(x.getMessage().contains("Checksum error"), x.getMessage());
 	}
 
+	/**
+	 * A program off an XXDP disk has the rest of its last block after the entry block, and the
+	 * loader stops at the entry block. Reading on used to take the rubbish for a block - which
+	 * starts with a 01 more often than not - and fail a good program on its checksum.
+	 */
+	@Test
+	void whatComesAfterTheEntryBlockIsNotRead(@TempDir Path dir) throws Exception {
+		MemoryCellGroup source = filled(01000, 0111);
+		Path file = dir.resolve("t.bic");
+		MemoryDumper.save(MemoryFileFormat.ABSOLUTE_PAPERTAPE, source, List.of(file), at(01));
+		byte[] body = Files.readAllBytes(file);
+		byte[] withSlack = java.util.Arrays.copyOf(body, body.length + 8);
+		System.arraycopy(new byte[]{1, 0, 9, 0, 0, 3, 7, 7}, 0, withSlack, body.length, 8);
+		Files.write(file, withSlack);
+
+		MemoryCellGroup g = emptyGroup();
+		MemoryFileLoader.Result r = MemoryFileLoader.load(MemoryFileFormat.ABSOLUTE_PAPERTAPE, g, List.of(file), at(0));
+		assertEquals(1, r.wordsLoaded());
+		assertEquals(List.of(), r.warnings());
+	}
+
 	@Test
 	void anImageWithNoBlocksInItIsRefused(@TempDir Path dir) throws Exception {
 		Path file = dir.resolve("blank.ptap");

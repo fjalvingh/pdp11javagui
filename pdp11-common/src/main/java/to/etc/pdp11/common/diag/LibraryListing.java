@@ -24,8 +24,13 @@ public final class LibraryListing {
 	 *
 	 * @param file           the program
 	 * @param identification what its name says it is
+	 * @param run            whether it can be run on its own; see {@link ProgramCheck}
 	 */
-	public record Row(LibraryFile file, DiagnosticCatalog.Identification identification) {
+	public record Row(LibraryFile file, DiagnosticCatalog.Identification identification, ProgramCheck.Brief run) {
+		public Row(LibraryFile file, DiagnosticCatalog.Identification identification) {
+			this(file, identification, ProgramCheck.Brief.NONE);
+		}
+
 		public DiagnosticFamily family() {
 			return identification.family();
 		}
@@ -48,11 +53,37 @@ public final class LibraryListing {
 
 	/** Every file, identified, in family order and by name within a family. */
 	public static List<Row> rows(List<LibraryFile> files, DiagnosticCatalog catalog) {
+		return rows(files, catalog, (f, id) -> ProgramCheck.Brief.NONE);
+	}
+
+	/** The same, with whether each can be run worked out by {@code check}. */
+	public static List<Row> rows(List<LibraryFile> files, DiagnosticCatalog catalog,
+		java.util.function.BiFunction<LibraryFile, DiagnosticCatalog.Identification, ProgramCheck.Brief> check) {
 		List<Row> out = new ArrayList<>(files.size());
-		for(LibraryFile f : files)
-			out.add(new Row(f, catalog.identify(f.name())));
+		for(LibraryFile f : files) {
+			DiagnosticCatalog.Identification id = catalog.identify(f.name());
+			out.add(new Row(f, id, check.apply(f, id)));
+		}
 		out.sort(ORDER);
 		return out;
+	}
+
+	/**
+	 * Whether each file in a library can be run, read off the disk.
+	 *
+	 * <p>Reads only what might be a program - see {@link ProgramCheck} - and treats a file that
+	 * cannot be read as not one.</p>
+	 */
+	public static ProgramCheck.Brief check(DiagnosticLibrary library, LibraryFile file, DiagnosticCatalog.Identification id) {
+		String ext = file.extension();
+		if(!(ext.equals("BIN") || ext.equals("BIC") || ext.equals("LDA") || ext.equals("SYS")))
+			return ProgramCheck.Brief.NONE;
+		try {
+			byte[] data = java.nio.file.Files.readAllBytes(library.resolve(file.path()));
+			return ProgramCheck.check(file.name(), data, file.damaged(), id).brief();
+		} catch(java.io.IOException x) {
+			return new ProgramCheck.Brief(ProgramCheck.Kind.NOT_A_PROGRAM, "The file cannot be read: " + x.getMessage(), -1);
+		}
 	}
 
 	/**
@@ -62,10 +93,20 @@ public final class LibraryListing {
 	 * @param family null for all families
 	 */
 	public static List<Row> filter(List<Row> rows, DiagnosticFamily family, String text) {
+		return filter(rows, family, text, false);
+	}
+
+	/**
+	 * As {@link #filter(List, DiagnosticFamily, String)}, and only what can be run standalone when
+	 * {@code runnableOnly} says so.
+	 */
+	public static List<Row> filter(List<Row> rows, DiagnosticFamily family, String text, boolean runnableOnly) {
 		String[] words = text == null ? new String[0] : text.strip().toUpperCase(Locale.ROOT).split("\\s+");
 		List<Row> out = new ArrayList<>();
 		for(Row r : rows) {
 			if(family != null && r.family() != family)
+				continue;
+			if(runnableOnly && !r.run().isRunnable())
 				continue;
 			String hay = r.haystack();
 			boolean all = true;

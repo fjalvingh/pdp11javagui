@@ -355,6 +355,56 @@ class SimhConsoleTest {
 		}
 	}
 
+	/**
+	 * Memory goes in batches, many commands to a round trip; SimH's remote console takes some 50 ms
+	 * to answer anything, and a deposit at a time put a 6,000 word diagnostic in in five minutes.
+	 */
+	@Test
+	void aBigDepositIsSentManyCommandsAtATimeAndAllOfItArrives() throws Exception {
+		try(Rig rig = new Rig()) {
+			MemoryCellGroup g = rig.groups.addGroup(MemoryAddressType.PHYSICAL22, "memory");
+			g.add(010000, 250);
+			for(int i = 0; i < 250; i++)
+				g.cell(i).setEditValue(CellValue.of(0100000 + i));
+			rig.connection.run(() -> rig.console.deposit(g, false, ProgressMonitor.NULL));
+			for(int i = 0; i < 250; i++)
+				assertEquals(0100000 + i, rig.fake.getMem(phys(010000 + 2L * i)), "word " + i);
+			assertTrue(g.cell(249).getEditValue().equals(g.cell(249).getPdpValue()), "every cell is marked deposited");
+		}
+	}
+
+	@Test
+	void aRegisterInTheMiddleOfMemoryIsDepositedByNameAndTheRestStillArrives() throws Exception {
+		try(Rig rig = new Rig()) {
+			MemoryCellGroup g = rig.groups.addGroup(MemoryAddressType.PHYSICAL22, "mixed");
+			g.add(01000, 2);
+			g.add(017777701L);                            // R1
+			g.cell(0).setEditValue(CellValue.of(01));
+			g.cell(1).setEditValue(CellValue.of(02));
+			g.findByAddress(017777701L).setEditValue(CellValue.of(04321));
+			rig.connection.run(() -> rig.console.deposit(g, false, ProgressMonitor.NULL));
+			assertEquals(02, rig.fake.getMem(phys(01002)));
+			assertEquals(04321, rig.connection.call(() -> rig.console.examine(phys(017777701L))).word());
+		}
+	}
+
+	@Test
+	void aDepositSimhRefusesInsideABatchIsAnError() throws Exception {
+		try(Rig rig = new Rig()) {
+			MemoryCellGroup g = rig.groups.addGroup(MemoryAddressType.PHYSICAL22, "too far");
+			long beyond = rig.fake.getPhysicalMemorySize() + 01000;
+			g.add(01000);
+			g.add(beyond);
+			g.cell(0).setEditValue(CellValue.of(1));
+			g.findByAddress(beyond).setEditValue(CellValue.of(2));
+			ConsoleException x = assertThrows(ConsoleException.class,
+				() -> rig.connection.run(() -> rig.console.deposit(g, false, ProgressMonitor.NULL)));
+			assertTrue(x.getMessage().contains("Non-existent device"), x.getMessage());
+			//-- And the console is still in step for whatever comes next.
+			assertEquals(1, rig.connection.call(() -> rig.console.examine(phys(01000))).word());
+		}
+	}
+
 	// ---------------------------------------------------------------------------------------
 	// Execution control
 	// ---------------------------------------------------------------------------------------

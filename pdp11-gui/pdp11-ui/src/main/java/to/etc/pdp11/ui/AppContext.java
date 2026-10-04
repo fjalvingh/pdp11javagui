@@ -315,6 +315,26 @@ public final class AppContext {
 		return true;
 	}
 
+	/**
+	 * Refuse to run the machine while the operator has not said where its RUN/HALT switch is.
+	 *
+	 * <p>{@code CheckRunMode} ({@code FormExecuteU.pas:265-275}) raises an exception here, which is
+	 * right: on a machine with a physical switch, a console told the wrong position will issue
+	 * commands the machine ignores, and the user is left with a UI that appears broken. Here
+	 * because two windows start programs - the Execution window and the Diagnostics window.</p>
+	 *
+	 * @return true when the caller may go ahead; false, having said why, when not
+	 */
+	public boolean checkRunMode() {
+		Console console = m_connectionManager.getConsole();
+		if(console == null || !console.features().contains(to.etc.pdp11.core.console.ConsoleFeature.SWITCH_ENABLE_OR_HALT))
+			return true;
+		if(console.getRunMode() != to.etc.pdp11.core.console.ConsoleRunMode.UNKNOWN)
+			return true;
+		reportFailure("Set RUN or HALT to match the switch on the machine's console first", null);
+		return false;
+	}
+
 	/** File work: runs off the event thread, and may throw. */
 	public interface FileJob<T> {
 		T run() throws Exception;

@@ -4,6 +4,28 @@
 
 ### Diagnostics
 
+- **A standalone diagnostic can be run straight from the library**, with nothing but deposits
+  and a start: the Library tab's **Load and start** deposits every word of the program through
+  the console, sets the software switch register at 176 if asked, resets the machine and starts
+  it at the program's start address - its transfer address, or 200, DEC's default, when it has
+  none. **Load** stops after the deposits. No boot device, monitor or loader is needed, so it
+  works the same over SimH, ODT and the boot-ROM consoles. Checked end to end: DEC's PDP-11/34
+  basic instruction test, deposited into SimH set to an 11/34, prints END PASS.
+- **Only programs that can run on their own are offered.** A new **Runs** column, and a
+  **Standalone only** filter, tell them apart: a DRS program - one built for the XXDP+ Diagnostic
+  Runtime Services supervisor, recognised by its program header at 002000 - and XXDP's own
+  monitors, drivers and utilities need software this does not load, and say so. Of the 2,490
+  programs in a full collection, about 1,360 are standalone and 283 need DRS.
+- **Deposits over SimH are batched**, a hundred commands to a round trip. SimH's remote console
+  takes some 50 ms to answer any command, so a deposit at a time took five minutes to load a
+  6,000-word diagnostic; it now takes three seconds. Every command is still checked for its
+  prompt, and a refused one is still an error. This speeds up the Memory Loader and every other
+  deposit of many words over SimH as well.
+- **Fixed: a program file with anything after its transfer block could fail to load** in the
+  Memory Loader with a checksum error. The absolute loader stops at the transfer block, and so
+  does this now - which matters for every program off an XXDP disk, whose last block is padded
+  with whatever was in the buffer.
+
 - **File → Collect diagnostics … fetches XXDP and MAINDEC diagnostics and keeps them on this
   machine.** PDP11GUI cannot ship DEC's diagnostics, but it knows where they are archived:
   bitsavers' XXDP V2.2 and V2.5 RL02 distributions, the RKDP packs, the RXDP and DYDP floppies, the

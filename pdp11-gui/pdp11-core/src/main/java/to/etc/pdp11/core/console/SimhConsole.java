@@ -88,6 +88,9 @@ public final class SimhConsole extends AbstractConsole {
 	/** How many times to say {@code ^E} before giving up on a console that will not wake. */
 	public static final int WAKEUP_ATTEMPTS = 4;
 
+	/** How many {@code D} commands go to SimH before waiting for their prompts. See {@link #deposit(MemoryCellGroup, boolean, ProgressMonitor)}. */
+	private static final int MAX_DEPOSIT_BATCH = 100;
+
 	/** The longest run of addresses to put in one {@code E} command. {@code :779}. */
 	private static final int MAX_BLOCK_LEN = 100;
 
@@ -810,6 +813,93 @@ public final class SimhConsole extends AbstractConsole {
 		String cmd = "D " + operand + " " + Octal.format(value & 0xFFFF, 1);
 		int echo = sendCommand(cmd);
 		checkPromptNoOutput(echo, cmd, "DEPOSIT failed, no prompt");
+	}
+
+	// -------------------------------------------------------------------------------------
+	// Bulk deposit
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Write a whole group, many {@code D} commands to a round trip.
+	 *
+	 * <p>SimH's remote console answers a command in some 50 ms however small it is - it is polled,
+	 * not woken - so a deposit at a time puts a 6,000-word diagnostic into memory in five minutes.
+	 * It does read everything waiting on the socket, though: commands sent together are answered
+	 * together, a prompt each, a hundred in the time of one. So memory is deposited in batches of
+	 * {@link #MAX_DEPOSIT_BATCH}, each written in one go and then checked as carefully as a single
+	 * deposit: every command must get its prompt, and any line that is not one of the commands'
+	 * own echoes is SimH refusing one of them. {@code DO} would be quicker still, and is not on
+	 * the remote console's list of allowed commands.</p>
+	 *
+	 * <p>Registers go one at a time, as before: there are few of them, and a deposit into the PC
+	 * has a rule of its own (see {@link #deposit(Address, int)}).</p>
+	 */
+	@Override
+	public void deposit(MemoryCellGroup g, boolean optimize, ProgressMonitor pm) throws ConsoleException {
+		List<MemoryCell> cells = List.copyOf(g.getCells());
+		MemoryCellGroups owner = g.getOwner();
+		List<MemoryCell> batch = new ArrayList<>();
+		List<String> commands = new ArrayList<>();
+		pm.begin("Depositing ...", cells.size());
+		try {
+			for(MemoryCell mc : cells) {
+				pm.step(1);
+				if(pm.isCancelled())
+					break;
+				if(!mc.getEditValue().isKnown())
+					continue;
+				if(optimize && mc.getEditValue().equals(mc.getPdpValue()))
+					continue;
+				Address physical = toPhysical(mc.getAddr());
+				if(addrToRegName(physical) != null) {
+					depositBatch(batch, commands, owner);
+					deposit(mc.getAddr(), mc.getEditValue().word());
+					deposited(mc, owner);
+					continue;
+				}
+				batch.add(mc);
+				commands.add("D " + Octal.format(physical.val(), 1) + " " + Octal.format(mc.getEditValue().word() & 0xFFFF, 1));
+				if(batch.size() >= MAX_DEPOSIT_BATCH)
+					depositBatch(batch, commands, owner);
+			}
+			if(!pm.isCancelled())
+				depositBatch(batch, commands, owner);
+		} finally {
+			pm.done();
+		}
+	}
+
+	/** Send the batch, wait for a prompt per command, and refuse on any complaint. Empties both lists. */
+	private void depositBatch(List<MemoryCell> batch, List<String> commands, MemoryCellGroups owner) throws ConsoleException {
+		if(batch.isEmpty())
+			return;
+		clearAnswers();
+		writeToPdp(String.join(String.valueOf(CR), commands) + CR);
+		int from = 0;
+		for(int i = 0; i < commands.size(); i++) {
+			int at = getAnswers().waitForIndex(p -> p instanceof AnswerPhrase.Prompt, from, getCommandTimeoutMillis());
+			if(at < 0)
+				checkPromptAfter(from, "DEPOSIT failed, no prompt after " + i + " of " + commands.size() + " deposits");
+			from = at + 1;
+		}
+		java.util.Set<String> echoes = new java.util.HashSet<>(commands);
+		StringBuilder err = new StringBuilder();
+		for(AnswerPhrase p : getAnswers().snapshot()) {
+			if(p instanceof AnswerPhrase.OtherLine ol && !ol.text().isBlank() && !echoes.contains(ol.text().trim()))
+				err.append(ol.text().trim()).append(' ');
+		}
+		if(err.length() > 0)
+			throw new ConsoleException("DEPOSIT failed: SimH rejected a command: \"" + err.toString().trim() + "\"");
+		for(MemoryCell mc : batch)
+			deposited(mc, owner);
+		batch.clear();
+		commands.clear();
+	}
+
+	private static void deposited(MemoryCell mc, MemoryCellGroups owner) {
+		mc.setDeposited();
+		if(owner != null)
+			owner.syncMemoryCells(mc);
 	}
 
 	// -------------------------------------------------------------------------------------

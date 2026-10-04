@@ -102,6 +102,51 @@ lists about 1,150 diagnostics, so most of what you collect gets a title.
 XXDP V2.5's monitors and drivers have plain names (`XXDPXM.SYS`, `DD.SYS`) and are recognised by
 those too. Files whose names say nothing — chain files, AK6DN's tests — are under **Other**.
 
+## Running a diagnostic
+
+A program in the library can be put into the machine and started from the **Library** tab, with
+nothing on the machine but its console: every word is deposited, one after another, and the
+machine is started at the program's start address. No boot device, no XXDP, no loader.
+
+That only works for **standalone** programs, and the **Runs** column says which those are:
+
+| Runs | What it means |
+|---|---|
+| **standalone** | A classic MAINDEC diagnostic, with its own vectors and console code. It can be run |
+| **needs DRS** | Built for the XXDP+ Diagnostic Runtime Services supervisor, which has to be loaded with it. It has a program header at 002000 instead of vectors |
+| **needs XXDP** | Part of XXDP itself: a monitor, a driver, or a utility that works through the monitor |
+| (empty) | Not a program — a chain file, a help file, a listing — or a damaged copy |
+
+Tick **Standalone only** to see just the ones that can run. Select one and the bar under the list
+offers:
+
+* **Start at** — filled in from the program: its transfer address, or **200** when it has none,
+  which is almost always. That is DEC's rule as well.
+* **Switches (176)** — standalone diagnostics read their options from the switch register, or,
+  on a machine without one, from location **176**. Leave it empty to keep what the program sets
+  (usually zero: all tests, stop on nothing); type an octal value to set it after loading —
+  `100000`, for instance, is "halt on error" in most of them. The program's documentation lists
+  its switches.
+* **Load** deposits the program and stops there, so you can change memory before starting it.
+  The Execution window's start PC is set to the program's start address.
+* **Load and start** deposits it, resets the machine and starts it. What the program prints
+  appears on the console terminal in the main window.
+
+The machine has to be stopped first; a program cannot be deposited under a running one. On a
+console with a RUN/HALT switch, say where the switch is first, as for any start.
+
+Selecting a program shows, under **Running**, the addresses it loads into. A machine with less
+memory than that cannot run it: an 11/05 with 8K words has nothing above 037777.
+
+**How long it takes** depends on the console. Over SimH a 6,000-word diagnostic goes in in a few
+seconds — deposits are sent a hundred at a time. Over a serial ODT console every word is typed,
+so the same program takes several minutes at 9600 baud; the progress dialog shows how far it is and
+can cancel. A cancelled load is never started.
+
+The program, its family and its switches are DEC's; PDP11GUI only puts it in memory. Tested: the
+PDP-11/34 basic instruction test `FKAAC0`, loaded this way into SimH set to an 11/34, announces
+itself and prints `END PASS`.
+
 ## Where it is kept
 
 **Open folder** shows the library in your file manager. It is laid out to be used without

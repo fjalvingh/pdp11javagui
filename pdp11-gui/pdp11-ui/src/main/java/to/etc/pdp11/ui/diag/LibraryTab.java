@@ -6,10 +6,12 @@ import to.etc.pdp11.common.diag.DiagnosticFamily;
 import to.etc.pdp11.common.diag.LibraryFile;
 import to.etc.pdp11.common.diag.LibraryListing;
 import to.etc.pdp11.common.diag.LibraryMedium;
+import to.etc.pdp11.common.diag.ProgramCheck;
 import to.etc.pdp11.ui.UiColors;
 
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -58,6 +60,29 @@ final class LibraryTab extends JPanel {
 
 	private final JTextArea m_details = new JTextArea();
 
+	private final JCheckBox m_runnableOnly = new JCheckBox("Standalone only");
+
+	private final JTextField m_start = new JTextField(7);
+
+	private final JTextField m_switches = new JTextField(7);
+
+	private final JButton m_load = new JButton("Load");
+
+	private final JButton m_loadAndStart = new JButton("Load and start");
+
+	private final JLabel m_runStatus = new JLabel(" ");
+
+	private final RunHandler m_runHandler;
+
+	/** What the Load buttons are asked to do: put a program into the machine, and maybe start it. */
+	@FunctionalInterface
+	interface RunHandler {
+		/**
+		 * @param switches the value for location 176, or null to leave the program's own
+		 */
+		void run(LibraryListing.Row row, int start, Integer switches, boolean andStart);
+	}
+
 	private List<LibraryListing.Row> m_all = List.of();
 
 	private Map<String, LibraryMedium> m_media = Map.of();
@@ -73,17 +98,20 @@ final class LibraryTab extends JPanel {
 		}
 	}
 
-	LibraryTab(Runnable openFolder) {
-		super(new MigLayout("fill, insets 6", "[][grow][][]", "[][][grow]"));
+	LibraryTab(Runnable openFolder, RunHandler runHandler) {
+		super(new MigLayout("fill, insets 6", "[][grow][][]", "[][][grow][]"));
+		m_runHandler = runHandler;
 		m_location.setForeground(UiColors.SECONDARY_TEXT);
 		add(m_location, "span 3, growx, wmin 0");
 		add(m_openFolder, "wrap");
 		m_openFolder.addActionListener(e -> openFolder.run());
 
 		add(new JLabel("Family:"));
-		add(m_family, "split 3, w 260::");
+		add(m_family, "split 4, w 260::");
 		add(new JLabel("Find:"), "gapleft 12");
 		add(m_filter, "growx, w 160::");
+		add(m_runnableOnly, "gapleft 12");
+		m_runnableOnly.setToolTipText("Only programs that run on their own, deposited and started, without XXDP or its supervisor");
 		m_count.setForeground(UiColors.SECONDARY_TEXT);
 		add(m_count, "span 2, wrap");
 		m_filter.setToolTipText("Words to look for in the name, diagnostic number, title and family; all must match");
@@ -99,6 +127,7 @@ final class LibraryTab extends JPanel {
 			c.setMinWidth(ProgramModel.MIN_WIDTHS[i]);
 		}
 		m_table.getColumnModel().getColumn(ProgramModel.COL_STATUS).setCellRenderer(new StatusRenderer());
+		m_table.getColumnModel().getColumn(ProgramModel.COL_RUNS).setCellRenderer(new RunsRenderer());
 		m_details.setEditable(false);
 		m_details.setLineWrap(true);
 		m_details.setWrapStyleWord(true);
@@ -108,7 +137,28 @@ final class LibraryTab extends JPanel {
 		JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scrolled(m_table), new JScrollPane(m_details));
 		split.setResizeWeight(0.8);
 		split.setBorder(null);
-		add(split, "span, grow");
+		add(split, "span, grow, wrap");
+
+		//-- The run bar: what to start at, the software switch register, and the two buttons.
+		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_start.getFont().getSize());
+		m_start.setFont(mono);
+		m_switches.setFont(mono);
+		m_start.setToolTipText("Octal. Filled in from the program: its transfer address, or 200 when it has none");
+		m_switches.setToolTipText("Octal value for location 176, the software switch register of standalone diagnostics; "
+			+ "empty leaves what the program sets");
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][][][][grow]", "[]"));
+		bar.add(new JLabel("Start at:"));
+		bar.add(m_start);
+		bar.add(new JLabel("Switches (176):"), "gapleft 12");
+		bar.add(m_switches);
+		bar.add(m_load, "gapleft 12");
+		bar.add(m_loadAndStart);
+		m_runStatus.setForeground(UiColors.SECONDARY_TEXT);
+		bar.add(m_runStatus, "gapleft 8, growx, wmin 0");
+		add(bar, "span, growx");
+		m_load.addActionListener(e -> runSelected(false));
+		m_loadAndStart.addActionListener(e -> runSelected(true));
+		m_runnableOnly.addActionListener(e -> refilter());
 
 		m_family.addActionListener(e -> {
 			if(!m_updating)
@@ -184,14 +234,77 @@ final class LibraryTab extends JPanel {
 	}
 
 	private void refilter() {
-		List<LibraryListing.Row> shown = LibraryListing.filter(m_all, selectedFamily(), m_filter.getText());
+		List<LibraryListing.Row> shown = LibraryListing.filter(m_all, selectedFamily(), m_filter.getText(), m_runnableOnly.isSelected());
 		m_model.setRows(shown);
 		m_count.setText(shown.size() == m_all.size() ? m_all.size() + " programs" : shown.size() + " of " + m_all.size() + " programs");
 		showDetails();
 	}
 
+	/** The row selected, or null. */
+	private LibraryListing.Row selected() {
+		int view = m_table.getSelectedRow();
+		return view < 0 ? null : m_model.row(m_table.convertRowIndexToModel(view));
+	}
+
+	/** The run bar follows the selection: armed for a standalone program, and saying why not otherwise. */
+	private void updateRunBar(LibraryListing.Row r) {
+		boolean runnable = r != null && r.run().isRunnable();
+		m_load.setEnabled(runnable);
+		m_loadAndStart.setEnabled(runnable);
+		m_start.setEnabled(runnable);
+		m_switches.setEnabled(runnable);
+		if(runnable) {
+			m_start.setText(String.format(Locale.ROOT, "%06o", r.run().startAddress()));
+			setRunStatus(" ", false);
+		} else {
+			m_start.setText("");
+			setRunStatus(r == null || r.run().reason().isEmpty() ? " " : "Cannot be run here: " + r.run().reason(), false);
+		}
+	}
+
+	void setRunStatus(String text, boolean error) {
+		m_runStatus.setText(text);
+		m_runStatus.setToolTipText(text.isBlank() ? null : text);
+		m_runStatus.setForeground(error ? UiColors.ERROR_TEXT : UiColors.SECONDARY_TEXT);
+	}
+
+	private void runSelected(boolean andStart) {
+		LibraryListing.Row r = selected();
+		if(r == null || !r.run().isRunnable())
+			return;
+		Integer start = octal(m_start.getText(), "start address");
+		if(start == null)
+			return;
+		if((start & 1) != 0) {
+			setRunStatus("The start address must be even", true);
+			return;
+		}
+		Integer switches = null;
+		if(!m_switches.getText().isBlank()) {
+			switches = octal(m_switches.getText(), "switch register value");
+			if(switches == null)
+				return;
+		}
+		m_runHandler.run(r, start, switches, andStart);
+	}
+
+	/** An octal word from a field, or null having said what is wrong with it. */
+	private Integer octal(String text, String what) {
+		String t = text.strip();
+		try {
+			int v = Integer.parseInt(t, 8);
+			if(v < 0 || v > 0177777)
+				throw new NumberFormatException();
+			return v;
+		} catch(NumberFormatException x) {
+			setRunStatus("\"" + t + "\" is not an octal " + what, true);
+			return null;
+		}
+	}
+
 	private void showDetails() {
 		int view = m_table.getSelectedRow();
+		updateRunBar(selected());
 		if(view < 0) {
 			m_details.setText(m_all.isEmpty()
 				? "Nothing has been collected yet. The Collect tab finds diagnostics on the Internet and downloads them."
@@ -214,6 +327,8 @@ final class LibraryTab extends JPanel {
 		if(f.damaged())
 			sb.append("DAMAGED: the medium it came from could not be read whole, so this copy is probably incomplete.\n");
 		sb.append("File: ").append(f.path()).append('\n');
+		if(!r.run().reason().isEmpty())
+			sb.append("Running: ").append(r.run().reason()).append('\n');
 		CatalogEntry e = r.identification().entry();
 		if(e != null) {
 			sb.append("DEC: C").append(e.id()).append(r.identification().revision().isEmpty() ? "" : r.identification().revision())
@@ -253,6 +368,30 @@ final class LibraryTab extends JPanel {
 		return m_count;
 	}
 
+	JCheckBox getRunnableOnly() {
+		return m_runnableOnly;
+	}
+
+	JTextField getStartField() {
+		return m_start;
+	}
+
+	JTextField getSwitchesField() {
+		return m_switches;
+	}
+
+	JButton getLoadButton() {
+		return m_load;
+	}
+
+	JButton getLoadAndStartButton() {
+		return m_loadAndStart;
+	}
+
+	JLabel getRunStatus() {
+		return m_runStatus;
+	}
+
 	/** The library's programs, a row each. */
 	static final class ProgramModel extends AbstractTableModel {
 		static final int COL_NAME = 0;
@@ -269,11 +408,13 @@ final class LibraryTab extends JPanel {
 
 		static final int COL_STATUS = 6;
 
-		private static final String[] NAMES = {"Program", "Title", "Family", "Date", "Size", "Media", "Status"};
+		static final int COL_RUNS = 7;
 
-		static final int[] WIDTHS = {110, 260, 200, 80, 70, 55, 75};
+		private static final String[] NAMES = {"Program", "Title", "Family", "Date", "Size", "Media", "Status", "Runs"};
 
-		static final int[] MIN_WIDTHS = {90, 140, 90, 70, 55, 45, 60};
+		static final int[] WIDTHS = {110, 240, 190, 80, 65, 50, 75, 85};
+
+		static final int[] MIN_WIDTHS = {90, 130, 90, 70, 50, 40, 60, 75};
 
 		private List<LibraryListing.Row> m_rows = new ArrayList<>();
 
@@ -318,6 +459,7 @@ final class LibraryTab extends JPanel {
 				case COL_SIZE -> (int) f.size();
 				case COL_MEDIA -> f.foundOn().size();
 				case COL_STATUS -> f.damaged() ? "damaged" : f.path().startsWith("files/variants/") ? "other copy" : "";
+				case COL_RUNS -> r.run().kind().getLabel();
 				default -> "";
 			};
 		}
@@ -326,6 +468,18 @@ final class LibraryTab extends JPanel {
 			//-- DEC's own form, as XXDP's DIR prints it: 01-MAR-89. Sorting by it is wrong across
 			//-- years, but nobody sorts this table by date, and DIR's form is what people know.
 			return d == null ? "" : DATE.format(d).toUpperCase(Locale.ROOT);
+		}
+	}
+
+	/** "standalone" in the colour that means good to go, the rest quietly. */
+	private static final class RunsRenderer extends DefaultTableCellRenderer {
+		@Override
+		public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row,
+			int column) {
+			Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+			if(!isSelected)
+				c.setForeground(ProgramCheck.Kind.STANDALONE.getLabel().equals(value) ? UiColors.OK_TEXT : UiColors.SECONDARY_TEXT);
+			return c;
 		}
 	}
 

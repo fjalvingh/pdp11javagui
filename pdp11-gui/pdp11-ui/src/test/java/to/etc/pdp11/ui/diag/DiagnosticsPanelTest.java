@@ -9,7 +9,14 @@ import to.etc.pdp11.common.diag.DiagnosticSource;
 import to.etc.pdp11.common.diag.HttpFetcher;
 import to.etc.pdp11.common.diag.media.MediaFile;
 import to.etc.pdp11.common.diag.media.MediaVolume;
+import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.ConnectionProfile;
+import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.fake.FakePdp11;
+import to.etc.pdp11.core.io.FakeTransport;
 import to.etc.pdp11.ui.AppContext;
+import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.Edt;
 import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiRenderer;
@@ -206,6 +213,151 @@ class DiagnosticsPanelTest {
 		UiRenderer.layOut(panel, 620, 420);
 		int title = Edt.call(() -> panel.getLibraryTab().getTable().getColumnModel().getColumn(LibraryTab.ProgramModel.COL_TITLE).getWidth());
 		assertTrue(title >= LibraryTab.ProgramModel.MIN_WIDTHS[LibraryTab.ProgramModel.COL_TITLE], "title column " + title);
+	}
+
+	// ---------------------------------------------------------------------------------------
+	// Running a standalone program
+	// ---------------------------------------------------------------------------------------
+
+	private static void block(java.io.ByteArrayOutputStream out, int address, byte[] data) {
+		int count = data.length + 6;
+		int sum = 1 + (count & 0xff) + (count >> 8) + (address & 0xff) + (address >> 8);
+		out.writeBytes(new byte[]{1, 0, (byte) count, (byte) (count >> 8), (byte) address, (byte) (address >> 8)});
+		for(byte b : data)
+			sum += b & 0xff;
+		out.writeBytes(data);
+		out.write(-sum & 0xff);
+	}
+
+	/** A tiny standalone program: MOV #1000,SP / BR . at 200, halting after load. */
+	private static byte[] standaloneProgram() {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		block(out, 0200, new byte[]{(byte) 0306, 0x15, 0, 2, (byte) 0377, 1});
+		block(out, 0176, new byte[]{0, 0});
+		block(out, 01, new byte[0]);
+		return out.toByteArray();
+	}
+
+	/** A DRS program: a header at 2000 and nothing below it. */
+	private static byte[] drsProgram() {
+		java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+		block(out, 02000, "ZRQB\0\0\0\0C1".getBytes(StandardCharsets.US_ASCII));
+		block(out, 01, new byte[0]);
+		return out.toByteArray();
+	}
+
+	private static void runnableLibrary(AppContext ctx) throws IOException {
+		DiagnosticLibrary lib = DiagnosticLibrary.open(ctx.getLibraryDir().resolve(DiagnosticsPanel.DIRECTORY));
+		lib.add("bitsavers-rl02", "https://www.bitsavers.org/x/xxdp25.rl02.gz", new MediaVolume("xxdp25.rl02",
+			"RL02 disk, XXDP+ file system", new byte[512], List.of(
+			new MediaFile("FKAAC0.BIC", LocalDate.of(1989, 3, 1), standaloneProgram()),
+			new MediaFile("ZRQBC1.BIN", LocalDate.of(1989, 3, 1), drsProgram()),
+			new MediaFile("HELP.TXT", LocalDate.of(1989, 3, 1), "HELP".getBytes(StandardCharsets.US_ASCII))), List.of()),
+			LocalDate.of(2026, 10, 4));
+		lib.save();
+	}
+
+	/** Select the row whose program is {@code name}. */
+	private static void select(LibraryTab tab, String name) {
+		Edt.run(() -> {
+			JTable t = tab.getTable();
+			for(int i = 0; i < t.getRowCount(); i++) {
+				if(name.equals(t.getValueAt(i, 0)))
+					t.setRowSelectionInterval(i, i);
+			}
+		});
+	}
+
+	@Test
+	void onlyAStandaloneProgramCanBeLoaded(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		runnableLibrary(ctx);
+		DiagnosticsPanel panel = panel(ctx, NO_NETWORK);
+		LibraryTab tab = panel.getLibraryTab();
+		select(tab, "FKAAC0.BIC");
+		assertTrue(Edt.call(() -> tab.getLoadAndStartButton().isEnabled()));
+		assertEquals("000200", Edt.call(() -> tab.getStartField().getText()), "no transfer address: DEC's default");
+		assertEquals("standalone", Edt.call(() -> tab.getTable().getValueAt(tab.getTable().getSelectedRow(), LibraryTab.ProgramModel.COL_RUNS)));
+
+		select(tab, "ZRQBC1.BIN");
+		assertFalse(Edt.call(() -> tab.getLoadButton().isEnabled()));
+		assertTrue(Edt.call(() -> tab.getRunStatus().getText()).contains("DRS"), Edt.call(() -> tab.getRunStatus().getText()));
+
+		Edt.run(() -> tab.getRunnableOnly().doClick());
+		assertEquals(1, Edt.call(() -> tab.getTable().getRowCount()), "standalone only");
+	}
+
+	@Test
+	void loadAndStartDepositsTheProgramAndRunsIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		runnableLibrary(ctx);
+		DiagnosticsPanel panel = panel(ctx, NO_NETWORK);
+		LibraryTab tab = panel.getLibraryTab();
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			select(tab, "FKAAC0.BIC");
+			Edt.run(() -> {
+				tab.getSwitchesField().setText("100000");
+				tab.getLoadAndStartButton().doClick();
+			});
+			until("the program to start", () -> tab.getRunStatus().getText().contains("started at"));
+			assertTrue(tab.getRunStatus().getText().startsWith("FKAAC0.BIC: 4 words deposited, 176 set to 100000, started at 000200"),
+				tab.getRunStatus().getText());
+			FakePdp11 machine = ((FakeTransport) ctx.getConnectionManager().getConnection().getTransport()).getFake();
+			assertEquals(012706, machine.getMem(Address.of(MemoryAddressType.PHYSICAL22, 0200)));
+			assertEquals(0100000, machine.getMem(Address.of(MemoryAddressType.PHYSICAL22, 0176)), "the switches, not the program's zero");
+			until("the machine to be running", () -> ctx.getMachineState().getState() == MachineState.ExecutionState.RUNNING);
+			assertEquals(0200, ctx.getMachineState().getStartPc().val(), "the Execution window starts it there next time");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	@Test
+	void loadOnlyLeavesTheMachineWhereItWas(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		runnableLibrary(ctx);
+		DiagnosticsPanel panel = panel(ctx, NO_NETWORK);
+		LibraryTab tab = panel.getLibraryTab();
+		try {
+			ctx.getConnectionManager().connect(ConnectionProfile.simulated(ConsoleProtocol.SIMH));
+			select(tab, "FKAAC0.BIC");
+			Edt.run(() -> tab.getLoadButton().doClick());
+			until("the program to load", () -> tab.getRunStatus().getText().contains("when ready"));
+			assertFalse(ctx.getMachineState().getState() == MachineState.ExecutionState.RUNNING);
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	@Test
+	void withoutAMachineNothingIsQueued(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		runnableLibrary(ctx);
+		DiagnosticsPanel panel = panel(ctx, NO_NETWORK);
+		LibraryTab tab = panel.getLibraryTab();
+		select(tab, "FKAAC0.BIC");
+		Edt.run(() -> tab.getLoadAndStartButton().doClick());
+		assertEquals("Not connected to a machine.", Edt.call(() -> tab.getRunStatus().getText()));
+	}
+
+	@Test
+	void aStartAddressThatIsNotOctalIsRefusedInTheStatusLine(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		runnableLibrary(ctx);
+		DiagnosticsPanel panel = panel(ctx, NO_NETWORK);
+		LibraryTab tab = panel.getLibraryTab();
+		select(tab, "FKAAC0.BIC");
+		Edt.run(() -> {
+			tab.getStartField().setText("1289");
+			tab.getLoadAndStartButton().doClick();
+		});
+		assertEquals("\"1289\" is not an octal start address", Edt.call(() -> tab.getRunStatus().getText()));
+		Edt.run(() -> {
+			tab.getStartField().setText("201");
+			tab.getLoadAndStartButton().doClick();
+		});
+		assertEquals("The start address must be even", Edt.call(() -> tab.getRunStatus().getText()));
 	}
 
 	@Test
