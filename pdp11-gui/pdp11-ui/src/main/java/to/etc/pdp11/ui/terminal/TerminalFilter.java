@@ -11,8 +11,9 @@ import to.etc.pdp11.core.console.TerminalProfile;
  * conforming VT100 emulator and every line overwrites the one before it, and the transcript the
  * user is trying to read becomes one line of gibberish.</p>
  *
- * <p>So the profile is applied here, and what comes out is plain text plus two control characters
- * the view knows: {@code \n} to end a line and {@code \b} to rub out the character before it.
+ * <p>So the profile is applied here, and what comes out is plain text plus three control characters
+ * the view knows: {@code \n} to end a line, {@code \b} to rub out the character before it, and
+ * {@link #BELL} to ring.
  * Everything else the emulator - or the plain text pane standing in for one - can take
  * literally.</p>
  *
@@ -22,6 +23,13 @@ import to.etc.pdp11.core.console.TerminalProfile;
 public final class TerminalFilter {
 	/** What the view is told to do: rub out the character before this one. */
 	public static final char ERASE = '\b';
+
+	/**
+	 * What the view is told to do: ring. Passed through rather than dropped because XXDP rings it
+	 * at the end of every pass, and a diagnostic left running overnight is watched by glancing at
+	 * the screen, not by listening to it. Takes no column: a bell prints nothing.
+	 */
+	public static final char BELL = '\u0007';
 
 	private TerminalProfile m_profile;
 
@@ -85,6 +93,7 @@ public final class TerminalFilter {
 					//-- else: dropped. The 11/44 console sends these and means nothing by them.
 				}
 				case '\t' -> tab(out);
+				case BELL -> out.append(BELL);
 				case 0 -> {
 					//-- Fill characters. The M9301's prompt ends with one, and the 11/44 V3.40C
 					//-- sends five on power-up; they mean "the line is settling", not a character.

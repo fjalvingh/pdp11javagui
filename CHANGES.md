@@ -163,6 +163,11 @@
 
 ### Consoles
 
+- **The machine's bell is visible.** A BEL from the machine was dropped with the other control
+  characters. Now the terminal flashes briefly, and the main window's status bar shows how many
+  times the bell has rung and when it last rang, e.g. `Bell ×12 · last 14:02:11`. XXDP rings
+  the bell at the end of every pass, so this is a pass counter for a diagnostic left running.
+  Click it to count from zero again. Nothing is printed in the transcript for a bell.
 - **Large deposits on an M9312 console are about six times as fast.** A deposit of 128 or more
   words of memory - a loaded diagnostic, an assembled program - first deposits a small loader
   (about 60 words), starts it, and sends it the rest in binary blocks, with a checksum and an

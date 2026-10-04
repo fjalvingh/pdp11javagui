@@ -8,6 +8,7 @@ import javax.swing.JComponent;
 import javax.swing.JScrollPane;
 import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.text.AttributeSet;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.SimpleAttributeSet;
@@ -54,6 +55,17 @@ public final class GlassTerminalView implements TerminalView {
 	private Consumer<String> m_inputListener = s -> {
 	};
 
+	/** How long the background stays flashed after a bell. Long enough to catch the eye, no more. */
+	private static final int BELL_FLASH_MS = 150;
+
+	/** Puts the background back after a bell. Restarted by each one, so a burst is one flash. */
+	private final Timer m_bellFlash = new Timer(BELL_FLASH_MS, e -> showBackground(UiColors.TERMINAL_BACKGROUND));
+
+	private Runnable m_bellListener = () -> {
+	};
+
+	private int m_bellCount;
+
 	private boolean m_inputEnabled;
 
 	public GlassTerminalView() {
@@ -81,6 +93,7 @@ public final class GlassTerminalView implements TerminalView {
 		m_scroll.setBorder(BorderFactory.createEmptyBorder());
 		m_scroll.setViewportBorder(BorderFactory.createEmptyBorder());
 		m_scroll.getViewport().setBackground(m_pane.getBackground());
+		m_bellFlash.setRepeats(false);
 
 		m_pdpStyle = style(UiColors.TERMINAL_PDP_TEXT);
 		m_userStyle = style(UiColors.TERMINAL_USER_TEXT);
@@ -146,19 +159,21 @@ public final class GlassTerminalView implements TerminalView {
 			case SYSTEM -> m_systemStyle;
 		};
 		try {
-			//-- Split on the erase marker rather than scanning per character: an erase is rare
+			//-- Split on the markers rather than scanning per character: an erase or a bell is rare
 			//-- and everything between two of them is one insert.
 			int from = 0;
 			while(from < filtered.length()) {
-				int erase = filtered.indexOf(TerminalFilter.ERASE, from);
-				String chunk = erase < 0 ? filtered.substring(from) : filtered.substring(from, erase);
+				int mark = nextMarker(filtered, from);
+				String chunk = mark < 0 ? filtered.substring(from) : filtered.substring(from, mark);
 				if(!chunk.isEmpty())
 					doc.insertString(doc.getLength(), chunk, attributes);
-				if(erase < 0)
+				if(mark < 0)
 					break;
-				if(doc.getLength() > 0)
+				if(filtered.charAt(mark) == TerminalFilter.BELL)
+					ring();
+				else if(doc.getLength() > 0)
 					doc.remove(doc.getLength() - 1, 1);
-				from = erase + 1;
+				from = mark + 1;
 			}
 			trim(doc);
 		} catch(BadLocationException x) {
@@ -166,6 +181,51 @@ public final class GlassTerminalView implements TerminalView {
 			//-- does, losing a line of terminal output is not worth stopping anything for.
 		}
 		m_pane.setCaretPosition(doc.getLength());
+	}
+
+	private static int nextMarker(String s, int from) {
+		for(int i = from; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if(c == TerminalFilter.ERASE || c == TerminalFilter.BELL)
+				return i;
+		}
+		return -1;
+	}
+
+	/**
+	 * The machine rang its bell: flash, count it, and say so.
+	 *
+	 * <p>A visual bell rather than a beep. XXDP rings once per completed pass, and what somebody
+	 * running a diagnostic wants to know is that passes are still completing - which a glance at a
+	 * flash, or at the count the listener shows, tells them and a beep from a room away does
+	 * not.</p>
+	 */
+	private void ring() {
+		m_bellCount++;
+		showBackground(UiColors.TERMINAL_BELL_FLASH);
+		m_bellFlash.restart();
+		m_bellListener.run();
+	}
+
+	private void showBackground(Color colour) {
+		m_pane.setBackground(colour);
+		m_scroll.getViewport().setBackground(colour);
+	}
+
+	/** Told on the event thread each time the machine rings its bell. */
+	public void setBellListener(Runnable listener) {
+		m_bellListener = listener == null ? () -> {
+		} : listener;
+	}
+
+	/** How many times the bell has rung since this was made. */
+	public int getBellCount() {
+		return m_bellCount;
+	}
+
+	/** Whether the background is flashed right now, for a test. */
+	public boolean isBellFlashing() {
+		return !UiColors.TERMINAL_BACKGROUND.equals(m_pane.getBackground());
 	}
 
 	private static void trim(StyledDocument doc) throws BadLocationException {

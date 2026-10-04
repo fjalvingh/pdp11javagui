@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -98,6 +99,18 @@ class MainPanelLayoutTest {
 		assertEquals(420, status.y + status.height);
 		assertTrue(((JComponent) panel.getTerminal().getComponent()).getHeight() > 200,
 			"the terminal still gets most of it");
+	}
+
+	@Test
+	void theStatusBarCountsBellsAndForgetsThemOnAClick() {
+		//-- XXDP rings once per pass: the count is how many passes, the time whether it is still going.
+		MainPanel panel = laidOut();
+		assertFalse(panel.getBellButton().isVisible(), "nothing to say before the first bell");
+		Edt.run(() -> panel.getTerminal().append("END PASS #1\u0007\r\nEND PASS #2\u0007\r\n", TerminalStyle.PDP));
+		assertTrue(panel.getBellButton().isVisible());
+		assertTrue(panel.getBellButton().getText().startsWith("Bell \u00d72 \u00b7 last "), panel.getBellButton().getText());
+		Edt.run(() -> panel.getBellButton().doClick());
+		assertFalse(panel.getBellButton().isVisible());
 	}
 
 	@Test

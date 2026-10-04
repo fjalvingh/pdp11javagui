@@ -106,6 +106,16 @@ class TerminalFilterTest {
 	}
 
 	@Test
+	void theBellIsPassedThroughAndTakesNoColumn() {
+		//-- XXDP rings at the end of every pass. Dropped with the other control characters, the
+		//-- one sign a diagnostic is still completing passes never reaches the screen.
+		TerminalFilter f = new TerminalFilter(SIMH);
+		assertEquals("END PASS #1" + TerminalFilter.BELL + "\n", f.filter("END PASS #1\u0007\r\n"));
+		assertEquals("ab" + TerminalFilter.BELL, f.filter("ab\u0007"));
+		assertEquals(2, f.getColumn());
+	}
+
+	@Test
 	void changingTheProfileStartsANewLine() {
 		//-- Reconnecting to a different machine: the old column means nothing.
 		TerminalFilter f = new TerminalFilter(SIMH);

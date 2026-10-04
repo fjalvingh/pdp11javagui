@@ -116,4 +116,10 @@ public final class UiColors {
 
 	/** What the application itself said - a connect, a disconnect, a failure. */
 	public static final Color TERMINAL_SYSTEM_TEXT = new Color(0xB0, 0x90, 0x50);
+
+	/**
+	 * What the terminal's background flashes to when the machine rings its bell - XXDP's "a pass
+	 * has completed". Dim on purpose: a test that rings every second must not strobe.
+	 */
+	public static final Color TERMINAL_BELL_FLASH = new Color(0x4A, 0x3C, 0x12);
 }

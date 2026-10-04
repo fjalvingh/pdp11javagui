@@ -50,5 +50,6 @@ class UiColorsTest {
 		assertNotNull(UiColors.TERMINAL_PDP_TEXT);
 		assertNotNull(UiColors.TERMINAL_USER_TEXT);
 		assertNotNull(UiColors.TERMINAL_SYSTEM_TEXT);
+		assertNotNull(UiColors.TERMINAL_BELL_FLASH);
 	}
 }

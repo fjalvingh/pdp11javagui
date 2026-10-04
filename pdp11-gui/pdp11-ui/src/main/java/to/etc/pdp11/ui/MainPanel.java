@@ -8,6 +8,8 @@ import to.etc.pdp11.ui.terminal.TerminalView;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * What is inside the main window: the terminal, and the connection status under it.
@@ -33,6 +35,17 @@ public final class MainPanel extends JPanel {
 	 */
 	private final JButton m_pending = new JButton();
 
+	/**
+	 * How many times the machine has rung its bell, and when it last did. XXDP rings once per
+	 * completed pass, so this is a pass counter for a diagnostic left running, and the time says
+	 * whether it is still running. Shown from the first bell; a click starts the count again.
+	 */
+	private final JButton m_bells = new JButton();
+
+	private int m_bellCount;
+
+	private static final DateTimeFormatter BELL_TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
+
 	private final JPanel m_statusBar;
 
 	public MainPanel() {
@@ -43,14 +56,19 @@ public final class MainPanel extends JPanel {
 		m_statusBar = buildStatusBar();
 		add(m_terminal.getComponent(), "grow, wrap");
 		add(m_statusBar, "growx");
+		m_terminal.setBellListener(() -> showBell(LocalTime.now()));
 		showConnectionState(ConnectionManager.State.DISCONNECTED, "");
 	}
 
 	private JPanel buildStatusBar() {
-		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow][]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 4 8 4 8", "[]20[grow][][]", "[]"));
 		bar.add(m_state);
 		m_detail.setForeground(UiColors.SECONDARY_TEXT);
 		bar.add(m_detail, "growx");
+		m_bells.setToolTipText("Times the machine rang its bell - XXDP does at the end of each pass. Click to count from zero");
+		m_bells.setVisible(false);
+		m_bells.addActionListener(e -> resetBells());
+		bar.add(m_bells, "hidemode 3");
 		m_pending.setForeground(UiColors.EDITED_TEXT);
 		m_pending.setBackground(UiColors.EDITED_BACKGROUND);
 		m_pending.setToolTipText("Show what is waiting to be deposited");
@@ -77,6 +95,24 @@ public final class MainPanel extends JPanel {
 	public void showPending(int count) {
 		m_pending.setText(count + (count == 1 ? " word" : " words") + " to deposit");
 		m_pending.setVisible(count > 0);
+	}
+
+	/** Count one bell, rung at {@code when}. On the event thread. */
+	void showBell(LocalTime when) {
+		m_bellCount++;
+		m_bells.setText("Bell \u00d7" + m_bellCount + " \u00b7 last " + when.format(BELL_TIME));
+		m_bells.setVisible(true);
+	}
+
+	/** Start counting bells from zero, and hide the count until the next one. */
+	public void resetBells() {
+		m_bellCount = 0;
+		m_bells.setVisible(false);
+	}
+
+	/** The bell counter, for a test. */
+	public JButton getBellButton() {
+		return m_bells;
 	}
 
 	/** The pending-changes button, which the frame decides what to do with. */
