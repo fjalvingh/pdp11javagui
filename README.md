@@ -1,224 +1,135 @@
 # Pdp11 Java GUI
 
-An IDE for real and simulated PDP-11 computers: write MACRO-11, load it onto the machine, run
-and single-step it, disassemble, and inspect memory and registers.
+An IDE for real and simulated PDP-11 computers: connect to a machine's console, look at and change
+its memory, write MACRO-11 and load it, run and single-step it, disassemble what is there, and find
+out what is wrong with a machine that is not working. Alongside it is a small web application of
+PDP-11 tools that need no machine at all.
 
-This is a rewrite in Java/Swing of [Joerg Hoppe's PDP11GUI](http://www.retrocmp.com/tools/pdp11gui),
-which is Delphi/VCL for Windows and has since been ported to Lazarus/Free Pascal for Linux.
-That Pascal tree lives at `../pdp11gui` and is the reference implementation throughout the
-port; nothing here builds against it.
+This is a Java rewrite of [Joerg Hoppe's PDP11GUI](http://www.retrocmp.com/tools/pdp11gui), and it
+would not exist without his great work: the console protocols, the machine descriptions, the
+memory tests and the knowledge of how real PDP-11 consoles behave all come from his program. It
+runs on Linux, Windows and macOS.
 
-The rewrite is not a transliteration. It drops MDI for free-floating top-level windows,
-replaces the single-threaded `Application.ProcessMessages` I/O model with real threads, and
-rebuilds the UI with layout managers instead of ~69k lines of absolute-positioned `.dfm`.
+**[The user manual](manual/README.md)** describes every window, how to connect to a machine and how
+to get a program into one.
 
-**[The user manual](manual/README.md) is in `manual/`** - what every window does, how to connect
-to a machine, and how to get a program into one.
+## Highlights
 
-**`PLAN.md` is the authoritative design and phasing document.** Read it before starting work.
+- **Works without a machine.** `File → Connect to simulated` connects to a PDP-11 simulated inside
+  the program, for every console type it supports - no hardware, no SimH, no serial port needed.
+- **Many consoles, many connections.** SimH's console (with SimH launched by the program), microcode
+  **ODT** (16/18/22 bit, DEC and Robotron K1630), the **PDP-11/44** console processor, and the
+  **M9312/M9301** boot ROM consoles; over a serial line, telnet or SimH. Connections are saved as
+  named profiles.
+- **One memory, every window.** A value typed, loaded from a file or produced by the assembler shows
+  in every window at once, before it is deposited; changes waiting to be deposited are always
+  visible and can be deposited or discarded together.
+- **A built-in MACRO-11 assembler.** Assemble, load and run in one step, with macro libraries, every
+  error reported in one pass and warnings for code that assembles but is probably wrong.
+- **A disassembler that follows the PC**, names well-known addresses (`TPS: Console transmitter
+  status`) and lets you mark words, bytes and strings as data.
+- **Hardware diagnosis**: memory tests that say which data line, address line or chip is broken, an
+  I/O page scanner that finds what is plugged in, and a library of DEC's XXDP and MAINDEC
+  diagnostics that can be collected from the online archives and run straight from the program.
+- **Free-floating windows** that remember where they were, in a dark theme.
 
-## Status
+## Notable changes from the original
 
-Phases 0-5 are done and phase 6 is under way. **It runs, it works against a machine, and it is
-useful**: connect, look at memory, change it, load a program into it and run it, single-step,
-watch the disassembly follow the program counter, and find out what is wrong with a machine whose
-memory is failing.
+- **Free-floating windows instead of one big MDI window**, so tool windows can be spread over
+  several monitors. Each one opens where it was last time.
+- **The program never freezes while it talks to the machine.** All console work runs in the
+  background, so windows stay responsive during a long load, scan or memory test, and a long
+  operation shows its progress and can be cancelled.
+- **Fast deposits.** On an M9312 boot ROM console, a large deposit first puts a small loader into
+  the machine and then sends the rest as checksummed binary blocks. The median XXDP diagnostic
+  loads in about 40 seconds at 2400 baud instead of 4 minutes, and garbled characters are recovered
+  from. Over SimH, deposits are batched a hundred at a time: a 6,000-word diagnostic takes three
+  seconds instead of five minutes.
+- **An embedded MACRO-11 assembler.** The original ran the external `macro11`; this assembler is
+  part of the program and checks far more. It reports every error in one pass, including mistakes
+  `macro11` let through silently: a digit outside the radix, a value too big for its field (`EMT
+  400` used to assemble as `TRAP 0`), junk after the operands, undefined symbols, branches out of
+  range. It also warns about 25 kinds of code that assembles but is probably wrong: unreachable
+  code, `CLR #5`, a word access at an odd address, unused labels. It reads RT-11 and RSX macro
+  libraries, and the program starts where `.END` says rather than at its lowest address.
+- **A better disassembler.** It has been checked against SimH on all 65536 instruction words.
+  Doing that turned up 183 words the original decoded wrongly, which are correct here. It
+  comments references to well-known addresses (vectors, CPU and MMU registers, the standard
+  devices' registers), lets you mark ranges as words, bytes or strings, and can show a program
+  that was loaded or assembled but not yet deposited.
+- **Memory is shared between windows**, and reading the machine never throws away a change that has
+  not been deposited yet. In the original, every window had its own copy, and an examine could
+  overwrite what you had just typed.
+- **Simulated machines for every console type** are built into the program, so you can try
+  everything without hardware or SimH.
+- **The M9312/M9301 boot ROM consoles** and the **PDP-11/05's microcode** are new, as is the
+  **diagnostics library**.
+- **Fixed file formats.** The split low/high byte format, used for programming ROMs, wrote an
+  all-zero high byte file and read back only half the words. Both bugs are fixed. A word that was
+  never read is reported rather than silently written as `177777`.
+- **Runs on Linux, Windows and macOS**, and is a single jar.
 
-What works today:
+## What is there
 
-- Three console protocols: **SimH**'s remote console, microcode **ODT** (16/18/22 bit, DEC and
-  Robotron K1630), and the **PDP-11/44** console processor (both firmwares). Examine, deposit,
-  bulk examine, reset, run, halt and single step on all of them.
-- **Simulated machines for every one of them**, inside the JVM. `File → Connect to simulated`
-  needs no hardware, no SimH and no serial port, and is the quickest way to see what this does.
-- Real SimH, launched by the application, and anything reachable over telnet or a serial line.
-  A connection is `{console protocol} × {transport}` with saved named profiles, under
-  `File → Connection settings`.
-- **Memory view** (as many as you like): an editable octal grid, examine and deposit by cell or
-  by range, fill-with-address, verify, and export as a SimH `DO` script.
-- **Execution control**: reset, reset and start, continue, halt, single step, and the PC. Which
-  buttons are live depends on what the connected console can actually do.
-- **Disassembler**, which follows the program counter as the machine stops.
-- **Device registers** from the machine description - 17 windows' worth from the shipped
-  `pdp11.ini` - and **Bitfields**, which breaks the selected register into its named bits and
-  edits it from either side.
-- **I/O page scanner**: read all 4096 words of the I/O page, see what answers, and get an `.ini`
-  section to paste into a description of your own machine.
-- **Memory test**: data lines, address lines, data bits chip by chip, and random - the tests that
-  say *which part* of a failing memory is broken.
-- **Memory loader and dumper**: read a program out of a file into the machine, or a range of the
-  machine's memory out to a file. Four formats - a binary byte stream, separate low-byte and
-  high-byte files for programming a 16-bit memory built from 8-bit chips, a readable text listing,
-  and DEC Standard Absolute Paper Tape, which is what a real PDP-11's own absolute loader reads.
-- A terminal showing the whole conversation - the console's own automated commands and their
-  replies included, which is how a flaky console gets debugged - and a Log window with one
-  column per channel.
-- **Microcode**: the PDP-11/44's own microcode, a microword at a time, with its 104 bits cut back
-  into the fields the print set names and DEC's listing shipped with the application - so it is
-  there to read beside the processor it belongs to rather than something to go and find.
-- Settings, saved connection profiles and window geometry remembered between runs.
+The desktop program:
 
-Not yet: the blinkenlight execution window of phase 6, the M9301/M9312 boot-ROM console, and the
-disc-image tooling of phase 7.
+- **Memory** windows (as many as you like): an editable octal grid, examine and deposit by cell or
+  range, fill, verify, and export as a SimH `DO` script.
+- **Execution control**: reset, start, continue, halt, single step and the PC, as far as the
+  connected console supports them.
+- **Disassembler**, **Assembler**, and example programs to start from (`File → Load examples`).
+- **Device registers** from the machine description, and **Bitfields**, which breaks a register into
+  its named bits and edits it from either side.
+- **MMU** window, showing any mode's mapping.
+- **Memory loader and dumper** in five formats: binary, split low/high byte files for programming
+  ROMs, a readable listing, bare octal words, and DEC Absolute Paper Tape.
+- **Memory test** and **I/O page scanner**.
+- **Diagnostics library**: collects XXDP and MAINDEC programs from bitsavers and other archives,
+  reads them off the disc, tape and floppy images they come on, files them by what they test using
+  DEC's own diagnostic index, and loads and starts the standalone ones.
+- **Microcode** of the PDP-11/44 and of both revisions of the PDP-11/05, a microword at a time,
+  decoded into named fields. On an 11/05 with a KM11 it follows the machine's microcode as it runs.
+- **Terminal**, **Log**, **SimH console** and **Number converter**.
 
-`PLAN.md` has the phase table and, under each phase, what that phase actually found.
+The web application has the **microcode browsers**: the same documents, search and navigation as
+the desktop's Microcode window, with every microword reachable by its own link.
 
-## Building
+## Still to do
 
-Requires JDK 21 or later. Use the Maven wrapper, which pins Maven 3.9.x — the build refuses
-anything older, and Maven 3.5 is still the default on some machines here.
+- The **Blinkenlight execution** window, which produces instructions for keying a program in on a
+  real front panel.
+- **Disc image transfer**: reading and writing a disc on a real machine through its console. The
+  diagnostics library can already read the image formats; moving them to and from a machine is
+  not there yet.
+- **Installers** per platform; for now the program is a single jar.
+- The web application is just the microcode browsers so far. Disassembling images and small
+  assembly tasks are planned for it.
 
-The web application is built on [DomUI](https://github.com/fjalvingh/domui), which is not on
-Maven Central. It is a git submodule, `domui/` on branch `domui-fixed`, and has to be installed
-into the local Maven repository once before the build can find it — and again after the
-submodule is updated:
-
-```
-git clone --recurse-submodules ...      # or: git submodule update --init
-tools/build-domui.sh
-./mvnw verify
-```
+The PDP-11/70 front panel of the original is deliberately not carried over.
 
 ## Running
 
-```
-./mvnw -pl pdp11-gui/pdp11-app exec:java
-```
-
-or, after `./mvnw package`:
+Download `pdp11gui-<version>.jar` from the
+[releases page](https://github.com/fjalvingh/pdp11javagui/releases) and run it with Java 21 or later:
 
 ```
-java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar
+java -jar pdp11gui-<version>.jar
 ```
 
 Then **File → Connect to simulated → …** for a machine that needs nothing installed, or
-**File → Connection settings** to describe a real one. **Windows → …** opens the tool windows;
-they are created when first asked for and remember where they were.
+**File → Connection settings** to describe a real one. **Windows → …** opens the tool windows.
 
-Settings live in the platform's configuration directory - `~/.config/pdp11gui/settings.json` on
-Linux, `%APPDATA%` on Windows, `~/Library/Application Support` on macOS. Point `XDG_CONFIG_HOME`
-somewhere else to run against a throwaway configuration.
+To use a real SimH, its `pdp11` has to be on your `PATH`. Nothing else needs to be installed.
 
-Machine descriptions are installed on first run into the data directory -
-`~/.local/state/pdp11gui/machines` on Linux - and `pdp11.ini` is loaded from there. They are
-ordinary files: edit one to describe your own machine, and it will not be overwritten by a later
-version. The I/O page scanner writes the sections for hardware the description does not know
-about.
-
-## Running the web application
+To run the web application from a checkout:
 
 ```
+tools/build-domui.sh
 ./mvnw -pl pdp11-web -am install -DskipTests
 ./mvnw -pl pdp11-web jetty:run
 ```
 
-and open <http://localhost:8080/>. So far it has the microcode browsers: the same three
-documents, search and walk as the desktop's Microcode window, with what falls through to a
-microword as links, and `?source=PDP1105_F&upc=011` opening on any microword. With it running,
-`tools/web-smoke.sh` clicks through the page in a headless Chrome.
-
-## Releasing
-
-A release is one file: the shaded `pdp11gui-<version>.jar`, which needs nothing but a JDK 21
-runtime. Downloads are on the [releases page](https://github.com/fjalvingh/pdp11javagui/releases);
-run one with `java -jar pdp11gui-1.2.0.jar`.
-
-To make one, tag it:
-
-```
-git tag -a v1.2.0 -m 'Pdp11 Java GUI 1.2.0'
-git push origin v1.2.0
-```
-
-or, to have the tag created for you on whatever `main` is at:
-
-```
-gh workflow run release.yml -f version=1.2.0
-```
-
-Either way `.github/workflows/release.yml` stamps the version from the tag onto the poms, runs
-the full `verify` (with xvfb, exactly as CI does — a release is never published from an untested
-build), checks that the jar's manifest agrees with the tag, and creates the GitHub release with
-notes generated from the commits since the previous one.
-
-Note what does *not* happen: the checked-in poms stay at `1.0-SNAPSHOT` and nothing is committed
-or pushed by the workflow, so a release cannot leave the branch pointing at a version that was
-never built. The version reaches the running program through the jar manifest, which
-`AppVersion` reads and **Help → About** and the startup log line show; a build from a working
-copy says "development build" rather than claiming to be a release.
-
-A tag with a suffix — `v1.2.0-rc1` — goes out as a pre-release. Move the `## Unreleased` section
-of `CHANGES.md` under a version heading before tagging.
-
-## Modules
-
-Two applications - the desktop IDE and a web application of minicomputer tools - and what they
-share:
-
-| Module | Contains |
-|---|---|
-| `pdp11-common` | What both applications use: addresses, memory cells, the disassembler, memory file formats, the MACRO-11 assembler, the microcode documents and the microcode browser. Headless; depends on nothing else here. |
-| `pdp11-gui/pdp11-core` | What talks to a machine: transports, console protocols, simulated machines, machine descriptions, memory tests, the MMU. Headless. |
-| `pdp11-gui/pdp11-ui` | Swing windows, the window manager, settings binding. |
-| `pdp11-gui/pdp11-app` | `main()`, packaging, and the data resources. |
-| `pdp11-web` | The web application, on DomUI. Uses `pdp11-common` and nothing else of this project. |
-
-**Anything that is an algorithm rather than a layout belongs in `pdp11-common` or
-`pdp11-core`**, even when only one window uses it: the disassembly listing, the I/O page scan,
-the four memory tests, the memory file formats and the microcode browser all live there, and
-every one of them is tested with no display in sight. Whether it goes in common or core is
-whether it needs a machine. Neither may depend on Swing or AWT — that is what keeps the console protocol layer
-testable against the ported fake PDP-11s with no display. The rule is enforced twice: the
-module compiles with `--limit-modules java.base`, so an offending import is a compile error,
-and an ArchUnit test covers what the flag cannot see. See `CLAUDE.md` for the full set of
-rules the code has to hold to.
-
-## Tests
-
-```
-./mvnw test
-```
-
-Everything runs headless, including the layout tests: the windows are thin frames around
-`JPanel`s, and a panel can be laid out and painted into an image with no display. Each build
-also writes `pdp11-gui/pdp11-ui/target/ui-render/*.png`, which is what those layouts actually look like —
-assertions catch a layout that is broken, and a picture catches one that is merely wrong.
-
-The exceptions are the tests about windows rather than about layout: `WindowsBuildTest` opens
-real tool windows and asks what opened, and two others put a panel in a `JFrame` because a
-window that is not open deliberately reads nothing, so a panel with no frame around it cannot
-be tested at all. Those 18 need a display, and rather than let them take the developer's - or
-skip, as the sixteen used to whenever there was none - the build gives Surefire's JVM an X
-server of its own: where `/usr/bin/xvfb-run` exists the `xvfb` profile in the root pom activates
-by itself and forks the tests through `tools/xvfb/bin/java`. Nothing appears on your desktop,
-nothing takes your focus, and `DISPLAY` need not be set at all. Install it with
-`apt install xvfb`; without it those tests skip or fail as `HeadlessException`. `-P '!xvfb'`
-turns it off and puts the tests back on whatever `DISPLAY` says.
-
-An IDE that runs JUnit itself does not go through Maven and so does not get any of this. Either
-delegate test runs to Maven (IntelliJ: *Build Tools → Maven → Runner → Delegate IDE build/run
-actions to Maven*), or point the run configuration at an X server of your own with `DISPLAY`.
-
-Two test classes need something the build machine may not have and skip when it is missing:
-`SimhProcessTransportIT` and `SimhConsoleIT` want SimH's `pdp11` on `PATH`. The disassembler is
-checked against a committed 65536-word corpus rather than against SimH, so it needs nothing.
-
-The simulated machines can be **broken on purpose** — `FakePdp11.setStuckDataLines` and
-`setDeadAddressLine` — which is how the memory tests are checked: tie a data line high and the
-test that looks for a stuck data line has to say so. A diagnostic nobody has shown a real fault
-to is a guess.
-
-Anything with a reader and a writer is tested by **round trip**, in one test that does both. That
-is how two bugs in the original's split-byte format were found: its writer produces an all-zero
-high byte file and its reader takes half the words, and each of those hides the other.
-
-## External tools
-
-SimH's `pdp11` is invoked as an external process and must be on `PATH` **if you want to use
-it**. It is not needed to build, to run the tests, or to drive a simulated machine. The
-MACRO-11 assembler is part of the application (`to.etc.pdp11.common.macro11.asm`), so the C
-`macro11` is not needed any more, and `m4` is not needed at all: machine-description
-preprocessing is reimplemented in Java.
+and open <http://localhost:8080/>.
 
 ## Licence
 
