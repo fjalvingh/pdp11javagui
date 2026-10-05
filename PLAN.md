@@ -603,6 +603,51 @@ Also: Pascal strings are 1-based throughout the scanners, and `Copy(s, 2, maxint
 "drop first char" (`SerialIoHubU.pas:835`, `ConsoleGenericU.pas:323`) — note `Copy` past the
 end returns `''` where `substring` throws.
 
+### Capabilities - what can be done with this machine, over this console
+
+`ConsoleFeature` is the console driver's statement of what *it* can send: a halt command, a
+reset that does not start, a switch whose position changes its answers. It is the wrong thing for
+a window to read, for two reasons that both turned up on an 11/05 with an M9312:
+
+- **Windows read it each their own way.** The Execution window decided "can this be stopped" from
+  two features, `AppContext.checkRunMode` from a third, `ConnectionManager.mayExamineUnasked` and
+  the I/O page scanner from a fourth. A rule like "Halt is always enabled" lived in one window,
+  and was wrong on a console that has neither a halt command nor a switch to name.
+- **It cannot say anything about the machine.** A console is one axis; the CPU behind it is
+  another. The M9312's console emulator is the same driver on an 11/04, an 11/05 and an 11/34, and
+  the machines differ.
+
+So a window asks `Capabilities` (`pdp11-core`, `core.conn`), not the console. It is a pure
+function of three things, tested as a table:
+
+    Capabilities.of(ConsoleProtocol, CpuModel, EnumSet<ConsoleFeature>)
+
+- the **protocol** and the **CPU** come from the `ConnectionProfile`, which now has a `cpu`
+  (`CpuModel`, default `UNKNOWN`). A saved profile without one reads as `UNKNOWN`, which gets only
+  what is true on every CPU that console can be on - so no settings file changes meaning;
+- the **features** are the live console's, because ODT's change with its RUN/HALT switch.
+
+Capabilities are named as **user actions**, not console mechanics: start a program at an address,
+reset and stay stopped, set the PC, continue, single step, halt from here, a RUN/HALT switch the
+operator reports, survives a bus timeout (so a window may read on its own, and the I/O page can be
+scanned). `ConnectionManager.capabilities()` answers for the live connection, from state it
+already holds, so a window may ask on the event thread.
+
+**The CPU axis has no rows yet.** Nothing in the code or the Pascal says that a capability differs
+between, say, an M9312 on an 11/05 and on an 11/34, and a guess there either offers an action that
+kills the console or hides one that works. The CPU is in the profile and in the function so that
+each such fact goes in as one row with a test, together with the evidence for it, as the fakes'
+extensions are recorded. Until then the CPU choice narrows which CPUs a protocol offers
+(`CpuModel.forProtocol`) and changes nothing else.
+
+**"New program" moved to the Assembler window.** Assemble, deposit, then reset-and-set-PC was
+three quarters assembler (phase 5's own note), and its promise - load it, leave it stopped with
+the PC set - cannot be kept on a boot ROM console, which can only set a PC by starting from it.
+The Assembler's Source tab has **Compile and start** (where `START` is possible) and **Compile and
+set PC** (where `SET_PC` is), each disabled with a reason where the connection cannot do it. The
+Execution window keeps run control only. Both go through `RunActions`, so starting a program is
+written once.
+
 ### Logging
 
 `BitFieldU`, `MemoryLoaderU` and `MediaImageDevicesU` each `uses FormMainU` solely for the

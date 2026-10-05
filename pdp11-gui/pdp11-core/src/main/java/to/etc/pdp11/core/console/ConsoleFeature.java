@@ -41,5 +41,12 @@ public enum ConsoleFeature {
 	ACTION_SINGLE_STEP,
 
 	/** A reset also sets the PC. SimH's does not, which is why this is a separate flag. */
-	RESET_CPU_SETS_PC
+	RESET_CPU_SETS_PC,
+
+	/**
+	 * Can reach the CPU registers R0..R7 in the I/O page, and so set the PC without starting the
+	 * program. The M9312 and M9301 console emulators cannot: they run on the CPU, and the
+	 * registers are their own.
+	 */
+	CPU_REGISTERS
 }

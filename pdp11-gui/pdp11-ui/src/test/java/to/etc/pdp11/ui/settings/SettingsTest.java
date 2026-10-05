@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.conn.CpuModel;
 import to.etc.pdp11.core.conn.TransportConfig;
 
 import java.awt.Rectangle;
@@ -107,6 +108,34 @@ class SettingsTest {
 		assertEquals(ConsoleProtocol.PDP1144, p.protocol());
 		assertEquals("/dev/ttyUSB0", p.transport().serialPort());
 		assertEquals("my 11/44", reread.get().currentProfile().name(), "and it is offered again next time");
+	}
+
+	/**
+	 * A profile saved before the CPU was asked has no {@code cpu}, and a hand-edited one may name
+	 * a CPU that does not exist or that its console is never on. All three load, as "not
+	 * specified" - and a CPU that was chosen comes back.
+	 */
+	@Test
+	void theMachineOfAProfileComesBackAndAnOldOrOddOneIsNotSpecified(@TempDir Path dir) throws IOException {
+		Path file = dir.resolve("settings.json");
+		SettingsStore store = new SettingsStore(file);
+		store.get().putProfile(new ConnectionProfile("the 11/05", ConsoleProtocol.M9312,
+			TransportConfig.serial("/dev/ttyUSB0", 2400, null), CpuModel.PDP11_05));
+		assertNull(store.save());
+		assertEquals(CpuModel.PDP11_05, new SettingsStore(file).get().profiles().get(0).cpu());
+
+		String transport = "\"transport\": {\"kind\": \"SIMULATED\"}";
+		Files.writeString(file, "{\"schemaVersion\": 1, \"profiles\": ["
+			+ "{\"name\": \"old\", \"protocol\": \"M9312\", " + transport + "},"
+			+ "{\"name\": \"odd\", \"protocol\": \"M9312\", \"cpu\": \"PDP11_99\", " + transport + "},"
+			+ "{\"name\": \"wrong\", \"protocol\": \"M9312\", \"cpu\": \"PDP11_73\", " + transport + "}]}");
+		SettingsStore reread = new SettingsStore(file);
+		assertNull(reread.getLastProblem(), reread.getLastProblem());
+		assertEquals(3, reread.get().profiles().size());
+		for(ConnectionProfile p : reread.get().profiles()) {
+			assertEquals(CpuModel.UNKNOWN, p.cpu(), p.name());
+			assertTrue(p.isValid(), p.name() + " still connects");
+		}
 	}
 
 	@Test

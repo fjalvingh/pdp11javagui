@@ -197,7 +197,8 @@ public final class SimhConsole extends AbstractConsole {
 			ConsoleFeature.ACTION_RESET_AND_START_CPU,
 			ConsoleFeature.ACTION_CONTINUE_CPU,
 			ConsoleFeature.ACTION_HALT_CPU,
-			ConsoleFeature.ACTION_SINGLE_STEP);
+			ConsoleFeature.ACTION_SINGLE_STEP,
+			ConsoleFeature.CPU_REGISTERS);
 	}
 
 	/**

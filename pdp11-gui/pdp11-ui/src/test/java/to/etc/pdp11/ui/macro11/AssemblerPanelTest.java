@@ -9,6 +9,7 @@ import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.Edt;
+import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.TestContext;
 import to.etc.pdp11.ui.UiRenderer;
 import to.etc.pdp11.ui.exec.ExecutionPanel;
@@ -412,14 +413,12 @@ class AssemblerPanelTest {
 	}
 
 	/**
-	 * "New program" on the Execution window assembles, loads and resets - with no assembler
-	 * window open anywhere.
-	 *
-	 * <p>That is the whole reason the program is state on the context rather than the contents
-	 * of a window.</p>
+	 * The program can be assembled and loaded with no assembler window open anywhere, and where
+	 * it starts reaches the Execution window - which is why it is state on the context rather
+	 * than the contents of a window.
 	 */
 	@Test
-	void theExecutionWindowCanAssembleLoadAndResetOnItsOwn(@TempDir Path dir) throws Exception {
+	void theProgramIsAssembledAndLoadedWithNoAssemblerWindow(@TempDir Path dir) throws Exception {
 		AppContext ctx = TestContext.create(dir);
 		ExecutionPanel execution = Edt.call(() -> new ExecutionPanel(ctx));
 		Edt.run(execution::attach);
@@ -452,6 +451,89 @@ class AssemblerPanelTest {
 			//-- And the program said where it starts, which the execution window is showing.
 			assertNotNull(ctx.getMachineState().getStartPc());
 			assertEquals("001000", execution.getStartPcField().getText());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	// ---------------------------------------------------------------------------------------
+	// Compile and start, compile and set PC
+	// ---------------------------------------------------------------------------------------
+
+	private static final String LOOP = "\t.asect\n\t.=1000\nstart:\tmov\t#400,sp\nloop:\tbr\tloop\n\t.end\tstart\n";
+
+	private static AssemblerPanel connectedPanel(AppContext ctx, Path dir, ConsoleProtocol protocol) throws Exception {
+		AssemblerPanel panel = Edt.call(() -> new AssemblerPanel(ctx));
+		Edt.run(panel::attach);
+		ctx.getConnectionManager().connect(ConnectionProfile.simulated(protocol));
+		Path src = write(dir, "loop.mac", LOOP);
+		Edt.run(() -> {
+			try {
+				ctx.getAssembler().loadSource(src);
+			} catch(Exception x) {
+				throw new IllegalStateException(x);
+			}
+		});
+		return panel;
+	}
+
+	private static int wordAt(AppContext ctx, int addr) throws Exception {
+		var m = ctx.getConnectionManager();
+		return m.getConnection().call(() -> m.getConsole().examine(
+			Address.of(m.getConsole().physicalAddressType(), addr))).word();
+	}
+
+	@Test
+	void compileAndStartLoadsTheProgramAndRunsIt(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		try {
+			AssemblerPanel panel = connectedPanel(ctx, dir, ConsoleProtocol.SIMH);
+			until("Compile and start to be offered", () -> Edt.call(() -> panel.getCompileAndStartButton().isEnabled()));
+			Edt.run(() -> panel.getCompileAndStartButton().doClick());
+			until("the machine to be started",
+				() -> Edt.call(() -> ctx.getMachineState().getState()) == MachineState.ExecutionState.RUNNING);
+			assertEquals(012706, wordAt(ctx, 01000), "the program was deposited before the start");
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	@Test
+	void compileAndSetPcLeavesTheMachineStoppedAtTheStart(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		try {
+			AssemblerPanel panel = connectedPanel(ctx, dir, ConsoleProtocol.SIMH);
+			until("Compile and set PC to be offered", () -> Edt.call(() -> panel.getCompileAndSetPcButton().isEnabled()));
+			Edt.run(() -> panel.getCompileAndSetPcButton().doClick());
+			until("the machine to stop at the start", () -> Edt.call(() ->
+				ctx.getMachineState().getState() == MachineState.ExecutionState.STOPPED
+					&& ctx.getMachineState().getPc() != null && ctx.getMachineState().getPc().val() == 01000));
+			assertEquals(012706, wordAt(ctx, 01000));
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
+	/**
+	 * A boot ROM console sets a PC only by starting from it, so it is offered Compile and start
+	 * and not Compile and set PC - whose promise, a stopped machine with the PC set, it cannot
+	 * keep. This is what "New program" on the Execution window could not do on an 11/05.
+	 */
+	@Test
+	void aBootRomConsoleCanCompileAndStartButNotSetThePc(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		try {
+			AssemblerPanel panel = connectedPanel(ctx, dir, ConsoleProtocol.M9312);
+			until("Compile and start to be offered", () -> Edt.call(() -> panel.getCompileAndStartButton().isEnabled()));
+			assertFalse(Edt.call(() -> panel.getCompileAndSetPcButton().isEnabled()));
+			assertTrue(Edt.call(() -> panel.getCompileAndSetPcButton().getToolTipText()).contains("cannot set the PC"));
+
+			Edt.run(() -> panel.getCompileAndStartButton().doClick());
+			until("the machine to be started",
+				() -> Edt.call(() -> ctx.getMachineState().getState()) == MachineState.ExecutionState.RUNNING);
+			//-- And it can be started again without a reconnect: running is a guess on this console.
+			until("Compile and start to be offered again",
+				() -> Edt.call(() -> panel.getCompileAndStartButton().isEnabled()));
 		} finally {
 			ctx.getConnectionManager().close();
 		}

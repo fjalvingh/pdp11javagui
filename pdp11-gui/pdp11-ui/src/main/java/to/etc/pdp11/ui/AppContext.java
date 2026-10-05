@@ -203,9 +203,9 @@ public final class AppContext {
 	/**
 	 * The program being assembled: its source, its listing, and the code that came out.
 	 *
-	 * <p>Shared for the same reason {@link #getMachineState()} is - the Assembler window
-	 * assembles it and the Execution window's "New program" assembles it too, and neither knows
-	 * the other exists.</p>
+	 * <p>Shared for the same reason {@link #getMachineState()} is: the program outlives the
+	 * Assembler window, the File menu's examples load into it with no window open, and the
+	 * Execution window shows where it starts without knowing the Assembler exists.</p>
 	 */
 	public AssemblerModel getAssembler() {
 		return m_assembler;
@@ -339,7 +339,7 @@ public final class AppContext {
 	 */
 	public boolean checkRunMode() {
 		Console console = m_connectionManager.getConsole();
-		if(console == null || !console.features().contains(to.etc.pdp11.core.console.ConsoleFeature.SWITCH_ENABLE_OR_HALT))
+		if(console == null || !m_connectionManager.capabilities().can(to.etc.pdp11.core.conn.Capability.RUN_HALT_SWITCH))
 			return true;
 		if(console.getRunMode() != to.etc.pdp11.core.console.ConsoleRunMode.UNKNOWN)
 			return true;

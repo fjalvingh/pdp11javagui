@@ -7,7 +7,6 @@ import to.etc.pdp11.core.console.BootRom;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.core.console.ConsoleConnection;
 import to.etc.pdp11.core.console.ConsoleException;
-import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.M9312Console;
 import to.etc.pdp11.core.console.OdtConsole;
 import to.etc.pdp11.core.console.OdtDialect;
@@ -195,19 +194,31 @@ public final class ConnectionManager implements AutoCloseable {
 	 * machine arrives, when its range moves - rather than only when the user asks.
 	 *
 	 * <p>Only if reading an address with nothing behind it leaves the console talking, which is
-	 * {@link ConsoleFeature#NON_FATAL_UNIBUS_TIMEOUT}. On an M9301 or M9312 it halts the CPU and
+	 * {@link Capability#SURVIVES_BUS_TIMEOUT}. On an M9301 or M9312 it halts the CPU and
 	 * the console with it ({@code FormMemoryTableU.pas:180-182}: "on the M9312 console emulator
 	 * every nonexistent address leads to a stop"), and a register window opened on a device that
 	 * is not fitted would do that without anybody pressing anything. The decision belongs to the
 	 * console rather than to each window, so it is made here, once.</p>
 	 *
-	 * <p>{@code features()} is state the console already holds rather than a machine call, so this
-	 * may be asked on the event thread.</p>
+	 * <p>May be asked on the event thread; see {@link #capabilities()}.</p>
 	 */
 	public boolean mayExamineUnasked() {
+		return capabilities().can(Capability.SURVIVES_BUS_TIMEOUT);
+	}
+
+	/**
+	 * What can be done with the connected machine, or {@link Capabilities#NONE}.
+	 *
+	 * <p>From the profile and from {@code features()}, which is state the console already holds,
+	 * so this may be asked on the event thread. Asked afresh each time rather than cached: ODT's
+	 * answer changes when the operator says the switch has moved.</p>
+	 */
+	public Capabilities capabilities() {
 		Console console = m_console;
-		return isConnected() && console != null
-			&& console.features().contains(ConsoleFeature.NON_FATAL_UNIBUS_TIMEOUT);
+		ConnectionProfile profile = m_profile;
+		if(!isConnected() || console == null || profile == null)
+			return Capabilities.NONE;
+		return Capabilities.of(profile.protocol(), profile.cpu(), console.features());
 	}
 
 	/** The live connection, or {@code null}. This is what {@code call()} is invoked on. */

@@ -70,6 +70,11 @@ Two combinations are refused, and the dialog says why:
   are how you keep "the 11/23 on the bench" and "SimH with the RSX config" side by side.
 * **Name** — what to call this one.
 * **Console** — the protocol, from the table above.
+* **Machine** — which PDP-11 the console is in. Only the machines that console can be in are
+  offered. **Not specified** is always there, and is what a profile saved before this choice
+  existed reads as: it offers only what works on every machine that console can be in. Today
+  the choice does not yet change what can be done - no difference between machines behind the
+  same console is known well enough to rely on - but it is where such a difference will go.
 * **Reached over** — the transport. The fields below change to match:
 
 | Transport | Fields |

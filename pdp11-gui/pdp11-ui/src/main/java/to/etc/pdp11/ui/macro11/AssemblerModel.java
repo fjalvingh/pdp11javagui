@@ -24,24 +24,25 @@ import java.util.function.Consumer;
 /**
  * The program being written: its source, its listing, and the code that came out.
  *
- * <p>This exists because <b>two</b> windows assemble. The Assembler window does it from its
- * Compile button, and the Execution window's "New program" does it from a button that also
- * resets the machine ({@code TFormExecute.NewPgmButtonClick}, {@code FormExecuteU.pas:166-188}).
- * The Pascal solves that by having the execution window reach across and press the other
- * window's buttons - {@code FormMain.FormMacro11Source.CompileButtonClick(nil)}, then
+ * <p>This exists because <b>two</b> windows used to assemble: the Assembler window from its
+ * Compile button, and the Execution window's "New program" from a button that also reset the
+ * machine ({@code TFormExecute.NewPgmButtonClick}, {@code FormExecuteU.pas:166-188}). The Pascal
+ * solves that by having the execution window reach across and press the other window's buttons -
+ * {@code FormMain.FormMacro11Source.CompileButtonClick(nil)}, then
  * {@code FormMain.FormMacro11Listing.DepositAllButtonClick(nil)} - which needs both windows to
  * exist, to be showing, and to be in the right state.</p>
  *
- * <p>With windows created on demand there is nothing to reach for, so the program is a piece of
- * application state that lives on the {@link AppContext} and that windows watch. It is the same
- * answer {@code MachineState} gives to the same question, and it means the Execution window can
- * assemble and load with no assembler window open at all.</p>
+ * <p>"New program" is now the Assembler's own Compile and start and Compile and set PC (PLAN.md
+ * §2, "Capabilities"). The program stays application state on the {@link AppContext} all the
+ * same, the answer {@code MachineState} gives to the same question: it outlives the window, the
+ * File menu's examples load into it with no window open, and the Execution window shows where it
+ * starts without knowing the Assembler exists.</p>
  *
  * <h2>The source text is the truth, not the editor</h2>
  *
  * <p>The editor pushes what the user types in here and this writes it out before assembling.
  * That removes the "who saves it first" problem the Pascal has to solve twice, and it is why
- * assembling from the Execution window cannot quietly assemble yesterday's file.</p>
+ * no button that assembles can quietly assemble yesterday's file.</p>
  *
  * <h2>Which thread</h2>
  *
@@ -367,8 +368,8 @@ public final class AssemblerModel {
 	 */
 	public void assemble(Consumer<Outcome> whenDone) {
 		if(m_assembling) {
-			//-- Two assemblies would race to install into the one code group, and the Execution
-			//-- window's "New program" can be pressed while the Assembler window is compiling.
+			//-- Two assemblies would race to install into the one code group: Compile, Compile and
+			//-- start and Compile and set PC can each be pressed while another is compiling.
 			fail(whenDone, "An assembly is already running", null);
 			return;
 		}

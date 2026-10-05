@@ -163,6 +163,25 @@
 
 ### Consoles
 
+- **"New program" has moved to the Assembler window, as two buttons.** **Compile and start**
+  assembles, writes the program into the machine and starts it where `.END` says. **Compile and
+  set PC** assembles, writes it, resets and leaves the machine stopped with the PC at the start,
+  ready for single stepping. The old button promised the second, which an M9312 or M9301 boot ROM
+  console cannot do at all: it sets a PC only by starting from it. So there only **Compile and
+  start** is offered, and the other says why not. The Execution window keeps run control only, and
+  its **Reset and set PC** and **Set PC** are off on those consoles too.
+- **A connection says which machine the console is in.** Connection settings have a new
+  **Machine** choice, listing the PDP-11s that console can be in - an 11/04, 11/05 or 11/34 for the
+  boot ROM consoles. It is the place for what can be done to differ by machine as well as by
+  console; no such difference is known well enough yet to rely on, so for now it changes nothing
+  else. Saved connections without it read as "Not specified" and work as before.
+
+- **Fixed: on an M9312 or M9301 console, starting a program locked the Execution window.** Halt
+  was offered, though these consoles cannot stop a program, and Reset and start was off until a
+  disconnect and reconnect, even after the machine was rebooted. Halt is now off on a console that
+  can neither halt nor be told about a RUN/HALT switch, Reset and start stays on, and the status
+  line says the program has to be stopped from the front panel.
+
 - **The machine's bell is visible.** A BEL from the machine was dropped with the other control
   characters. Now the terminal flashes briefly, and the main window's status bar shows how many
   times the bell has rung and when it last rang, e.g. `Bell ×12 · last 14:02:11`. XXDP rings

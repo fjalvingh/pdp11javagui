@@ -110,7 +110,8 @@ public final class OdtConsole extends AbstractConsole {
 			ConsoleFeature.NON_FATAL_UNIBUS_TIMEOUT,
 			ConsoleFeature.SWITCH_ENABLE_OR_HALT,
 			//-- Unlike SimH's: "nnnG" sets the PC as part of resetting.
-			ConsoleFeature.RESET_CPU_SETS_PC);
+			ConsoleFeature.RESET_CPU_SETS_PC,
+			ConsoleFeature.CPU_REGISTERS);
 		if(getRunMode() == ConsoleRunMode.HALT) {
 			set.add(ConsoleFeature.ACTION_RESET_MACHINE);
 			set.add(ConsoleFeature.ACTION_SINGLE_STEP);

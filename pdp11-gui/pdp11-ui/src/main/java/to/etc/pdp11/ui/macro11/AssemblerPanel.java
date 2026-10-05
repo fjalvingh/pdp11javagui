@@ -5,12 +5,16 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.Theme;
 import org.fife.ui.rtextarea.RTextScrollPane;
 import to.etc.pdp11.common.addr.Address;
+import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.Capabilities;
+import to.etc.pdp11.core.conn.Capability;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.common.macro11.Macro11Listing;
 import to.etc.pdp11.common.util.LogChannel;
 import to.etc.pdp11.ui.AppContext;
 import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.UiColors;
+import to.etc.pdp11.ui.exec.RunActions;
 import to.etc.pdp11.ui.mem.MemoryCellGroupTable;
 
 import javax.swing.JButton;
@@ -95,6 +99,18 @@ public final class AssemblerPanel extends JPanel {
 
 	private final JButton m_compile = new JButton("Compile");
 
+	/**
+	 * Compile, deposit, start. With its neighbour, what the Execution window's "New program" used to
+	 * be - which promised a stopped machine with the PC set, and on a boot ROM console there is no
+	 * such thing. The two are offered by what the connection can do ({@link Capabilities}).
+	 */
+	private final JButton m_compileAndStart = new JButton("Compile and start");
+
+	/** Compile, deposit, reset and set the PC; the machine stays stopped. */
+	private final JButton m_compileAndSetPc = new JButton("Compile and set PC");
+
+	private final RunActions m_runActions;
+
 	/** Which macro libraries {@code .MCALL} searches. */
 	private final JButton m_libraries = new JButton("Libraries ...");
 
@@ -140,6 +156,7 @@ public final class AssemblerPanel extends JPanel {
 		super(new MigLayout("fill, insets 0", "[grow]", "[grow]"));
 		m_context = context;
 		m_model = context.getAssembler();
+		m_runActions = new RunActions(context);
 		m_grid = new MemoryCellGroupTable(context);
 
 		Macro11TokenMaker.register();
@@ -159,12 +176,14 @@ public final class AssemblerPanel extends JPanel {
 
 	private JComponent buildSourceTab() {
 		JPanel p = new JPanel(new MigLayout("fill, insets 6", "[grow]", "[][grow][]"));
-		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][]16[][]", "[]"));
+		JPanel bar = new JPanel(new MigLayout("insets 0", "[][][][]16[][][]16[]", "[]"));
 		bar.add(m_new);
 		bar.add(m_open);
 		bar.add(m_save);
 		bar.add(m_saveAs);
 		bar.add(m_compile);
+		bar.add(m_compileAndStart);
+		bar.add(m_compileAndSetPc);
 		bar.add(m_libraries);
 		p.add(bar, "growx, wrap");
 
@@ -205,6 +224,8 @@ public final class AssemblerPanel extends JPanel {
 		m_saveAs.addActionListener(e -> saveSource(true));
 		m_compile.addActionListener(e -> compile());
 		m_compile.setToolTipText("Save the source and assemble it");
+		m_compileAndStart.addActionListener(e -> compileAndRun(true));
+		m_compileAndSetPc.addActionListener(e -> compileAndRun(false));
 		m_libraries.addActionListener(e -> chooseLibraries());
 		return p;
 	}
@@ -327,6 +348,41 @@ public final class AssemblerPanel extends JPanel {
 		m_model.assemble(outcome -> {
 			updateButtons();
 			m_tabs.setSelectedIndex(outcome.ok() ? TAB_LISTING : TAB_SOURCE);
+		});
+	}
+
+	/**
+	 * Assemble, write the whole program into the machine, then start it - or reset and leave the
+	 * PC at its start.
+	 *
+	 * <p>The three steps are chained through callbacks rather than run in sequence: the assembler
+	 * runs on a worker and the deposit on the command thread, and waiting for either from the event
+	 * thread would freeze the window at best and deadlock it at worst. A failed assembly stops
+	 * here, on the source tab with the line marked; a failed deposit stops before the start.</p>
+	 */
+	private void compileAndRun(boolean andStart) {
+		m_compile.setEnabled(false);
+		m_compileAndStart.setEnabled(false);
+		m_compileAndSetPc.setEnabled(false);
+		m_sourceStatus.setText("Assembling ...");
+		m_sourceStatus.setForeground(UiColors.SECONDARY_TEXT);
+		m_model.assemble(outcome -> {
+			updateButtons();
+			m_tabs.setSelectedIndex(outcome.ok() ? TAB_LISTING : TAB_SOURCE);
+			if(!outcome.ok())
+				return;
+			Address at = outcome.listing().getStartAddress();
+			if(at == null) {
+				m_context.reportFailure("The program is empty, so there is nothing to start", null);
+				return;
+			}
+			Address start = Address.of(MemoryAddressType.VIRTUAL, at.val() & 0xFFFF);
+			m_model.deposit(owner(), () -> {
+				if(andStart)
+					m_runActions.start(start);
+				else
+					m_runActions.resetAndSetPc(start);
+			});
 		});
 	}
 
@@ -472,6 +528,20 @@ public final class AssemblerPanel extends JPanel {
 		m_libraries.setToolTipText(libraries.isEmpty()
 			? "No macro libraries: .MCALL finds NAME.MAC beside the source"
 			: "Macro libraries .MCALL searches: " + libraries.stream().map(p -> p.getFileName().toString()).toList());
+
+		//-- Running and stoppable from here: stop it first. Running and not - a boot ROM console -
+		//-- is a guess, and must not lock anything; see ExecutionPanel.
+		Capabilities can = m_context.getConnectionManager().capabilities();
+		boolean busy = m_context.getMachineState().getState() == MachineState.ExecutionState.RUNNING;
+		boolean mayRun = connected && m_model.canAssemble() && !m_model.isAssembling();
+		m_compileAndStart.setEnabled(mayRun && can.can(Capability.START) && !(busy && can.canStopProgram()));
+		m_compileAndStart.setToolTipText(connected && !can.can(Capability.START)
+			? "This console cannot start a program" + (can.can(Capability.RUN_HALT_SWITCH) ? " with the switch at HALT" : "")
+			: "Assemble, write the program into the machine and start it where .END says");
+		m_compileAndSetPc.setEnabled(mayRun && can.can(Capability.SET_PC) && !busy);
+		m_compileAndSetPc.setToolTipText(connected && !can.can(Capability.SET_PC)
+			? "This console cannot set the PC without starting the program: use Compile and start"
+			: "Assemble, write the program into the machine, reset, and put the PC where .END says");
 
 		m_depositAll.setEnabled(connected && haveCode);
 		m_depositChanged.setEnabled(connected && haveCode);
@@ -688,6 +758,14 @@ public final class AssemblerPanel extends JPanel {
 
 	public JButton getVerifyButton() {
 		return m_examine;
+	}
+
+	public JButton getCompileAndStartButton() {
+		return m_compileAndStart;
+	}
+
+	public JButton getCompileAndSetPcButton() {
+		return m_compileAndSetPc;
 	}
 
 	public JTextField getStartAddressField() {

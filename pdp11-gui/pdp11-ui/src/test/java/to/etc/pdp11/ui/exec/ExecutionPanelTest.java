@@ -216,6 +216,28 @@ class ExecutionPanelTest {
 		}
 	}
 
+	/**
+	 * A boot ROM console can neither halt a program nor know a RUN/HALT switch, and does not
+	 * always see the program end: a reboot from the front panel brings the console emulator
+	 * back. Halt used to be offered anyway, and Reset and start was off until a reconnect.
+	 */
+	@Test
+	void aConsoleThatCannotStopTheMachineOffersNoHaltAndCanStartAgain(@TempDir Path dir) throws Exception {
+		AppContext ctx = connected(dir, ConsoleProtocol.M9312);
+		try {
+			ExecutionPanel panel = Edt.call(() -> new ExecutionPanel(ctx));
+			Edt.run(panel::attach);
+			ctx.getMachineState().running();
+			Edt.run(panel::updateDisplay);
+
+			assertFalse(panel.getHaltButton().isEnabled(), "an M9312 cannot halt, and has no switch to name");
+			assertTrue(panel.getResetAndStartButton().isEnabled(), "starting again must not need a reconnect");
+			assertTrue(panel.getStateText().contains("front panel"), panel.getStateText());
+		} finally {
+			ctx.getConnectionManager().close();
+		}
+	}
+
 	@Test
 	void aStopShowsWhereTheMachineStopped(@TempDir Path dir) throws Exception {
 		AppContext ctx = connected(dir, ConsoleProtocol.SIMH);

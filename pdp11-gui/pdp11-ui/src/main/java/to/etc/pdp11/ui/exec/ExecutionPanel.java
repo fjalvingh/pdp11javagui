@@ -3,15 +3,13 @@ package to.etc.pdp11.ui.exec;
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.core.conn.Capabilities;
+import to.etc.pdp11.core.conn.Capability;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
-import to.etc.pdp11.core.console.ConsoleException;
-import to.etc.pdp11.core.console.ConsoleFeature;
 import to.etc.pdp11.core.console.ConsoleRunMode;
 import to.etc.pdp11.ui.FieldStatus;
 import to.etc.pdp11.ui.AppContext;
-import to.etc.pdp11.ui.macro11.AssemblerModel;
-import to.etc.pdp11.ui.window.WindowType;
 import to.etc.pdp11.ui.MachineState;
 import to.etc.pdp11.ui.UiColors;
 
@@ -21,10 +19,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 import java.awt.Font;
-import java.util.EnumSet;
 
 /**
  * Run control: reset, start, continue, halt, single step, and where the PC is.
@@ -37,22 +33,36 @@ import java.util.EnumSet;
  *
  * <h2>Enablement is the substance, not decoration</h2>
  *
- * <p>Which buttons work depends on two things at once: what the console can do
- * ({@link ConsoleFeature}) and what the machine is doing. An ODT console cannot single-step
+ * <p>Which buttons work depends on two things at once: what can be done with this machine over
+ * this console ({@link Capabilities}) and what the machine is doing. An ODT console cannot single-step
  * without a HALT switch; SimH cannot reset without also starting; an 11/44 in RUN reports a
  * different feature set than the same console in HALT. Getting this wrong does not produce an
  * error message, it produces a button that appears to do nothing, so the table below is ported
  * case by case from {@code UpdateDisplay} ({@code :281-380}).</p>
  *
- * <p>One rule of the original is kept exactly and is worth stating: <b>Halt is always
- * enabled</b>. A console that cannot halt still knows how the operator can - by moving a
- * switch - and saying so is more use than a dead button.</p>
+ * <p>Halt is enabled wherever this window can do something about a running machine: halt it
+ * through the console, or - for a console that cannot, but has a RUN/HALT switch it knows
+ * about, as ODT does - say which way to move the switch. The original enabled it always. That
+ * is wrong on a boot ROM console (M9312, M9301): it has neither, the only advice it could give
+ * is "use the front panel", and the button looked as if it would stop the program.</p>
+ *
+ * <p>There is no "New program" here any more. Compile, load, then start or set the PC is three
+ * quarters assembler, and is the Assembler window's Compile and start and Compile and set PC.</p>
+ *
+ * <h2>A machine this window cannot stop does not lock it</h2>
+ *
+ * <p>On such a console a started program is out of sight. It can halt, be stopped and rebooted
+ * from the front panel, or jump back into the console emulator, and only some of those are seen
+ * here. So "running" there is a guess, and not a reason to disable Reset and start: disabling it
+ * left a disconnect and reconnect as the only way to start anything again, even with the console
+ * emulator long back at its prompt. If the program is in fact still running, the start fails
+ * with no prompt and says so, which is no worse than pressing it on a machine that is not
+ * listening at all.</p>
  */
 public final class ExecutionPanel extends JPanel {
-	/** R7's offset within the I/O page, which is where a console deposits a new PC. */
-	private static final int REG_R7 = 017707;
-
 	private final AppContext m_context;
+
+	private final RunActions m_runActions;
 
 	private final JTextField m_startPc = new JTextField(8);
 
@@ -79,8 +89,6 @@ public final class ExecutionPanel extends JPanel {
 	 */
 	private final JButton m_setPc = new JButton("Set PC");
 
-	private final JButton m_newProgram = new JButton("New program");
-
 	private final JRadioButton m_run = new JRadioButton("RUN/ENABLE");
 
 	private final JRadioButton m_haltSwitch = new JRadioButton("HALT");
@@ -98,6 +106,7 @@ public final class ExecutionPanel extends JPanel {
 	public ExecutionPanel(AppContext context) {
 		super(new MigLayout("fill, insets 8", "[][]12[][]12[grow]", "[][][][][][grow]"));
 		m_context = context;
+		m_runActions = new RunActions(context);
 
 		Font mono = new Font(Font.MONOSPACED, Font.PLAIN, m_startPc.getFont().getSize());
 		m_startPc.setFont(mono);
@@ -118,10 +127,6 @@ public final class ExecutionPanel extends JPanel {
 		add(m_continue, "cell 2 2");
 		add(m_halt, "cell 3 2, wrap");
 
-		m_newProgram.setToolTipText("Assemble the program in the Assembler window, load it into the"
-			+ " machine, reset, and set the PC to where it starts");
-		add(m_newProgram, "cell 2 3, spanx 2, growx, wrap");
-
 		ButtonGroup group = new ButtonGroup();
 		group.add(m_run);
 		group.add(m_haltSwitch);
@@ -139,7 +144,6 @@ public final class ExecutionPanel extends JPanel {
 		m_halt.addActionListener(e -> doHalt());
 		m_singleStep.addActionListener(e -> doSingleStep());
 		m_setPc.addActionListener(e -> doSetPc());
-		m_newProgram.addActionListener(e -> doNewProgram());
 		m_run.addActionListener(e -> setRunMode(ConsoleRunMode.RUN));
 		m_haltSwitch.addActionListener(e -> setRunMode(ConsoleRunMode.HALT));
 
@@ -148,7 +152,7 @@ public final class ExecutionPanel extends JPanel {
 		//-- shape, and the only way to act on what had been typed was to find the button.
 		m_startPc.addActionListener(e -> publishStartPc());
 		m_startPc.setToolTipText("Where a program starts. Enter publishes it to the other windows;"
-			+ " Reset and start and New program use it.");
+			+ " Reset and start uses it.");
 		m_currentPc.addActionListener(e -> doSetPc());
 		m_currentPc.setToolTipText("The machine's PC. Enter writes it into R7, same as Set PC.");
 
@@ -162,10 +166,12 @@ public final class ExecutionPanel extends JPanel {
 	/** Everything on this panel that depends on the console or the machine. On the EDT. */
 	public void updateDisplay() {
 		Console console = m_context.getConnectionManager().getConsole();
-		EnumSet<ConsoleFeature> features = console == null ? EnumSet.noneOf(ConsoleFeature.class) : console.features();
+		Capabilities can = m_context.getConnectionManager().capabilities();
 		MachineState.ExecutionState state = m_context.getMachineState().getState();
-		boolean connected = console != null;
+		boolean connected = console != null && can != Capabilities.NONE;
 		boolean running = state == MachineState.ExecutionState.RUNNING;
+		//-- Whether this window can do anything about a running machine; see the class comment.
+		boolean canStop = can.canStopProgram();
 
 		Address pc = m_context.getMachineState().getPc();
 		if(pc != null && !m_currentPc.isFocusOwner())
@@ -177,22 +183,20 @@ public final class ExecutionPanel extends JPanel {
 			m_startPc.setText(startPc.toOctal());
 
 		//-- Only what the console can do, and then only what makes sense where the machine is.
-		m_reset.setEnabled(connected && !running && features.contains(ConsoleFeature.ACTION_RESET_MACHINE));
-		m_resetAndStart.setEnabled(connected && !running
-			&& features.contains(ConsoleFeature.ACTION_RESET_AND_START_CPU));
-		m_continue.setEnabled(connected && !running && features.contains(ConsoleFeature.ACTION_CONTINUE_CPU));
-		m_singleStep.setEnabled(connected && !running && features.contains(ConsoleFeature.ACTION_SINGLE_STEP));
-		//-- Always available while connected, even without ACTION_HALT_CPU: a console that cannot
-		//-- halt can still say which switch the operator should move ({@code :412-430}).
-		m_halt.setEnabled(connected);
+		m_reset.setEnabled(connected && !running && can.can(Capability.RESET) && can.can(Capability.SET_PC));
+		m_resetAndStart.setEnabled(connected && !(running && canStop) && can.can(Capability.START));
+		m_continue.setEnabled(connected && !running && can.can(Capability.CONTINUE));
+		m_singleStep.setEnabled(connected && !running && can.can(Capability.SINGLE_STEP));
+		//-- Also without ACTION_HALT_CPU when there is a switch: the console can still say which
+		//-- way the operator should move it ({@code :412-430}).
+		m_halt.setEnabled(connected && canStop);
 		//-- SimH refuses to deposit into a live PC, and refuses it silently, so a Set/show while
 		//-- the CPU runs produces a confusing nothing rather than an error. The Pascal learned
 		//-- this the same way ({@code :382-385}).
-		m_setPc.setEnabled(connected && !running);
-		//-- Compile, load and reset. Needs a machine to load into and a program to load.
-		m_newProgram.setEnabled(connected && !running && m_context.getAssembler().canAssemble());
+		//-- And a boot ROM console cannot set it at all: the registers are its own.
+		m_setPc.setEnabled(connected && !running && can.can(Capability.SET_PC));
 
-		boolean hasSwitch = features.contains(ConsoleFeature.SWITCH_ENABLE_OR_HALT);
+		boolean hasSwitch = can.can(Capability.RUN_HALT_SWITCH);
 		m_switchPanel.setVisible(hasSwitch);
 		if(hasSwitch) {
 			ConsoleRunMode mode = console.getRunMode();
@@ -208,7 +212,8 @@ public final class ExecutionPanel extends JPanel {
 			? "Machine: " + switch(state) {
 				case UNKNOWN -> "state unknown";
 				case STOPPED -> "stopped" + (pc == null ? "" : " at " + pc.toOctal());
-				case RUNNING -> "running";
+				case RUNNING -> canStop ? "running"
+					: "started; stop it from the front panel, this console cannot";
 			}
 			: "Not connected");
 	}
@@ -250,51 +255,18 @@ public final class ExecutionPanel extends JPanel {
 	// The commands
 	// -------------------------------------------------------------------------------------
 
-	/**
-	 * Reset the machine and put the PC where the Start PC field says.
-	 *
-	 * <p>Ported from {@code doResetMachineAndSetPC} ({@code :385-414}). The deposit happens
-	 * <i>after</i> the reset and happens whether or not the console claims
-	 * {@link ConsoleFeature#RESET_CPU_SETS_PC} - a reset that does set the PC has just set it to
-	 * the same value, and one that does not needs this.</p>
-	 */
+	/** Reset the machine and put the PC where the Start PC field says. See {@link RunActions}. */
 	private void doResetAndSetPc() {
 		Address start = parse(m_startPc, "start PC");
-		if(start == null || !checkRunMode())
-			return;
-		m_context.onConsole("Reset", console -> {
-			if(console.features().contains(ConsoleFeature.ACTION_RESET_MACHINE))
-				console.resetMachine(start);
-			depositPc(console, start);
-			m_context.getMachineState().stopped(start);
-		});
+		if(start != null)
+			m_runActions.resetAndSetPc(start);
 	}
 
-	/**
-	 * Reset the machine and start it running at the Start PC.
-	 *
-	 * <p>RUNNING is set <b>from inside the job</b>, once the console has taken the command,
-	 * rather than optimistically on the EDT before it is even queued. A console that refuses -
-	 * a serial timeout, or an ODT whose switch has been moved back to HALT since the button was
-	 * last enabled - would otherwise leave MachineState RUNNING with nothing running: Reset,
-	 * Continue, Single step and Set/show all disable on {@code running}, the disassembler stops
-	 * following, and the only way out is Halt against a machine that never started.</p>
-	 *
-	 * <p>Nothing races it. A stop the machine reports while this is in flight is posted to this
-	 * same command thread by {@code AbstractConsole.signalExecutionStop}, so it queues
-	 * <i>behind</i> this job and lands after the RUNNING rather than under it - which is what
-	 * makes setting the state here rather than before the call safe as well as honest. Neither
-	 * of these console calls waits for a prompt: they write and return, so RUNNING appears as
-	 * promptly as it did before.</p>
-	 */
+	/** Reset the machine and start it running at the Start PC. See {@link RunActions#start}. */
 	private void doResetAndStart() {
 		Address start = parse(m_startPc, "start PC");
-		if(start == null || !checkRunMode())
-			return;
-		m_context.onConsole("Reset and start", console -> {
-			console.resetAndStart(start);
-			m_context.getMachineState().running();
-		});
+		if(start != null)
+			m_runActions.start(start);
 	}
 
 	/** Carry on from where the machine stopped. RUNNING once the console has taken it, as above. */
@@ -327,7 +299,11 @@ public final class ExecutionPanel extends JPanel {
 			m_context.reportFailure("Not connected to a machine", null);
 			return;
 		}
-		if(!console.features().contains(ConsoleFeature.ACTION_HALT_CPU)) {
+		Capabilities can = m_context.getConnectionManager().capabilities();
+		if(!can.can(Capability.HALT)) {
+			//-- Only reachable with a switch: without one the button is disabled.
+			if(!can.can(Capability.RUN_HALT_SWITCH))
+				return;
 			m_context.reportFailure(haltAdvice(console), null);
 			return;
 		}
@@ -342,49 +318,11 @@ public final class ExecutionPanel extends JPanel {
 	}
 
 	private static String haltAdvice(Console console) {
-		if(!console.features().contains(ConsoleFeature.SWITCH_ENABLE_OR_HALT))
-			return "This console cannot halt the CPU; stop it from the machine's own console panel";
 		return switch(console.getRunMode()) {
 			case HALT -> "The RUN/HALT switch is already at HALT, so the processor should be stopped";
 			case RUN -> "Halt the CPU by moving the physical RUN/HALT switch to HALT";
 			case UNKNOWN -> "Set the RUN/HALT switch to match the machine before halting";
 		};
-	}
-
-	/**
-	 * Assemble the current program, load it into the machine, reset, and set the PC.
-	 *
-	 * <p>Ported from {@code NewPgmButtonClick} ({@code FormExecuteU.pas:166-188}), which does it
-	 * by reaching across and pressing another window's buttons -
-	 * {@code FormMain.FormMacro11Source.Show}, then {@code CompileButtonClick(nil)}, then
-	 * {@code FormMain.FormMacro11Listing.DepositAllButtonClick(nil)}. That needs both assembler
-	 * windows to exist and to be showing. Here the program is {@link AppContext#getAssembler()},
-	 * which is state rather than a window, so this works with no assembler window open at all -
-	 * though one is opened anyway, because watching a program assemble is the point of pressing
-	 * this.</p>
-	 *
-	 * <p>The three steps are chained through callbacks rather than run in sequence: each of them
-	 * happens on a different thread from this one - the assembler on a worker, the deposit on the
-	 * command thread - and waiting for either from the event thread would freeze the window at
-	 * best and deadlock it at worst.</p>
-	 */
-	private void doNewProgram() {
-		Address start = parse(m_startPc, "start PC");
-		if(start == null || !checkRunMode())
-			return;
-		AssemblerModel assembler = m_context.getAssembler();
-		if(!assembler.canAssemble()) {
-			m_context.reportFailure("Open a MACRO-11 source in the Assembler window first", null);
-			m_context.getWindowManager().open(WindowType.ASSEMBLER);
-			return;
-		}
-		//-- Raised before rather than after: the assembler is where an error will be shown.
-		m_context.getWindowManager().open(WindowType.ASSEMBLER);
-		assembler.assemble(outcome -> {
-			if(!outcome.ok())
-				return;                                      // the assembler window says why
-			assembler.deposit(SwingUtilities.getWindowAncestor(this), this::doResetAndSetPc);
-		});
 	}
 
 	/**
@@ -407,22 +345,7 @@ public final class ExecutionPanel extends JPanel {
 		Address pc = parse(m_currentPc, "current PC");
 		if(pc == null)
 			return;
-		m_context.onConsole("Setting the PC", console -> {
-			depositPc(console, pc);
-			m_context.getMachineState().stopped(pc);
-		});
-	}
-
-	/**
-	 * Deposit a virtual PC into R7.
-	 *
-	 * <p>R7 lives at the top of the I/O page - {@code 0177707} on a 16-bit machine,
-	 * {@code 017777707} on a 22-bit one - which is why the address is built from the console's
-	 * own width rather than written down. On the command thread.
-	 */
-	private static void depositPc(Console console, Address pc) throws ConsoleException {
-		MemoryAddressType type = console.physicalAddressType();
-		console.deposit(Address.of(type, type.getIopageBase() + REG_R7), (int) (pc.val() & 0xFFFF));
+		m_runActions.setPc(pc);
 	}
 
 	private void setRunMode(ConsoleRunMode mode) {

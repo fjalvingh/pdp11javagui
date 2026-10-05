@@ -10,7 +10,7 @@
 
 | Field | Meaning |
 |---|---|
-| **Start PC** | Where a program starts. This is not the machine's PC — it is where you intend to start it. Pressing Enter publishes it to the rest of the program, so the assembler and the disassembler know where the program is. **Reset and start** and **New program** use it |
+| **Start PC** | Where a program starts. This is not the machine's PC — it is where you intend to start it. Pressing Enter publishes it to the rest of the program, so the assembler and the disassembler know where the program is. **Reset and start** uses it |
 | **Current PC** | The machine's PC. It follows the machine as it stops. Pressing Enter writes what you typed into R7 — the same as pressing **Set PC** |
 
 Loading a program that says where it starts — a [paper tape image](10-load-and-dump.md), or a
@@ -27,11 +27,9 @@ while you are typing in it.
 | **Halt** | Stop a running program — or, on a console that cannot, say which switch to move |
 | **Single step** | Execute one instruction. The new PC arrives as a stop report and moves the display on |
 | **Set PC** | Write **Current PC** into R7 |
-| **New program** | Assemble the program in [the Assembler window](09-assembler.md), load it into the machine, reset, and set the PC to where it starts |
 
-**New program** is the whole edit-assemble-load-run cycle on one button. It needs a machine to load
-into and a source open in the assembler; it opens the assembler window
-first, because that is where an error will be shown, and stops if the assembly fails.
+The edit-assemble-load-run cycle on one button is in [the Assembler window](09-assembler.md):
+**Compile and start**, and **Compile and set PC**.
 
 A status line at the bottom says what the machine is doing: *stopped at 001000*, *running*, *state
 unknown*, or *Not connected*. It is also where a mistyped address is reported.
@@ -42,17 +40,26 @@ This is the substance of the window, not decoration. Which operations are offere
 things at once: **what the console can do**, and **what the machine is doing**.
 
 * **Not connected** — everything is off.
-* **The machine is running** — Reset, Reset and start, Continue, Single step, Set PC and New
-  program are all off. SimH in particular refuses to deposit into a live PC, and refuses it
+* **The machine is running** — Reset, Reset and start, Continue, Single step and Set PC are
+  all off. SimH in particular refuses to deposit into a live PC, and refuses it
   *silently*, so a Set PC against a running machine would produce a confusing nothing.
+  The exception is a console that cannot stop the machine at all - see below.
 * **The console cannot do it.** Consoles differ, and the differences are real: SimH cannot reset
   without also starting; an ODT console cannot single-step unless the machine has a HALT switch
   and it is set; an 11/44 in RUN reports a different set of abilities than the same console in
-  HALT.
+  HALT; and an M9312 or M9301 boot ROM console cannot reach the CPU registers, so **Reset and set
+  PC** and **Set PC** are off there - it can set a PC only by starting from it.
 
-**Halt is always available while connected**, even on a console that has no halt command. A
-console that cannot halt still knows how *you* can — by moving a switch — and it tells you which
-one and which way. That is more use than a dead button.
+**Halt is available on a console that can halt the machine, and on one with a RUN/HALT switch**
+even when it has no halt command: such a console still knows how *you* can — by moving the
+switch — and it tells you which way.
+
+**The M9312 and M9301 boot ROM consoles can do neither.** Once a program is started, the console
+emulator is gone until the program jumps back into it or the machine is rebooted from the front
+panel, and the program cannot always see that happen. So on these consoles Halt is off, the status
+line says the program was started and must be stopped from the front panel, and **Reset and
+start stays on**: once the console emulator is back at its prompt you can start a program again
+without reconnecting. If the program is in fact still running, the start fails with no prompt.
 
 ## The physical RUN/HALT switch
 

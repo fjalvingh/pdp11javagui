@@ -4,6 +4,7 @@ import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.util.AppVersion;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.conn.CpuModel;
 import to.etc.pdp11.core.conn.TransportConfig;
 import to.etc.pdp11.core.conn.TransportKind;
 import to.etc.pdp11.core.io.SerialTransport;
@@ -40,6 +41,9 @@ public final class ConnectionSettingsPanel extends JPanel {
 	private final JTextField m_name = new JTextField(18);
 
 	private final JComboBox<ConsoleProtocol> m_protocol = new JComboBox<>(ConsoleProtocol.values());
+
+	/** Which PDP-11 is behind the console; only the CPUs the selected console can be on. */
+	private final JComboBox<CpuModel> m_cpu = new JComboBox<>();
 
 	private final JComboBox<TransportKind> m_transport = new JComboBox<>(TransportKind.values());
 
@@ -82,7 +86,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 	private AppContext.DiscardConfirmer m_confirmer = this::askOnScreen;
 
 	public ConnectionSettingsPanel(Settings settings) {
-		super(new MigLayout("fillx, insets 10", "[][grow]", "[][]12[][]8[grow][]"));
+		super(new MigLayout("fillx, insets 10", "[][grow]", "[][]12[][][]8[grow][]"));
 		m_settings = settings;
 
 		add(new JLabel("Saved profile:"));
@@ -100,6 +104,11 @@ public final class ConnectionSettingsPanel extends JPanel {
 		add(new JLabel("Console:"));
 		add(m_protocol, "growx, wrap");
 
+		add(new JLabel("Machine:"));
+		m_cpu.setToolTipText("Which PDP-11 the console is in. \"Not specified\" offers only what"
+			+ " works on every machine this console can be in.");
+		add(m_cpu, "growx, wrap");
+
 		add(new JLabel("Reached over:"));
 		add(m_transport, "growx, wrap");
 
@@ -109,7 +118,11 @@ public final class ConnectionSettingsPanel extends JPanel {
 		m_problem.setForeground(UiColors.ERROR_TEXT);
 		add(m_problem, "spanx, growx");
 
-		m_protocol.addActionListener(e -> changed());
+		m_protocol.addActionListener(e -> {
+			fillCpus((CpuModel) m_cpu.getSelectedItem());
+			changed();
+		});
+		m_cpu.addActionListener(e -> changed());
 		m_transport.addActionListener(e -> {
 			showTransportCard();
 			changed();
@@ -207,7 +220,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 		String name = m_name.getText().trim();
 		ConsoleProtocol protocol = (ConsoleProtocol) m_protocol.getSelectedItem();
 		return new ConnectionProfile(name.isEmpty() ? "Unnamed" : name,
-			protocol == null ? ConsoleProtocol.SIMH : protocol, transport);
+			protocol == null ? ConsoleProtocol.SIMH : protocol, transport, (CpuModel) m_cpu.getSelectedItem());
 	}
 
 	/** Show this profile. Does not save it. */
@@ -216,6 +229,7 @@ public final class ConnectionSettingsPanel extends JPanel {
 		try {
 			m_name.setText(profile.name());
 			m_protocol.setSelectedItem(profile.protocol());
+			fillCpus(profile.cpu());
 			TransportConfig t = profile.transport();
 			m_transport.setSelectedItem(t.kind());
 			m_simhExecutable.setText(t.effectiveSimhExecutable());
@@ -231,6 +245,23 @@ public final class ConnectionSettingsPanel extends JPanel {
 			m_loading = false;
 		}
 		changed();
+	}
+
+	/**
+	 * Offer the CPUs the selected console can be in front of, keeping {@code keep} where it is
+	 * still one of them. Called with events suppressed by the caller or harmlessly re-entered.
+	 */
+	private void fillCpus(CpuModel keep) {
+		ConsoleProtocol protocol = (ConsoleProtocol) m_protocol.getSelectedItem();
+		List<CpuModel> cpus = CpuModel.forProtocol(protocol == null ? ConsoleProtocol.SIMH : protocol);
+		boolean loading = m_loading;
+		m_loading = true;
+		try {
+			m_cpu.setModel(new DefaultComboBoxModel<>(cpus.toArray(new CpuModel[0])));
+			m_cpu.setSelectedItem(keep != null && cpus.contains(keep) ? keep : CpuModel.UNKNOWN);
+		} finally {
+			m_loading = loading;
+		}
 	}
 
 	private void changed() {
@@ -347,6 +378,10 @@ public final class ConnectionSettingsPanel extends JPanel {
 
 	public JComboBox<ConsoleProtocol> getProtocolCombo() {
 		return m_protocol;
+	}
+
+	public JComboBox<CpuModel> getCpuCombo() {
+		return m_cpu;
 	}
 
 	public JComboBox<TransportKind> getTransportCombo() {

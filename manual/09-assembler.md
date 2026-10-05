@@ -35,6 +35,8 @@ The three are always about the same program, which is why they are tabs rather t
 | **Open …** | Open a `.mac` source |
 | **Save** / **Save as …** | Write it out |
 | **Compile** | Save the source and assemble it |
+| **Compile and start** | Assemble, write the whole program into the machine, and start it where `.END` says |
+| **Compile and set PC** | Assemble, write the whole program into the machine, reset it, and put the PC where `.END` says. The machine stays stopped, ready for **Single step** |
 | **Libraries …** | The macro libraries `.MCALL` searches - see [Macro libraries](#macro-libraries) |
 
 The listing is also saved beside the source, as `<name>.lst`, so that it can be opened again
@@ -115,19 +117,24 @@ back without disturbing what you loaded, so anything the machine disagrees with 
 
 ## The whole cycle on one button
 
-[The execution window](05-execution.md)'s **New program** does: assemble → deposit → reset → set
-the PC to the program's start address. It works with the assembler window closed, and opens it if
-the assembly fails so you can see where.
+**Compile and start** does assemble → deposit → start at the program's start address.
+**Compile and set PC** does assemble → deposit → reset → set the PC there, and leaves the machine
+stopped. If the assembly fails, neither touches the machine, and the Source tab shows where.
 
-After that, **Reset and start** runs it, **Halt** stops it, and **Single step** walks it — with
+Which of the two is offered depends on what the connection can do. An M9312 or M9301 boot ROM
+console can set a PC only by starting from it, so there only **Compile and start** is available,
+and its tooltip says why the other is not. On a machine with a RUN/HALT switch, **Compile and
+start** needs the switch at RUN.
+
+After **Compile and set PC**, [the execution window](05-execution.md)'s **Reset and start** runs
+the program, **Halt** stops it, and **Single step** walks it — with
 [the disassembler](06-disassembler.md) following the PC and this window's Listing tab marking the
 source line it is on.
 
 ## While it is assembling
 
-A second **Compile** is refused while one is in flight. What the editor holds is what gets
-assembled — the text is written out first — so assembling from the execution window cannot
-quietly assemble yesterday's file.
+A second assembly is refused while one is in flight. What the editor holds is what gets
+assembled — the text is written out first — so no button can quietly assemble yesterday's file.
 
 ## Errors and warnings
 

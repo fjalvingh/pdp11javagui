@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import to.etc.pdp11.core.conn.ConnectionProfile;
 import to.etc.pdp11.core.conn.ConsoleProtocol;
+import to.etc.pdp11.core.conn.CpuModel;
 import to.etc.pdp11.core.conn.TransportConfig;
 import to.etc.pdp11.core.conn.TransportKind;
 import to.etc.pdp11.ui.Edt;
@@ -112,6 +113,27 @@ class ConnectionSettingsPanelTest {
 
 		Edt.run(() -> panel.getPortField().setText("not a port"));
 		assertFalse(panel.getProfile().isValid(), "a port that is not a number is not a port");
+	}
+
+	/** The machine list follows the console: an M9312 is never in an 11/73. */
+	@Test
+	void theMachinesOfferedAreTheOnesTheConsoleCanBeIn() {
+		ConnectionSettingsPanel panel = panel(new Settings());
+		Edt.run(() -> panel.getProtocolCombo().setSelectedItem(ConsoleProtocol.M9312));
+		assertEquals(CpuModel.forProtocol(ConsoleProtocol.M9312).size(), panel.getCpuCombo().getItemCount());
+		Edt.run(() -> panel.getCpuCombo().setSelectedItem(CpuModel.PDP11_05));
+		assertEquals(CpuModel.PDP11_05, panel.getProfile().cpu());
+
+		//-- Another console the 11/05 cannot have: back to not specified, not a stale choice.
+		Edt.run(() -> panel.getProtocolCombo().setSelectedItem(ConsoleProtocol.ODT_22));
+		assertEquals(CpuModel.UNKNOWN, panel.getProfile().cpu());
+		//-- And back again keeps what is still possible.
+		Edt.run(() -> {
+			panel.getProtocolCombo().setSelectedItem(ConsoleProtocol.M9312);
+			panel.getCpuCombo().setSelectedItem(CpuModel.PDP11_34);
+			panel.getProtocolCombo().setSelectedItem(ConsoleProtocol.M9301);
+		});
+		assertEquals(CpuModel.PDP11_34, panel.getProfile().cpu());
 	}
 
 	@Test
