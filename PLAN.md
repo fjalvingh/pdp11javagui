@@ -633,12 +633,19 @@ operator reports, survives a bus timeout (so a window may read on its own, and t
 scanned). `ConnectionManager.capabilities()` answers for the live connection, from state it
 already holds, so a window may ask on the event thread.
 
-**The CPU axis has no rows yet.** Nothing in the code or the Pascal says that a capability differs
-between, say, an M9312 on an 11/05 and on an 11/34, and a guess there either offers an action that
-kills the console or hides one that works. The CPU is in the profile and in the function so that
-each such fact goes in as one row with a test, together with the evidence for it, as the fakes'
-extensions are recorded. Until then the CPU choice narrows which CPUs a protocol offers
-(`CpuModel.forProtocol`) and changes nothing else.
+**The CPU axis has no rows, and may never need any.** What can be done is expected to follow the
+console type, not the machine. A console that runs on the CPU, as the M9312's and M9301's do,
+does the same on every machine it is in: start only, with the registers out of reach because they
+are its own. That was seen on an 11/05, and the original says the same of the 11/04 and 11/34. A
+console that does not use the CPU for its actions - the 11/44's console processor, SimH - differs
+from another console in what it can reach, such as the registers, and that is a property of the
+console, which `ConsoleFeature` already carries (`CPU_REGISTERS`).
+
+The CPU stays in the profile and in the function for now, as a decision to revisit once more
+machines have been tried: if none of them shows a difference, take it out (`CpuModel`, the
+profile's `cpu`, the Machine choice), which no saved settings file will notice. If one does, it
+goes in as one row with a test, together with the evidence for it. Until then the CPU choice
+narrows which CPUs a protocol offers (`CpuModel.forProtocol`) and changes nothing else.
 
 **"New program" moved to the Assembler window.** Assemble, deposit, then reset-and-set-PC was
 three quarters assembler (phase 5's own note), and its promise - load it, leave it stopped with
