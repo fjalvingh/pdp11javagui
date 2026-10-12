@@ -11,9 +11,9 @@ import to.etc.pdp11.core.console.TerminalProfile;
  * conforming VT100 emulator and every line overwrites the one before it, and the transcript the
  * user is trying to read becomes one line of gibberish.</p>
  *
- * <p>So the profile is applied here, and what comes out is plain text plus three control characters
- * the view knows: {@code \n} to end a line, {@code \b} to rub out the character before it, and
- * {@link #BELL} to ring.
+ * <p>So the profile is applied here, and what comes out is plain text plus four control characters
+ * the view knows: {@code \n} to end a line, {@code \b} to rub out the character before it,
+ * {@link #RETURN} to go back to the start of the line, and {@link #BELL} to ring.
  * Everything else the emulator - or the plain text pane standing in for one - can take
  * literally.</p>
  *
@@ -31,12 +31,27 @@ public final class TerminalFilter {
 	 */
 	public static final char BELL = '\u0007';
 
+	/**
+	 * What the view is told to do: go back to the start of the line, so that what follows writes
+	 * over it. Only for a console whose CR is not a line ending, and only when the CR was not
+	 * part of a CR LF pair - those are a line ending and come out as {@code \n} alone.
+	 */
+	public static final char RETURN = '\r';
+
 	private TerminalProfile m_profile;
 
 	private int m_column;
 
 	/** For absorbing the LF of a CR LF pair; see {@link #filter}. */
 	private boolean m_lastWasCr;
+
+	/**
+	 * A CR that does not end a line, not yet passed on. It is held until the next character
+	 * decides what it was: an LF makes it the first half of a line ending and it is dropped,
+	 * anything that takes a column makes it a real carriage return. Fill NULs and a bell leave it
+	 * waiting, since they move nothing.
+	 */
+	private boolean m_pendingReturn;
 
 	public TerminalFilter(TerminalProfile profile) {
 		setProfile(profile);
@@ -55,6 +70,7 @@ public final class TerminalFilter {
 	public void reset() {
 		m_column = 0;
 		m_lastWasCr = false;
+		m_pendingReturn = false;
 	}
 
 	/**
@@ -74,10 +90,17 @@ public final class TerminalFilter {
 					if(m_profile.crIsNewline()) {
 						newline(out);
 						m_lastWasCr = true;
+					} else {
+						//-- ODT sends one before every LF and means only the LF, so it cannot
+						//-- simply be passed on. Nor can it be dropped: ZQKC marks each pass
+						//-- with CR SPACE CR, which a terminal shows as nothing at all, and
+						//-- without the CRs it is a line filling up with spaces.
+						m_pendingReturn = true;
+						m_column = 0;
 					}
-					//-- else: dropped. ODT sends one before every LF and means only the LF.
 				}
 				case '\n' -> {
+					m_pendingReturn = false;
 					//-- A CR LF pair is one line ending, not two. Both flags are true for SimH -
 					//-- its Enter sends CR and telnet breaks lines with LF - and it sends them
 					//-- together, so taking each at face value double-spaces the entire
@@ -92,7 +115,10 @@ public final class TerminalFilter {
 					}
 					//-- else: dropped. The 11/44 console sends these and means nothing by them.
 				}
-				case '\t' -> tab(out);
+				case '\t' -> {
+					flushReturn(out);
+					tab(out);
+				}
 				case BELL -> out.append(BELL);
 				case 0 -> {
 					//-- Fill characters. The M9301's prompt ends with one, and the 11/44 V3.40C
@@ -100,10 +126,12 @@ public final class TerminalFilter {
 				}
 				default -> {
 					if(c == m_profile.backspace() && m_profile.hasBackspace()) {
+						flushReturn(out);
 						out.append(ERASE);
 						if(m_column > 0)
 							m_column--;
 					} else if(c >= 0x20 && c != 0x7F) {
+						flushReturn(out);
 						out.append(c);
 						m_column++;
 					}
@@ -113,6 +141,14 @@ public final class TerminalFilter {
 			}
 		}
 		return out.toString();
+	}
+
+	/** A held CR turned out to be a carriage return after all: pass it on. */
+	private void flushReturn(StringBuilder out) {
+		if(m_pendingReturn) {
+			out.append(RETURN);
+			m_pendingReturn = false;
+		}
 	}
 
 	private void newline(StringBuilder out) {

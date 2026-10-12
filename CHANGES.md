@@ -184,9 +184,16 @@
 
 - **The machine's bell is visible.** A BEL from the machine was dropped with the other control
   characters. Now the terminal flashes briefly, and the main window's status bar shows how many
-  times the bell has rung and when it last rang, e.g. `Bell ×12 · last 14:02:11`. XXDP rings
-  the bell at the end of every pass, so this is a pass counter for a diagnostic left running.
-  Click it to count from zero again. Nothing is printed in the transcript for a bell.
+  times the bell has rung and when it last rang, e.g. `Bell ×12 · last 14:02:11`. Many XXDP
+  diagnostics ring the bell at the end of every pass, so this is a pass counter for one left
+  running. Not all of them: the older standalone tests such as ZQKC ring only on an error, and
+  only with switch 10 up. Click it to count from zero again. Nothing is printed in the transcript
+  for a bell.
+- **A carriage return on an ODT or M9312 console goes back to the start of the line.** It was
+  dropped, because those consoles send one before every line feed. A CR that is not followed by
+  a line feed now behaves as on a real terminal, and what follows writes over the line. ZQKC
+  ends each pass with CR, space, CR, which shows nothing on a terminal and here filled the line
+  with spaces, one per pass. Line endings are unchanged.
 - **Large deposits on an M9312 console are about six times as fast.** A deposit of 128 or more
   words of memory - a loaded diagnostic, an assembled program - first deposits a small loader
   (about 60 words), starts it, and sends it the rest in binary blocks, with a checksum and an

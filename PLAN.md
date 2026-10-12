@@ -1320,6 +1320,10 @@ JVM, so the "done when" above is checked on a build machine with no hardware and
   sets *both* flags and sends them together - so its transcript double-spaces
   ({@code FormTerminalU.pas:248-253, 278-279}). A CR LF pair is one line ending here. The
   terminal redesign is an agreed decision and every terminal ever built collapses the pair.
+  The other half of the same rule: where CR is *not* a line ending (ODT, M9312) the Pascal drops
+  it, and so did this at first - until ZQKC's end-of-pass marker, CR SPACE CR, filled a line with
+  spaces. A CR is held until the next character: an LF makes it part of a line ending, anything
+  that takes a column makes it a real carriage return, and the view writes over the line.
 - **Multi-monitor clamping does not exist in the Pascal and now does.** A window restored onto a
   monitor that is no longer there is a window the user cannot reach or close. The rule is a pure
   function over a list of screen rectangles, so all of it is testable on a build machine with one

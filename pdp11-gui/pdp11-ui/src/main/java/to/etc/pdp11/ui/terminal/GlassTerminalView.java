@@ -12,6 +12,7 @@ import javax.swing.Timer;
 import javax.swing.text.AttributeSet;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
+import javax.swing.text.Element;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -69,6 +70,16 @@ public final class GlassTerminalView implements TerminalView {
 
 	private boolean m_inputEnabled;
 
+	/**
+	 * Where the next character of the machine's goes when it writes over the last line rather
+	 * than adding to it, or -1 when it adds. Set by a {@link TerminalFilter#RETURN}, and gone
+	 * again once the writing reaches the end of the line or a line ends.
+	 */
+	private int m_overwrite = -1;
+
+	/** Where the application's or the user's last text ended: a carriage return goes no further back. */
+	private int m_protectedEnd;
+
 	public GlassTerminalView() {
 		m_pane.setEditable(false);
 		m_pane.setBackground(UiColors.TERMINAL_BACKGROUND);
@@ -122,6 +133,7 @@ public final class GlassTerminalView implements TerminalView {
 	@Override
 	public void setProfile(TerminalProfile profile) {
 		m_filter.setProfile(profile);
+		m_overwrite = -1;
 	}
 
 	@Override
@@ -159,35 +171,86 @@ public final class GlassTerminalView implements TerminalView {
 			case USER -> m_userStyle;
 			case SYSTEM -> m_systemStyle;
 		};
+		//-- Only the machine's output is a cursor on a line. What the application says or the user
+		//-- typed goes at the end, as it always did, and is never written over.
+		if(style != TerminalStyle.PDP)
+			m_overwrite = -1;
 		try {
-			//-- Split on the markers rather than scanning per character: an erase or a bell is rare
-			//-- and everything between two of them is one insert.
+			//-- Split on the markers rather than scanning per character: an erase, a return or a
+			//-- bell is rare and everything between two of them is one insert.
 			int from = 0;
 			while(from < filtered.length()) {
 				int mark = nextMarker(filtered, from);
 				String chunk = mark < 0 ? filtered.substring(from) : filtered.substring(from, mark);
 				if(!chunk.isEmpty())
-					doc.insertString(doc.getLength(), chunk, attributes);
+					write(doc, chunk, attributes);
 				if(mark < 0)
 					break;
-				if(filtered.charAt(mark) == TerminalFilter.BELL)
-					ring();
-				else if(doc.getLength() > 0)
-					doc.remove(doc.getLength() - 1, 1);
+				switch(filtered.charAt(mark)) {
+					case TerminalFilter.BELL -> ring();
+					case TerminalFilter.RETURN -> m_overwrite = lineStart(doc);
+					default -> erase(doc);
+				}
 				from = mark + 1;
 			}
+			if(style != TerminalStyle.PDP)
+				m_protectedEnd = doc.getLength();
 			trim(doc);
 		} catch(BadLocationException x) {
-			//-- The only length used is the document's own, so this cannot happen; if it somehow
-			//-- does, losing a line of terminal output is not worth stopping anything for.
+			//-- The only positions used are inside the document, so this cannot happen; if it
+			//-- somehow does, losing a line of terminal output is not worth stopping anything for.
+			m_overwrite = -1;
 		}
-		m_pane.setCaretPosition(doc.getLength());
+		m_pane.setCaretPosition(m_overwrite < 0 ? doc.getLength() : m_overwrite);
+	}
+
+	/**
+	 * Put text where the cursor is: at the end, or over the last line after a carriage return.
+	 *
+	 * <p>The overwrite is always on the last line - a line ending is only ever added at the end and
+	 * ends the overwrite - so what can be written over is everything from there to the end.</p>
+	 */
+	private void write(StyledDocument doc, String chunk, AttributeSet attributes) throws BadLocationException {
+		if(m_overwrite < 0) {
+			doc.insertString(doc.getLength(), chunk, attributes);
+			return;
+		}
+		int newline = chunk.indexOf('\n');
+		String sameLine = newline < 0 ? chunk : chunk.substring(0, newline);
+		int over = Math.min(sameLine.length(), doc.getLength() - m_overwrite);
+		if(over > 0)
+			doc.remove(m_overwrite, over);
+		doc.insertString(m_overwrite, sameLine, attributes);
+		m_overwrite += sameLine.length();
+		if(m_overwrite >= doc.getLength())
+			m_overwrite = -1;
+		if(newline >= 0) {
+			m_overwrite = -1;
+			doc.insertString(doc.getLength(), chunk.substring(newline), attributes);
+		}
+	}
+
+	/** Rub out the character before the cursor; over a line, just step back over it. */
+	private void erase(StyledDocument doc) throws BadLocationException {
+		if(m_overwrite < 0) {
+			if(doc.getLength() > 0)
+				doc.remove(doc.getLength() - 1, 1);
+		} else if(m_overwrite > lineStart(doc)) {
+			m_overwrite--;
+		}
+	}
+
+	/** Where the machine's part of the last line starts. */
+	private int lineStart(StyledDocument doc) {
+		Element root = doc.getDefaultRootElement();
+		int start = root.getElement(root.getElementIndex(doc.getLength())).getStartOffset();
+		return Math.max(start, m_protectedEnd);
 	}
 
 	private static int nextMarker(String s, int from) {
 		for(int i = from; i < s.length(); i++) {
 			char c = s.charAt(i);
-			if(c == TerminalFilter.ERASE || c == TerminalFilter.BELL)
+			if(c == TerminalFilter.ERASE || c == TerminalFilter.BELL || c == TerminalFilter.RETURN)
 				return i;
 		}
 		return -1;
@@ -229,10 +292,13 @@ public final class GlassTerminalView implements TerminalView {
 		return !UiColors.TERMINAL_BACKGROUND.equals(m_pane.getBackground());
 	}
 
-	private static void trim(StyledDocument doc) throws BadLocationException {
+	private void trim(StyledDocument doc) throws BadLocationException {
 		if(doc.getLength() <= MAX_CHARACTERS)
 			return;
 		doc.remove(0, TRIM_CHUNK);
+		if(m_overwrite >= 0)
+			m_overwrite = Math.max(0, m_overwrite - TRIM_CHUNK);
+		m_protectedEnd = Math.max(0, m_protectedEnd - TRIM_CHUNK);
 	}
 
 	@Override
@@ -246,6 +312,8 @@ public final class GlassTerminalView implements TerminalView {
 	private void clearOnEdt() {
 		m_pane.setText("");
 		m_filter.reset();
+		m_overwrite = -1;
+		m_protectedEnd = 0;
 	}
 
 	/**

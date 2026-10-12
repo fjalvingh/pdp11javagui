@@ -33,8 +33,32 @@ class TerminalFilterTest {
 	@Test
 	void aLoneCrThroughOdtsRulesWouldLoseEveryLine() {
 		//-- What the bug looks like if the profile is ignored: the 11/44's stream read as ODT's
-		//-- comes out as one line, because its CRs are dropped and it never sends an LF.
-		assertEquals(">>>00001000 123456>>>", new TerminalFilter(ODT).filter(">>>\r00001000 123456\r>>>"));
+		//-- never ends a line, because its CRs are only carriage returns and it never sends an LF.
+		//-- Every line is written over the one before it.
+		assertEquals(">>>\r00001000 123456\r>>>", new TerminalFilter(ODT).filter(">>>\r00001000 123456\r>>>"));
+	}
+
+	@Test
+	void aCrThatIsNotALineEndingIsStillACarriageReturn() {
+		//-- ZQKC marks the end of every pass with CR SPACE CR (the string at 016064 in
+		//-- ZQKCF0.BIC), which on a real terminal shows nothing. Dropping the CRs left a space
+		//-- per pass, piling up along the line.
+		TerminalFilter f = new TerminalFilter(ODT);
+		assertEquals("ABC" + TerminalFilter.RETURN + " ", f.filter("ABC\r \r"));
+		assertEquals(0, f.getColumn());
+		//-- The held CR goes out with whatever takes the next column.
+		assertEquals(TerminalFilter.RETURN + "X", f.filter("X"));
+	}
+
+	@Test
+	void odtsCrBeforeItsLfIsStillOnlyALineEnding() {
+		//-- Held until the LF, so ODT's transcripts are what they were - fill NULs and a bell
+		//-- between the two included, and across a chunk boundary.
+		assertEquals("a\nb", new TerminalFilter(ODT).filter("a\r\0\0\nb"));
+		assertEquals("a" + TerminalFilter.BELL + "\n", new TerminalFilter(ODT).filter("a\r\u0007\n"));
+		TerminalFilter f = new TerminalFilter(ODT);
+		assertEquals("a", f.filter("a\r"));
+		assertEquals("\nb", f.filter("\nb"));
 	}
 
 	@Test
