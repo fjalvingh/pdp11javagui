@@ -9,6 +9,21 @@
   rewrite of. The settings directory and the jar keep the name `pdp11gui`, so existing settings
   are still found.
 
+### Session log
+
+- **Every session is written to a log file**, in `logs/` under the data directory
+  (`pdp11gui-<date>-<time>.log`, the newest 20 kept). It holds every channel whatever the Log
+  window's switches say: each string sent to the console, everything received, the decoded
+  answers, when each console job started and how long it took, the connection's settings and
+  command timeout, and the full stack trace of every failure. A "no console prompt" failure
+  records what was unconsumed, which answers did arrive and how long it waited, so an
+  intermittent fault on a real line can be read about after the dialog is gone. The Log window
+  says where the file is.
+- **A serial connection waits for the line to go quiet before its handshake.** On an 11/05 with
+  an M9312 the machine received junk for over a second after the port opened, rejecting it with
+  a register dump each time; the connection was declared made at the first of those prompts, and
+  the junk left at the end sat in front of the first real command.
+
 ### Shared memory
 
 - **Every window now shows the same memory.** What the Memory Loader reads from a file, what the

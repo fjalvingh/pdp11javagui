@@ -46,7 +46,7 @@ public final class LogPanel extends JPanel {
 
 		JPanel channels = new JPanel(new MigLayout("insets 0"));
 		for(LogChannel channel : LogChannel.values()) {
-			JCheckBox box = new JCheckBox(channel.getColumnTitle(), logger.isEnabled(channel));
+			JCheckBox box = new JCheckBox(channel.getColumnTitle(), logger.isShown(channel));
 			if(channel == LogChannel.TRANSPORT_READ || channel == LogChannel.TRANSPORT_WRITE)
 				box.setToolTipText("One line per byte. Off unless you are debugging the wire itself.");
 			box.addActionListener(e -> logger.setEnabled(channel, box.isSelected()));

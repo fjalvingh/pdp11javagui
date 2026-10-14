@@ -80,6 +80,16 @@ public final class ConnectionManager implements AutoCloseable {
 	/** Long enough for a machine on the other side of a slow link, short enough to give up on a typo. */
 	private static final int TELNET_CONNECT_TIMEOUT_MS = 10_000;
 
+	/**
+	 * How long a serial line must say nothing before the handshake starts. Long against a
+	 * character at any console speed (4 ms at 2400 baud) and against the gap between a prompt
+	 * and the junk that followed it on the 11/05, which was under 5 ms.
+	 */
+	private static final long SERIAL_QUIET_MILLIS = 300;
+
+	/** And how long to wait for that before going ahead anyway: a running program may never stop talking. */
+	private static final long SERIAL_SETTLE_MAX_MILLIS = 5_000;
+
 	private final MemoryCellGroups m_groups;
 
 	private final Logger m_logger;
@@ -346,8 +356,14 @@ public final class ConnectionManager implements AutoCloseable {
 			boolean alsoMachineConsole = protocolIsMachineConsole;
 			cc.setTerminalSink(text -> onProtocolData(text, alsoMachineConsole));
 			cc.setLostListener(this::onConnectionLost);
+			m_logger.log(LogChannel.OTHER, "Connecting: " + profile.describe() + " (" + transport.describe()
+				+ "), command timeout " + c.getCommandTimeoutMillis() + " ms");
 			cc.attach(c);
+			//-- A real line can be noisy for a while after the port opens; see awaitQuiet.
+			if(transport instanceof SerialTransport)
+				cc.awaitQuiet(SERIAL_QUIET_MILLIS, SERIAL_SETTLE_MAX_MILLIS);
 			cc.run(() -> c.init(cc));
+			m_logger.log(LogChannel.OTHER, "Connected: " + profile.describe());
 
 			synchronized(m_connectionLock) {
 				if(generation != m_generation)

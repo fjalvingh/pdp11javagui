@@ -22,7 +22,9 @@ import to.etc.pdp11.ui.mmu.MmuWindow;
 import to.etc.pdp11.ui.numbers.NumberConverterWindow;
 import to.etc.pdp11.ui.scan.IoPageScannerWindow;
 import to.etc.pdp11.ui.simh.SimhConsoleWindow;
+import to.etc.pdp11.ui.log.LogFile;
 import to.etc.pdp11.ui.log.UiLogger;
+import to.etc.pdp11.ui.settings.ConfigDir;
 import to.etc.pdp11.ui.macro11.AssemblerWindow;
 
 import javax.swing.JOptionPane;
@@ -52,6 +54,7 @@ public final class Pdp11Gui {
 		configurePlatform();
 
 		UiLogger logger = new UiLogger();
+		openLogFile(logger);
 		//-- Covers the reader and command threads of PLAN.md section 1, which is where an
 		//-- escaping exception would otherwise vanish silently.
 		Thread.setDefaultUncaughtExceptionHandler((t, x) -> reportFatal(logger, t, x));
@@ -67,6 +70,8 @@ public final class Pdp11Gui {
 			logger.log(LogChannel.OTHER, AppVersion.NAME + " " + AppVersion.get()
 				+ " starting on Java " + Runtime.version());
 			logger.log(LogChannel.OTHER, "Settings: " + context.getSettingsStore().getFile());
+			if(logger.getFile() != null)
+				logger.log(LogChannel.OTHER, "Session log: " + logger.getFile());
 			new MainWindow(context).setVisible(true);
 			//-- After the main window, so the layout comes back stacked above it rather than
 			//-- behind it. A window that cannot be reopened is one window skipped; see there.
@@ -140,8 +145,21 @@ public final class Pdp11Gui {
 		return System.getProperty("os.name", "").toLowerCase().contains("mac");
 	}
 
+	/**
+	 * Write the whole session to a file in the data directory, so a console failure can be
+	 * read about after the fact. A log that cannot be opened is said and survived.
+	 */
+	private static void openLogFile(UiLogger logger) {
+		java.nio.file.Path dir = ConfigDir.data().resolve("logs");
+		try {
+			logger.setFile(LogFile.open(dir));
+		} catch(java.io.IOException | RuntimeException x) {
+			logger.log(LogChannel.OTHER, "No session log: cannot write in " + dir + ": " + x);
+		}
+	}
+
 	private static void reportFatal(UiLogger logger, Thread thread, Throwable x) {
-		logger.log(LogChannel.OTHER, "Uncaught exception on thread '" + thread.getName() + "': " + x);
+		logger.logFailure(LogChannel.OTHER, "Uncaught exception on thread '" + thread.getName() + "'", x);
 		System.err.println("Uncaught exception on thread '" + thread.getName() + "':");
 		x.printStackTrace();
 		SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,

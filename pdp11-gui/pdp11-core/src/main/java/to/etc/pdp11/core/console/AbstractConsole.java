@@ -336,11 +336,14 @@ public abstract class AbstractConsole implements Console, SerialReceiver {
 	 * arrived" is not the same as "this command finished". See {@link AnswerCollector}.</p>
 	 */
 	protected void checkPromptAfter(int fromIndex, String errinfo) throws NoConsolePromptException {
+		long start = System.nanoTime();
 		if(m_answers.waitFor(AnswerPhrase.Prompt.class, fromIndex, m_commandTimeoutMillis) != null)
 			return;
 		NoConsolePromptException x = new NoConsolePromptException("No console prompt: " + errinfo + "!",
 			getUnconsumedInput(), m_answers.snapshot());
 		x.logDiagnostics(m_logger);
+		m_logger.log(LogChannel.OTHER, "  gave up after " + (System.nanoTime() - start) / 1_000_000
+			+ " ms (command timeout " + m_commandTimeoutMillis + " ms)");
 		throw x;
 	}
 

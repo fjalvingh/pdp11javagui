@@ -41,6 +41,13 @@ public final class UiLogger implements Logger {
 	private Listener m_listener;
 
 	/**
+	 * The session log on disk, or null. Records every channel whatever {@link #m_enabled} says:
+	 * the switches are about what is worth looking at, and a fault that already happened cannot
+	 * be looked at again with them on. Guarded by {@link #m_lines}.
+	 */
+	private LogFile m_file;
+
+	/**
 	 * What the Log window implements.
 	 *
 	 * <p>Called on whichever thread logged, holding this logger's monitor, so an implementation
@@ -61,6 +68,29 @@ public final class UiLogger implements Logger {
 
 	@Override
 	public boolean isEnabled(LogChannel channel) {
+		synchronized(m_lines) {
+			return m_file != null || m_enabled.contains(channel);
+		}
+	}
+
+	/** Also write everything to this file, from now on. Null stops it, and closes the old one. */
+	public void setFile(LogFile file) {
+		synchronized(m_lines) {
+			if(m_file != null)
+				m_file.close();
+			m_file = file;
+		}
+	}
+
+	/** Where the session log is being written, or null. */
+	public java.nio.file.Path getFile() {
+		synchronized(m_lines) {
+			return m_file == null ? null : m_file.getFile();
+		}
+	}
+
+	/** Whether this channel goes into the buffer the Log window shows - its switch, not the file's. */
+	public boolean isShown(LogChannel channel) {
 		synchronized(m_lines) {
 			return m_enabled.contains(channel);
 		}
@@ -86,8 +116,17 @@ public final class UiLogger implements Logger {
 	 */
 	@Override
 	public void log(LogChannel channel, String message) {
-		LogLine line = new LogLine(System.currentTimeMillis(), channel, message);
+		logFailure(channel, message, null);
+	}
+
+	/** The stack trace goes to the file; the window gets the exception's one-line form. */
+	@Override
+	public void logFailure(LogChannel channel, String message, Throwable x) {
+		long now = System.currentTimeMillis();
+		LogLine line = new LogLine(now, channel, x == null ? message : message + ": " + x);
 		synchronized(m_lines) {
+			if(m_file != null)
+				m_file.write(now, channel, message, x);
 			if(!m_enabled.contains(channel))
 				return;
 			m_lines.addLast(line);

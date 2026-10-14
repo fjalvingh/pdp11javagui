@@ -269,7 +269,7 @@ public final class AppContext {
 	 * mostly on the command thread.</p>
 	 */
 	public void reportFailure(String message, Throwable cause) {
-		m_logger.log(LogChannel.OTHER, cause == null ? message : message + ": " + cause);
+		m_logger.logFailure(LogChannel.OTHER, message, cause);
 		m_failureHandler.accept(message, cause);
 	}
 
@@ -306,13 +306,17 @@ public final class AppContext {
 			return false;
 		}
 		boolean queued = connection.execute(() -> {
+			long start = System.nanoTime();
+			m_logger.log(LogChannel.COMMAND, "%s: start", what);
 			try {
 				job.run(console);
+				m_logger.log(LogChannel.COMMAND, "%s: done in %d ms", what, (System.nanoTime() - start) / 1_000_000);
 			} catch(OperationCancelledException x) {
 				//-- The user pressed Cancel on the progress dialog. Not a failure, and not
 				//-- something to put a second dialog in front of them about.
 				m_logger.log(LogChannel.OTHER, what + ": cancelled");
 			} catch(ConsoleException | RuntimeException x) {
+				m_logger.log(LogChannel.COMMAND, "%s: failed after %d ms", what, (System.nanoTime() - start) / 1_000_000);
 				reportFailure(what + " failed", x);
 			}
 		});

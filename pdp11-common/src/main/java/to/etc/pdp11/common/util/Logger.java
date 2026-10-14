@@ -24,6 +24,14 @@ public interface Logger {
 
 	void log(LogChannel channel, String message);
 
+	/**
+	 * A line about a failure, with the failure. Where the line ends up only as text, the
+	 * exception is appended to it; a log that can keep the stack trace keeps it.
+	 */
+	default void logFailure(LogChannel channel, String message, Throwable x) {
+		log(channel, x == null ? message : message + ": " + x);
+	}
+
 	default void log(String message) {
 		log(LogChannel.OTHER, message);
 	}

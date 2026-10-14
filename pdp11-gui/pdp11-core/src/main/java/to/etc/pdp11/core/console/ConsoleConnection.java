@@ -91,6 +91,12 @@ public final class ConsoleConnection implements AutoCloseable {
 	/** Set when the reader stops for a reason worth reporting. */
 	private volatile Throwable m_failure;
 
+	/** When the reader last got anything, in {@link System#nanoTime()} terms; see {@link #awaitQuiet}. */
+	private volatile long m_lastReceiveNanos;
+
+	/** How many bytes the reader has had, for {@link #awaitQuiet}'s report. */
+	private volatile long m_bytesReceived;
+
 	/** Held across every transport write, so two threads' bytes never interleave. */
 	private final Object m_writeLock = new Object();
 
@@ -124,6 +130,7 @@ public final class ConsoleConnection implements AutoCloseable {
 		if(m_receiver != null)
 			throw new IllegalStateException("This connection already has a console attached");
 		m_receiver = receiver;
+		m_lastReceiveNanos = System.nanoTime();
 		Thread t = new Thread(this::readerLoop, "pdp11-reader");
 		t.setDaemon(true);
 		m_readerThread = t;
@@ -187,6 +194,8 @@ public final class ConsoleConnection implements AutoCloseable {
 				int n = m_transport.read(buf, 0, buf.length);
 				if(n < 0)
 					break;
+				m_lastReceiveNanos = System.nanoTime();
+				m_bytesReceived += n;
 				//-- Every PDP-11 console is a 7-bit device and the Pascal masks parity off
 				//-- here, before anything sees the byte ({@code SerialIoHubU.pas:843}) - the
 				//-- terminal included, which is why the mask is not the decoder's job.
@@ -206,7 +215,7 @@ public final class ConsoleConnection implements AutoCloseable {
 		} finally {
 			m_failure = failure;
 			if(failure != null)
-				m_logger.log(LogChannel.OTHER, "Console connection lost: " + failure);
+				m_logger.logFailure(LogChannel.OTHER, "Console connection lost", failure);
 			//-- The console first, so that anything blocked waiting for an answer is already
 			//-- unblocked by the time the layers above start tearing the connection down.
 			m_receiver.onDisconnected(failure);
@@ -214,6 +223,50 @@ public final class ConsoleConnection implements AutoCloseable {
 				LostListener l = m_lostListener;
 				if(l != null)
 					l.onConnectionLost(this, failure);
+			}
+		}
+	}
+
+	/**
+	 * Wait until nothing has arrived for {@code quietMillis}, or {@code maxMillis} have passed.
+	 *
+	 * <p>For a real serial line, before the handshake. Found against a real 11/05 on an M9312:
+	 * for over a second after the port opens, the machine's receive line picks up junk while the
+	 * machine itself is transmitting, so the boot ROM rejects two characters nobody sent, prints
+	 * a register dump and a prompt, and picks up the next two during that - six rounds of it,
+	 * with nothing written from this side at all. A handshake that takes the first prompt for
+	 * an answer is then connected in the middle of the storm, and the junk left at its end sits
+	 * in front of the first real command. What arrives meanwhile is decoded as usual and goes to
+	 * the terminal; the console's own resync then throws it away.</p>
+	 *
+	 * <p>Not on the command thread's account and not on the event thread: on whoever is
+	 * connecting, which is a worker.</p>
+	 *
+	 * @return true when the line went quiet, false when it was still talking at the deadline
+	 */
+	public boolean awaitQuiet(long quietMillis, long maxMillis) {
+		long start = System.nanoTime();
+		long bytesBefore = m_bytesReceived;
+		long quietNanos = quietMillis * 1_000_000L;
+		long deadline = start + maxMillis * 1_000_000L;
+		for(;;) {
+			long now = System.nanoTime();
+			long idle = now - m_lastReceiveNanos;
+			if(idle >= quietNanos) {
+				m_logger.log(LogChannel.OTHER, "Line quiet after %d ms, %d byte(s) received meanwhile",
+					(now - start) / 1_000_000, m_bytesReceived - bytesBefore);
+				return true;
+			}
+			if(now >= deadline || !isOpen()) {
+				m_logger.log(LogChannel.OTHER, "Line still busy after %d ms (%d byte(s) received); going ahead",
+					(now - start) / 1_000_000, m_bytesReceived - bytesBefore);
+				return false;
+			}
+			try {
+				Thread.sleep(Math.max(1, Math.min((quietNanos - idle) / 1_000_000, 50)));
+			} catch(InterruptedException x) {
+				Thread.currentThread().interrupt();
+				return false;
 			}
 		}
 	}
@@ -298,7 +351,7 @@ public final class ConsoleConnection implements AutoCloseable {
 					//-- and would otherwise reach the executor, which kills the worker thread and
 					//-- quietly makes a new one. That loses whatever the task was doing and says
 					//-- nothing anywhere. An Error is left alone: that is not ours to swallow.
-					m_logger.log(LogChannel.OTHER, "Console task failed on " + describe() + ": " + x);
+					m_logger.logFailure(LogChannel.OTHER, "Console task failed on " + describe(), x);
 				}
 			});
 			return true;
@@ -328,9 +381,12 @@ public final class ConsoleConnection implements AutoCloseable {
 			//-- reply while holding this, so the interrupt byte is never delayed by more than
 			//-- one command's worth of bytes.
 			synchronized(m_writeLock) {
+				if(m_logger.isEnabled(LogChannel.TRANSPORT_WRITE))
+					m_logger.log(LogChannel.TRANSPORT_WRITE, "sent \"" + NoConsolePromptException.printable(text) + "\"");
 				m_transport.write(text.getBytes(StandardCharsets.ISO_8859_1));
 			}
 		} catch(IOException x) {
+			m_logger.logFailure(LogChannel.OTHER, "Writing to " + describe() + " failed", x);
 			throw new ConsoleException("Writing to " + describe() + " failed: " + x, x);
 		}
 	}

@@ -331,4 +331,71 @@ class ConsoleConnectionTest {
 		assertNotNull(c.getFailure());
 		c.close();
 	}
+
+	/**
+	 * The connect waits out a line that is still talking, and not a moment more once it stops.
+	 *
+	 * <p>The noise is what an 11/05 on an M9312 sent for 1.6 s after the port opened: a junk
+	 * character every few milliseconds, which a handshake started at once takes a prompt out of.</p>
+	 */
+	@Test
+	void awaitQuietWaitsForTheLineToStopTalking() throws Exception {
+		long noiseMillis = 400;
+		PhysicalTransport noisy = new PhysicalTransport() {
+			private final long m_until = System.nanoTime() + noiseMillis * 1_000_000L;
+
+			private volatile boolean m_closed;
+
+			@Override
+			public synchronized int read(byte[] buf, int off, int len) throws IOException {
+				try {
+					if(System.nanoTime() < m_until) {
+						Thread.sleep(5);
+						buf[off] = 'y';
+						return 1;
+					}
+					while(!m_closed) {
+						wait();
+					}
+				} catch(InterruptedException x) {
+					Thread.currentThread().interrupt();
+				}
+				return -1;
+			}
+
+			@Override
+			public void write(byte[] buf, int off, int len) {
+			}
+
+			@Override
+			public boolean isOpen() {
+				return !m_closed;
+			}
+
+			@Override
+			public synchronized void close() {
+				m_closed = true;
+				notifyAll();
+			}
+
+			@Override
+			public String describe() {
+				return "noise";
+			}
+		};
+		ConsoleConnection c = new ConsoleConnection(noisy, Logger.NULL);
+		RecordingReceiver r = new RecordingReceiver();
+		try {
+			long start = System.nanoTime();
+			c.attach(r);
+			assertTrue(c.awaitQuiet(100, 5_000), "the noise stops, so the line goes quiet");
+			long took = (System.nanoTime() - start) / 1_000_000;
+			assertTrue(took >= noiseMillis + 100, "returned during the noise, after " + took + " ms");
+			assertTrue(took < noiseMillis + 2_000, "kept waiting after the line went quiet: " + took + " ms");
+
+			assertTrue(r.awaitText("y").length() > 10, "the noise was delivered as usual");
+		} finally {
+			c.close();
+		}
+	}
 }
