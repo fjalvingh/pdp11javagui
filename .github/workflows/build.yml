@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # pdp11-common, shared with the web tools, is a submodule.
+          # pdp11-common is a submodule.
           submodules: recursive
 
       - name: Set up JDK 21

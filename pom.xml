@@ -40,9 +40,8 @@
     </developers>
 
     <!--
-        pdp11-common is a git submodule, shared with the web tools (toolsapp). Its pom has no
-        parent - it is a module of both reactors and cannot inherit from either - so it carries
-        its own plugin setup, and nothing in this pom's build section applies to it.
+        pdp11-common is a git submodule, a repository of its own. Its pom has no parent, so it
+        carries its own plugin setup, and nothing in this pom's build section applies to it.
     -->
     <modules>
         <module>pdp11-common</module>

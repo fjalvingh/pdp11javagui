@@ -22,13 +22,11 @@ window manager, settings), `pdp11-app` (`main()`, wiring, resources). Under them
 assembler, the microcode documents and browser): the code that needs no machine. The
 dependencies run common ← core ← ui ← app, and never the other way.
 
-**`pdp11-common` is a git submodule**, the repository `/home/jal/git/pdp11-common`, because a
-second application uses it too: the DomUI web application of minicomputer tools that need no
-machine, which lives at `/home/jal/git/toolsapp` and includes the same submodule. Its pom has no
-parent - it is a module of both reactors - so it carries its own plugin setup and nothing in this
-root pom's build section reaches it. A change in it is a change to both applications: commit it
-in the submodule (and push it there), then commit the moved submodule pointer here. The release
-workflow restores the submodule after `versions:set`, which would otherwise renumber it.
+**`pdp11-common` is a git submodule**, the repository `/home/jal/git/pdp11-common`. Its pom has no
+parent, so it carries its own plugin setup and nothing in this root pom's build section reaches
+it. A change in it is committed in the submodule (and pushed there), and then the moved
+submodule pointer is committed here. The release workflow restores the submodule after
+`versions:set`, which would otherwise renumber it.
 
 ## Read the plan first
 
@@ -51,9 +49,7 @@ silently diverging.
 ## Hard rules
 
 - **`pdp11-common` depends on nothing in this project**, and neither it nor `pdp11-core` may
-  depend on Swing or AWT. Common's own `LayeringTest` states the first. Something the web tools
-  want that is in core is either about a machine - and so not for the web - or in the wrong
-  module.
+  depend on Swing or AWT. Common's own `LayeringTest` states the first.
 - **`pdp11-core` must not depend on Swing or AWT.** The module compiles with
   `--limit-modules java.base`, so an offending import is a compile error, and an ArchUnit test
   covers the test sources that flag cannot reach. It is the single most important structural
@@ -63,8 +59,7 @@ silently diverging.
   exception (`NoConsolePromptException`, `OperationCancelledException`) instead. See PLAN.md
   §1 and §2.
 - **An algorithm goes in `pdp11-common` or `pdp11-core`, even when exactly one window uses it** -
-  common when it needs no machine, and then the web tools can show it too, as `MicrocodeBrowser`
-  shows the microcode in both. If the awkward part of a window is arithmetic over what the
+  common when it needs no machine, as `MicrocodeBrowser` does for the Microcode window. If the awkward part of a window is arithmetic over what the
   machine said - which line the PC is on, which addresses answered, which data line is stuck -
   that part is a class with a test, and the window is the thing that shows its result. `DisassemblyListing`, `IoPageScanner` and
   `MemoryTester` are all this, and all three were got wrong in a way a test caught. A window with

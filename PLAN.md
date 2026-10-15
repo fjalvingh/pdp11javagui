@@ -95,8 +95,8 @@ MigLayout · [jSerialComm](https://github.com/Fazecast/jSerialComm) ·
 
 ```
 java11gui/
-  pdp11-common/   git submodule, shared with the web tools; needs no machine: addresses,
-                  memory cells, disassembler, memory file formats, MACRO-11 assembler,
+  pdp11-common/   git submodule; what needs no machine: addresses, memory cells,
+                  disassembler, memory file formats, MACRO-11 assembler, diagnostics library,
                   microcode documents and the microcode browser. No Swing, and no dependency on
                   any other module here.
   pdp11-gui/      the desktop application
@@ -106,29 +106,19 @@ java11gui/
     pdp11-app/    main(), packaging, resources (driver *.mac, machines/*.ini)
 ```
 
-### Two applications, one model
+### What needs no machine
 
-The project was one product until the microcode browsers were wanted on the web as well, with
-disassembling images and small assembly tasks to follow. The code was already split along the
-right line: the packages the web needs - `util`, `addr`, `mem`, `microcode`, `disas`, `memfile`,
-`macro11` - depended only on each other, never on the console, transport or simulator code. They
-moved as whole packages into `pdp11-common` and were renamed from `to.etc.pdp11.core.*` to
-`to.etc.pdp11.common.*`, so no package is split across modules and the name says where the class
-lives. The rule for a new class is whether it needs a machine: if not, common.
+The packages that never touch a console, a transport or a simulator - `util`, `addr`, `mem`,
+`microcode`, `disas`, `memfile`, `macro11`, `diag` - are `pdp11-common`, under
+`to.etc.pdp11.common.*`; they were moved there as whole packages from `to.etc.pdp11.core.*`, so
+no package is split across modules and the name says where the class lives. The rule for a new
+class is whether it needs a machine: if not, common.
 
-**The web application has since moved out**, to a repository of its own
-(`/home/jal/git/toolsapp`), and `pdp11-common` to one of its own
-(`/home/jal/git/pdp11-common`), which both include as a git submodule and build as a module of
-their reactors. Common's pom therefore has no parent: it cannot inherit from either
-application, and carries its own plugin setup. What follows is how the split was made and still
-holds; the web side of it is enforced in toolsapp now.
-
-`pdp11-web` depends on `pdp11-common` and DomUI only. Its pom's enforcer rule bans `pdp11-core`,
-`pdp11-ui`, `pdp11-app` and jSerialComm: a web page has no serial port behind it, and a class the
-web seems to need from core is either about a machine or in the wrong module. The microcode window
-was where this was first tested - its search, history and revision comparison were inside the
-Swing panel, and became `MicrocodeBrowser` in common, which the Swing panel and the web page are
-both views over.
+`pdp11-common` is a repository of its own (`/home/jal/git/pdp11-common`), included here as a
+git submodule and built as a module of this reactor. Its pom has no parent and carries its own
+plugin setup. The microcode window was where the line was first drawn: its search, history and
+revision comparison were inside the Swing panel, and became `MicrocodeBrowser` in common, which
+the panel is a view over.
 
 The split is load-bearing. **`maven-enforcer` cannot express it** — Swing and AWT are JDK
 packages, not artifacts, so there is no dependency to ban. What does express it is compiling
@@ -459,8 +449,8 @@ to.etc.pdp11.core.machine     machine-description .ini parsing (+ include/define
 to.etc.pdp11.core.media       disk image devices, RLE transfer codec   [last phase]
 ```
 
-The section title is kept for its history: the first seven were in `pdp11-core` until the web
-application needed them (see "Two applications, one model" above).
+The section title is kept for its history: the first seven were in `pdp11-core` until they moved
+to `pdp11-common` (see "What needs no machine" above).
 
 ### `Address` — immutable record
 
@@ -1790,8 +1780,7 @@ have to be got at file by file. They cannot be shipped (they are DEC's), so the 
 collects them, on request, from the archives that keep them. Decisions, and what was found:
 
 - **All of it is in `pdp11-common` (`to.etc.pdp11.common.diag`)**, because none of it needs a
-  machine: the web application can list a library or read an image with the same classes. The
-  window is a view over `DiagnosticCollector`, `DiagnosticLibrary` and `LibraryListing`.
+  machine. The window is a view over `DiagnosticCollector`, `DiagnosticLibrary` and `LibraryListing`.
 - **The catalog is DEC's own index, verbatim.** `AH-FG66P-MC` (1990), on bitsavers, lists every
   diagnostic by package with revision and title, tab-separated; it is a resource, parsed on first
   use. It names about 1,150 diagnostics. The first letter of a diagnostic's four-letter name is its

@@ -276,20 +276,16 @@
   columns and its README are corrected; no bit changed. A test now holds the microtest against
   the 38 microwords whose branch DEC's flow listing names, which the old decode failed.
 
-### The web application, and what it shares
+### pdp11-common
 
-- **The web application has moved to a repository of its own, toolsapp.** It was the
-  `pdp11-web` module here, with DomUI as a submodule; both are gone from this build, along with
-  the `-DskipWeb` switch and the DomUI install step in CI.
-- **`pdp11-common` is a git submodule now**, the repository the web tools include as well: what
-  needs no machine - addresses, memory cells, the disassembler, memory file formats, the MACRO-11
-  assembler, the diagnostics library and the microcode - under `to.etc.pdp11.common.*`. Clone
-  with `--recurse-submodules`. The desktop application's three modules sit under `pdp11-gui/`,
+- **`pdp11-common` is a git submodule**, a repository of its own: what needs no machine -
+  addresses, memory cells, the disassembler, memory file formats, the MACRO-11 assembler, the
+  diagnostics library and the microcode - under `to.etc.pdp11.common.*`. Clone with
+  `--recurse-submodules`. The desktop application's three modules sit under `pdp11-gui/`,
   with their artifact ids unchanged.
 - **The microcode window's navigation is no longer inside the window.** Search, history, the
   revision comparison and what each row says are `MicrocodeBrowser` and `MicrowordRow` in
-  `pdp11-common`, tested on their own, so the web tools' microcode page can be a view over them
-  as the Swing panel is.
+  `pdp11-common`, tested on their own; the Swing panel is a view over them.
 
 ### Documentation
 

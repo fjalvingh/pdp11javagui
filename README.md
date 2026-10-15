@@ -125,9 +125,8 @@ java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar
 ```
 
 `pdp11-common` - the disassembler, the assembler, the memory file formats and the microcode,
-everything that needs no machine - is shared with
-[toolsapp](https://github.com/fjalvingh/toolsapp), a web application of PDP-11 tools that has
-the microcode browsers with every microword reachable by its own link.
+everything that needs no machine - is a repository of its own,
+[pdp11-common](https://github.com/fjalvingh/pdp11-common).
 
 ## Licence
 

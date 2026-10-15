@@ -42,8 +42,8 @@ import java.util.function.Consumer;
  * <p>Ported from {@code TFormMicroCode} ({@code FormMicroCodeU.pas}). Reading the document and
  * cutting the microwords into fields is {@link Microcode} and the loaders beside it, where each
  * is tested against the whole of its source; the search, the walk and what the rows say are
- * {@link MicrocodeBrowser} and {@link MicrowordRow}, which the web application's microcode page
- * shows as well. What is here is the widgets, the colours, the file chooser and the settings.</p>
+ * {@link MicrocodeBrowser} and {@link MicrowordRow}, in pdp11-common, tested on their own. What
+ * is here is the widgets, the colours, the file chooser and the settings.</p>
  *
  * <h2>On the 11/05 it is a debugger</h2>
  *

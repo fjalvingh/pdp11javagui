@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * One microword as a table: the rows {@link MicrowordRow#of} makes, one per line, in three
- * columns. What the rows say is decided in pdp11-common, where the web page reads the same ones.
+ * columns. What the rows say is decided in pdp11-common.
  */
 public final class MicrocodeTableModel extends AbstractTableModel {
 	private static final String[] COLUMNS = {"Field", "Bits", "Info"};
