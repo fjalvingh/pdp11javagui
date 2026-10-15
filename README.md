@@ -2,8 +2,7 @@
 
 An IDE for real and simulated PDP-11 computers: connect to a machine's console, look at and change
 its memory, write MACRO-11 and load it, run and single-step it, disassemble what is there, and find
-out what is wrong with a machine that is not working. Alongside it is a small web application of
-PDP-11 tools that need no machine at all.
+out what is wrong with a machine that is not working.
 
 This is a Java rewrite of [Joerg Hoppe's PDP11GUI](http://www.retrocmp.com/tools/pdp11gui), and it
 would not exist without his great work: the console protocols, the machine descriptions, the
@@ -91,9 +90,6 @@ The desktop program:
   decoded into named fields. On an 11/05 with a KM11 it follows the machine's microcode as it runs.
 - **Terminal**, **Log**, **SimH console** and **Number converter**.
 
-The web application has the **microcode browsers**: the same documents, search and navigation as
-the desktop's Microcode window, with every microword reachable by its own link.
-
 ## Still to do
 
 - The **Blinkenlight execution** window, which produces instructions for keying a program in on a
@@ -102,8 +98,6 @@ the desktop's Microcode window, with every microword reachable by its own link.
   diagnostics library can already read the image formats; moving them to and from a machine is
   not there yet.
 - **Installers** per platform; for now the program is a single jar.
-- The web application is just the microcode browsers so far. Disassembling images and small
-  assembly tasks are planned for it.
 
 The PDP-11/70 front panel of the original is deliberately not carried over.
 
@@ -121,15 +115,19 @@ Then **File → Connect to simulated → …** for a machine that needs nothing 
 
 To use a real SimH, its `pdp11` has to be on your `PATH`. Nothing else needs to be installed.
 
-To run the web application from a checkout:
+To build it from a checkout, which needs the `pdp11-common` submodule:
 
 ```
-tools/build-domui.sh
-./mvnw -pl pdp11-web -am install -DskipTests
-./mvnw -pl pdp11-web jetty:run
+git clone --recurse-submodules https://github.com/fjalvingh/pdp11javagui.git
+cd pdp11javagui
+./mvnw verify
+java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar
 ```
 
-and open <http://localhost:8080/>.
+`pdp11-common` - the disassembler, the assembler, the memory file formats and the microcode,
+everything that needs no machine - is shared with
+[toolsapp](https://github.com/fjalvingh/toolsapp), a web application of PDP-11 tools that has
+the microcode browsers with every microword reachable by its own link.
 
 ## Licence
 

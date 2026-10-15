@@ -16,7 +16,7 @@
     <name>pdp11-gui</name>
     <description>
         The desktop application: the machine connection layer, the Swing windows and main().
-        Everything it shares with the web application is in pdp11-common, one level up.
+        Everything it shares with the web tools is in pdp11-common, the submodule one level up.
     </description>
 
     <modules>

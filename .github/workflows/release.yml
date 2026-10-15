@@ -36,7 +36,7 @@ jobs:
           # --generate-notes lists what changed since the previous tag, so it needs the history
           # and the other tags, not the single commit a tag push checks out by default.
           fetch-depth: 0
-          # DomUI, which the web application is built on, is the domui/ submodule.
+          # pdp11-common, shared with the web tools, is a submodule.
           submodules: recursive
 
       # Deliberately not interpolated into the shell: an input becomes a shell command if it is,
@@ -96,11 +96,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
 
-      # DomUI is not on Maven Central: install the parts of the submodule the web application
-      # uses before anything resolves the reactor, which now includes pdp11-web.
-      - name: Install DomUI
-        run: tools/build-domui.sh
-
       # The checked-in poms stay at -SNAPSHOT; the release version comes from the tag and is
       # stamped on for this build only. Nothing is committed and nothing is pushed, so a release
       # can never leave the branch pointing at a version that was never built.
@@ -111,16 +106,15 @@ jobs:
           -DprocessAllModules=true
           -DgenerateBackupPoms=false
 
-      # The web profile puts the domui/ submodule in the reactor, and versions:set renumbers it
-      # along with everything else, groupId filter or not - after which DomUI's modules ask for
-      # each other at the release version and cannot find the 1.2-SNAPSHOT that was installed.
-      # DomUI is not ours to version: put it back, and fail if anything outside it was missed.
-      - name: Leave DomUI's own version alone
+      # pdp11-common is a submodule and a reactor module, and versions:set renumbers it along
+      # with everything else - after which it no longer matches the version this project asks
+      # for. It is not this release's to version: put it back, and fail if that did not take.
+      - name: Leave pdp11-common's own version alone
         run: |
           set -euo pipefail
-          git -C domui checkout -- .
-          if git -C domui status --porcelain | grep -q .; then
-            echo "::error::domui/ still differs from its commit after restoring it" >&2
+          git -C pdp11-common checkout -- .
+          if git -C pdp11-common status --porcelain | grep -q .; then
+            echo "::error::pdp11-common/ still differs from its commit after restoring it" >&2
             exit 1
           fi
 

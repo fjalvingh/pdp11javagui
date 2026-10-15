@@ -39,6 +39,11 @@
         </developer>
     </developers>
 
+    <!--
+        pdp11-common is a git submodule, shared with the web tools (toolsapp). Its pom has no
+        parent - it is a module of both reactors and cannot inherit from either - so it carries
+        its own plugin setup, and nothing in this pom's build section applies to it.
+    -->
     <modules>
         <module>pdp11-common</module>
         <module>pdp11-gui</module>
@@ -63,15 +68,10 @@
         <jdt.annotation.version>2.4.100</jdt.annotation.version>
 
         <!--
-            The web application. DomUI is the domui/ submodule (branch domui-fixed), installed
-            by tools/build-domui.sh; the servlet API and slf4j follow what DomUI itself builds
-            against, and Jetty is the version DomUI runs on.
+            What the pom in the pdp11-common submodule says. It is a reactor module here, and
+            the version only has to agree with it; see the dependency below.
         -->
-        <domui.version>1.2-SNAPSHOT</domui.version>
-        <jakarta.servlet.version>6.1.0</jakarta.servlet.version>
-        <slf4j.version>1.7.36</slf4j.version>
-        <jetty.version>11.0.26</jetty.version>
-        <web.http.port>8080</web.http.port>
+        <pdp11-common.version>1.0-SNAPSHOT</pdp11-common.version>
 
         <!-- Test dependencies -->
         <junit.version>5.14.4</junit.version>
@@ -84,7 +84,6 @@
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <maven-jar-plugin.version>3.5.1</maven-jar-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
-        <maven-war-plugin.version>3.4.0</maven-war-plugin.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
         <!--
             Not bound to a phase: the release workflow calls versions:set from the command
@@ -115,10 +114,14 @@
                 <scope>import</scope>
             </dependency>
 
+            <!--
+                Not ${project.version}: pdp11-common is a submodule with a version of its own,
+                which the release workflow leaves alone when it stamps one on this project.
+            -->
             <dependency>
                 <groupId>to.etc.pdp11</groupId>
                 <artifactId>pdp11-common</artifactId>
-                <version>${project.version}</version>
+                <version>${pdp11-common.version}</version>
             </dependency>
             <dependency>
                 <groupId>to.etc.pdp11</groupId>
@@ -170,27 +173,6 @@
                 <groupId>com.fazecast</groupId>
                 <artifactId>jSerialComm</artifactId>
                 <version>${jserialcomm.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>to.etc.domui</groupId>
-                <artifactId>to.etc.domui</artifactId>
-                <version>${domui.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>to.etc.domui</groupId>
-                <artifactId>fontawesome6free</artifactId>
-                <version>${domui.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>jakarta.servlet</groupId>
-                <artifactId>jakarta.servlet-api</artifactId>
-                <version>${jakarta.servlet.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-api</artifactId>
-                <version>${slf4j.version}</version>
             </dependency>
 
             <dependency>
@@ -267,16 +249,6 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-resources-plugin</artifactId>
                     <version>${maven-resources-plugin.version}</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-war-plugin</artifactId>
-                    <version>${maven-war-plugin.version}</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.eclipse.jetty</groupId>
-                    <artifactId>jetty-maven-plugin</artifactId>
-                    <version>${jetty.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -362,26 +334,6 @@
     </build>
 
     <profiles>
-        <!--
-            The web application and the DomUI submodule it is built on. On by default; -DskipWeb
-            leaves both out of the reactor, so the desktop IDE builds and tests without DomUI
-            installed and without running DomUI's own test suites. CI does that on macOS and
-            Windows, where DomUI's tests fail for reasons of DomUI's own (line endings in the
-            syntaxer's expected output, locale-dependent number formats in the demo's Selenium
-            tests) that say nothing about this project.
-        -->
-        <profile>
-            <id>web</id>
-            <activation>
-                <property>
-                    <name>!skipWeb</name>
-                </property>
-            </activation>
-            <modules>
-                <module>domui</module>
-                <module>pdp11-web</module>
-            </modules>
-        </profile>
         <!--
             Tests get an X server of their own rather than the developer's.
 

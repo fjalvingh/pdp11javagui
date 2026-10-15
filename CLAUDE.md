@@ -15,22 +15,20 @@ windows, replaces the single-threaded `Application.ProcessMessages` I/O model wi
 threads, and rebuilds the UI with layout managers instead of ~69k lines of absolute-positioned
 `.dfm`.
 
-There are two applications. The desktop IDE is `pdp11-gui`, three modules: `pdp11-core`
-(transports, console protocols, the simulated machines, machine descriptions — headless, and
-enforced so), `pdp11-ui` (windows, window manager, settings), `pdp11-app` (`main()`, wiring,
-resources). The second is `pdp11-web`, a DomUI web application of minicomputer tools that need
-no machine: the microcode browsers now, disassembling images and small assembly tasks later.
-What both use is `pdp11-common` (addresses, memory cells, the disassembler, memory file formats,
-the MACRO-11 assembler, the microcode documents and browser). The dependencies run
-common ← core ← ui ← app and common ← web, and never the other way; `pdp11-web` may not reach
-`pdp11-core`, which an enforcer rule in its pom holds down.
+The desktop IDE is `pdp11-gui`, three modules: `pdp11-core` (transports, console protocols, the
+simulated machines, machine descriptions — headless, and enforced so), `pdp11-ui` (windows,
+window manager, settings), `pdp11-app` (`main()`, wiring, resources). Under them is
+`pdp11-common` (addresses, memory cells, the disassembler, memory file formats, the MACRO-11
+assembler, the microcode documents and browser): the code that needs no machine. The
+dependencies run common ← core ← ui ← app, and never the other way.
 
-DomUI is the git submodule `domui/` (branch `domui-fixed`), not on Maven Central:
-`tools/build-domui.sh` installs the parts the web needs into the local repository, once after
-cloning and again after the submodule moves. CI does the same on Linux. `domui` and `pdp11-web`
-are reactor modules only through the root pom's `web` profile, on unless `-DskipWeb` is given;
-CI gives it on macOS and Windows. DomUI's own tests never run here: `.mvn/maven.config` sets
-`-Ddomui.test.skip=true`, DomUI's switch for its unit tests, Selenium ITs and Jetty.
+**`pdp11-common` is a git submodule**, the repository `/home/jal/git/pdp11-common`, because a
+second application uses it too: the DomUI web application of minicomputer tools that need no
+machine, which lives at `/home/jal/git/toolsapp` and includes the same submodule. Its pom has no
+parent - it is a module of both reactors - so it carries its own plugin setup and nothing in this
+root pom's build section reaches it. A change in it is a change to both applications: commit it
+in the submodule (and push it there), then commit the moved submodule pointer here. The release
+workflow restores the submodule after `versions:set`, which would otherwise renumber it.
 
 ## Read the plan first
 
@@ -52,10 +50,10 @@ silently diverging.
 
 ## Hard rules
 
-- **`pdp11-common` depends on nothing else in this project**, and neither it nor `pdp11-core`
-  may depend on Swing or AWT; `pdp11-web` depends on `pdp11-common` and never on `pdp11-core`.
-  Common's own `LayeringTest` states the first. Something the web wants that is in core is either
-  about a machine - and so not for the web - or in the wrong module.
+- **`pdp11-common` depends on nothing in this project**, and neither it nor `pdp11-core` may
+  depend on Swing or AWT. Common's own `LayeringTest` states the first. Something the web tools
+  want that is in core is either about a machine - and so not for the web - or in the wrong
+  module.
 - **`pdp11-core` must not depend on Swing or AWT.** The module compiles with
   `--limit-modules java.base`, so an offending import is a compile error, and an ArchUnit test
   covers the test sources that flag cannot reach. It is the single most important structural
@@ -65,7 +63,7 @@ silently diverging.
   exception (`NoConsolePromptException`, `OperationCancelledException`) instead. See PLAN.md
   §1 and §2.
 - **An algorithm goes in `pdp11-common` or `pdp11-core`, even when exactly one window uses it** -
-  common when it needs no machine, and then the web page can show it too, as `MicrocodeBrowser`
+  common when it needs no machine, and then the web tools can show it too, as `MicrocodeBrowser`
   shows the microcode in both. If the awkward part of a window is arithmetic over what the
   machine said - which line the PC is on, which addresses answered, which data line is stuck -
   that part is a class with a test, and the window is the thing that shows its result. `DisassemblyListing`, `IoPageScanner` and
@@ -105,11 +103,6 @@ silently diverging.
   other forms one by one, and every grid calling `FormMain.SyncBitfieldForm`; a window that is not
   open hears nothing and needs to hear nothing, and adding a window changes no existing one. See
   PLAN.md §5.
-- **On a DomUI page, input and model-driven tables are components; presentation may be tags.**
-  `Text2` for text, `ComboFixed2` for a choice, DomUI's buttons, and `DataTable` with a
-  `RowRenderer` for what it is for: a paginated, sortable list of like rows. Layout and the
-  presentation of data may use `Div`, `Span`, `HTag` and `Table`/`TR`/`TD` - and a hand-built
-  `Table` is the better choice where the rows are different kinds of thing, as a microword's are.
 - **Only `UiColors` names a colour.** Everything that means something - a value typed and not
   deposited, the line the PC is on, connected, failed - is a constant there, tuned for the dark
   theme the application runs. A `new Color(...)` anywhere else is how a second theme becomes a

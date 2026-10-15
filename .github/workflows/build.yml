@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # DomUI, which the web application is built on, is the domui/ submodule.
+          # pdp11-common, shared with the web tools, is a submodule.
           submodules: recursive
 
       - name: Set up JDK 21
@@ -50,18 +50,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
 
-      # DomUI is not on Maven Central: install the parts of the submodule the web application
-      # uses into the local repository before the reactor needs them. Linux only: the web
-      # application is a server, deployed on Linux, and is left out of the other builds.
-      - name: Install DomUI
-        if: runner.os == 'Linux'
-        run: tools/build-domui.sh
-
-      # On macOS and Windows -DskipWeb leaves pdp11-web and the DomUI submodule out of the
-      # reactor (the root pom's web profile): DomUI's own test suites fail there, and what those
-      # platforms are here to check is the desktop IDE.
       - name: Build
-        run: ./mvnw -B --no-transfer-progress verify ${{ runner.os != 'Linux' && '-DskipWeb' || '' }}
+        run: ./mvnw -B --no-transfer-progress verify
 
       - name: Upload the fat jar
         if: runner.os == 'Linux'

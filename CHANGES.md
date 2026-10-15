@@ -276,28 +276,20 @@
   columns and its README are corrected; no bit changed. A test now holds the microtest against
   the 38 microwords whose branch DEC's flow listing names, which the old decode failed.
 
-### The web application
+### The web application, and what it shares
 
-- **The microcode browsers are on the web.** A new module, `pdp11-web`, is a DomUI web
-  application of minicomputer tools that need no machine, and its first page is the microcode:
-  the PDP-11/44's listing and both PDP-11/05 board revisions, searched by µPC, symbolic tag or
-  listing line, walked with Next and Back, with the fields the other KD11-B revision disagrees on
-  coloured as on the desktop. What falls through to a microword is a list of links, and
-  `?source=PDP1105_F&upc=011` opens on any microword, so one can be linked to.
-  `./mvnw -pl pdp11-web jetty:run` serves it on port 8080.
-- **The project is two applications and what they share.** `pdp11-common` holds what needs no
-  machine - addresses, memory cells, the disassembler, memory file formats, the MACRO-11 driver
-  and the microcode - under `to.etc.pdp11.common.*`; the desktop application's three modules now
-  sit under `pdp11-gui/`, with their artifact ids unchanged. The web application may use common
-  and nothing else, which its build enforces. Disassembling images and small assembly tasks are
-  to follow on the web, from the same classes the desktop uses.
+- **The web application has moved to a repository of its own, toolsapp.** It was the
+  `pdp11-web` module here, with DomUI as a submodule; both are gone from this build, along with
+  the `-DskipWeb` switch and the DomUI install step in CI.
+- **`pdp11-common` is a git submodule now**, the repository the web tools include as well: what
+  needs no machine - addresses, memory cells, the disassembler, memory file formats, the MACRO-11
+  assembler, the diagnostics library and the microcode - under `to.etc.pdp11.common.*`. Clone
+  with `--recurse-submodules`. The desktop application's three modules sit under `pdp11-gui/`,
+  with their artifact ids unchanged.
 - **The microcode window's navigation is no longer inside the window.** Search, history, the
   revision comparison and what each row says are `MicrocodeBrowser` and `MicrowordRow` in
-  `pdp11-common`, tested on their own; the Swing panel and the web page are both views over them.
-- **The web pages share a top bar**, after the DomUI demo's: the PDP11GUI logo, which goes home, a
-  breadcrumb of the pages that led here, and a light/dark theme switch whose choice is remembered.
-- **DomUI is a git submodule** (`domui/`, branch `domui-fixed`). Clone with
-  `--recurse-submodules` and run `tools/build-domui.sh` once before building; CI does both.
+  `pdp11-common`, tested on their own, so the web tools' microcode page can be a view over them
+  as the Swing panel is.
 
 ### Documentation
 

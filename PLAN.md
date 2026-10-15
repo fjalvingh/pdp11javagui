@@ -95,16 +95,15 @@ MigLayout · [jSerialComm](https://github.com/Fazecast/jSerialComm) ·
 
 ```
 java11gui/
-  pdp11-common/   shared by both applications, needs no machine: addresses, memory cells,
-                  disassembler, memory file formats, MACRO-11 driver, microcode documents and
-                  the microcode browser. No Swing, and no dependency on any other module here.
+  pdp11-common/   git submodule, shared with the web tools; needs no machine: addresses,
+                  memory cells, disassembler, memory file formats, MACRO-11 assembler,
+                  microcode documents and the microcode browser. No Swing, and no dependency on
+                  any other module here.
   pdp11-gui/      the desktop application
     pdp11-core/   what talks to a machine: transports, console protocols, simulated machines,
                   machine descriptions, memory tests, MMU. No Swing. Unit-tested headlessly.
     pdp11-ui/     Swing windows, window manager, settings binding
     pdp11-app/    main(), packaging, resources (driver *.mac, machines/*.ini)
-  pdp11-web/      the web application, on DomUI: minicomputer tools with no machine attached
-  domui/          git submodule, branch domui-fixed; not a reactor module
 ```
 
 ### Two applications, one model
@@ -117,17 +116,19 @@ moved as whole packages into `pdp11-common` and were renamed from `to.etc.pdp11.
 `to.etc.pdp11.common.*`, so no package is split across modules and the name says where the class
 lives. The rule for a new class is whether it needs a machine: if not, common.
 
+**The web application has since moved out**, to a repository of its own
+(`/home/jal/git/toolsapp`), and `pdp11-common` to one of its own
+(`/home/jal/git/pdp11-common`), which both include as a git submodule and build as a module of
+their reactors. Common's pom therefore has no parent: it cannot inherit from either
+application, and carries its own plugin setup. What follows is how the split was made and still
+holds; the web side of it is enforced in toolsapp now.
+
 `pdp11-web` depends on `pdp11-common` and DomUI only. Its pom's enforcer rule bans `pdp11-core`,
 `pdp11-ui`, `pdp11-app` and jSerialComm: a web page has no serial port behind it, and a class the
 web seems to need from core is either about a machine or in the wrong module. The microcode window
 was where this was first tested - its search, history and revision comparison were inside the
 Swing panel, and became `MicrocodeBrowser` in common, which the Swing panel and the web page are
 both views over.
-
-DomUI is not on Maven Central and is not a reactor module (its parent pom brings Kotlin,
-Hibernate integrations and a demo this build has no reason to run). `tools/build-domui.sh`
-installs the framework and its FontAwesome icon set - DomUI refuses to start without one - into
-the local repository; CI checks out the submodule and runs it before the build.
 
 The split is load-bearing. **`maven-enforcer` cannot express it** — Swing and AWT are JDK
 packages, not artifacts, so there is no dependency to ban. What does express it is compiling

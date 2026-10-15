@@ -1,4 +1,3 @@
-[submodule "domui"]
-	path = domui
-	url = https://github.com/fjalvingh/domui.git
-	branch = domui-fixed
+[submodule "pdp11-common"]
+	path = pdp11-common
+	url = https://github.com/fjalvingh/pdp11-common.git

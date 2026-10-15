@@ -1,3 +1,2 @@
 #!/bin/bash
-#-- The reactor includes the web application, which needs DomUI installed; do that once.
 java -jar pdp11-gui/pdp11-app/target/pdp11gui.jar &
