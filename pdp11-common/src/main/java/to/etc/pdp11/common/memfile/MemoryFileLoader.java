@@ -65,6 +65,8 @@ public final class MemoryFileLoader {
 			case TEXT_ONE_ADDR_PER_LINE -> loadText(group, files.get(0), startAddr);
 			case TEXT_WORDS_ONLY -> loadWords(group, files.get(0), startAddr);
 			case ABSOLUTE_PAPERTAPE -> loadPaperTape(group, files.get(0), startAddr);
+			case MEDIUM_PROGRAM -> throw new IllegalArgumentException(format.getLabel()
+				+ " holds more than one program; list them with MediumPrograms and load one with loadTape");
 		};
 		//-- In address order, because that is how a grid lays cells out, and nothing about a file
 		//-- guarantees it - a paper tape image is blocks, and a text listing is whatever somebody
@@ -289,17 +291,30 @@ public final class MemoryFileLoader {
 		throws IOException {
 		AbsoluteLoaderTape tape = AbsoluteLoaderTape.parse(Files.readAllBytes(file), file.getFileName().toString());
 		Address entry = tape.getTransferAddress() == null ? null : Address.of(startAddr.type(), tape.getTransferAddress());
+		return loadTape(group, tape, startAddr, entry, file.getFileName().toString());
+	}
+
+	/**
+	 * Put an already parsed absolute loader image into {@code group}, replacing what was there.
+	 *
+	 * @param like  gives the address width; its value is not used, the image says where it goes
+	 * @param entry what to report as the entry address, or null
+	 * @param name  the image's name, for the error when it holds nothing
+	 */
+	public static Result loadTape(MemoryCellGroup group, AbsoluteLoaderTape tape, Address like, Address entry,
+		String name) throws IOException {
 		group.clear();
-		group.shiftRange(startAddr, 0, false);
+		group.shiftRange(like, 0, false);
 		int loaded = 0;
 		for(AbsoluteLoaderTape.Word w : tape.words()) {
 			//-- One valid byte is enough: a block can end mid-word, and the missing half is zero,
 			//-- which is what the loader would have left there.
-			addCell(group, startAddr, w.address(), w.value());
+			addCell(group, like, w.address(), w.value());
 			loaded++;
 		}
 		if(loaded == 0)
-			throw new IOException("No data blocks were found in " + file.getFileName());
+			throw new IOException("No data blocks were found in " + name);
+		group.sort();
 		return new Result(loaded, entry, new ArrayList<>(tape.getWarnings()));
 	}
 

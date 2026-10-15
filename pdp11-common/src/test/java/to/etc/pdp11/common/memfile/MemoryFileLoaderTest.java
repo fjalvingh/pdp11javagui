@@ -63,6 +63,8 @@ class MemoryFileLoaderTest {
 	void everyFormatSurvivesBeingWrittenAndReadBack(@TempDir Path dir) throws Exception {
 		int[] values = {0000001, 0177777, 0125252, 0052525, 0000000, 0123456};
 		for(MemoryFileFormat f : MemoryFileFormat.values()) {
+			if(!f.isSavable())
+				continue;                                   // a medium is read here, never written
 			Path sub = Files.createDirectories(dir.resolve(f.name()));
 			List<Path> files = paths(sub, f);
 			MemoryCellGroup source = filled(01000, values);

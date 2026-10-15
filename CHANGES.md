@@ -9,6 +9,17 @@
   rewrite of. The settings directory and the jar keep the name `pdp11gui`, so existing settings
   are still found.
 
+### Memory loader
+
+- **The Memory Loader reads programs off disk and tape images**, with a new format: *Program on
+  a disk or tape image, or in an archive*. It reads everything the Diagnostics window does
+  (XXDP and DOS-11 disks of every size, physical and logical floppy images, ImageDisk files, SimH
+  tapes, and any of those zipped or gzipped) and lists the absolute loader programs on it,
+  marked standalone, needs DRS or needs XXDP. Load the one you want; it starts where the
+  Diagnostics window would start it.
+- The paper tape format's file dialog now also offers `.bin`, `.bic` and `.lda` files, which are
+  the same format.
+
 ### Session log
 
 - **Every session is written to a log file**, in `logs/` under the data directory

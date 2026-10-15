@@ -48,7 +48,20 @@ public enum MemoryFileFormat {
 	 * block whose address is where to start executing - which is why this format has an entry
 	 * address and the others do not.</p>
 	 */
-	ABSOLUTE_PAPERTAPE("DEC standard absolute paper tape", false, true, true, List.of("Image file"));
+	ABSOLUTE_PAPERTAPE("DEC standard absolute paper tape", false, true, true, List.of("Image file")),
+
+	/**
+	 * An absolute loader program taken off a disk or tape image, or out of an archive - whatever
+	 * the Diagnostics window can read: XXDP and DOS-11 disks of every size, physical and logical
+	 * floppy images, ImageDisk files, SimH tapes, and any of those zipped or gzipped. A loose
+	 * {@code .BIN}, {@code .BIC} or {@code .LDA} is read the same way.
+	 *
+	 * <p>Load only: there is nothing sensible to write back into a disk image from here. And not
+	 * read by {@link MemoryFileLoader#load} either, because a medium holds many programs and
+	 * somebody has to say which - {@code to.etc.pdp11.common.diag.MediumPrograms} lists them, and
+	 * {@link MemoryFileLoader#loadTape} loads the one chosen.</p>
+	 */
+	MEDIUM_PROGRAM("Program on a disk or tape image, or in an archive", false, true, true, List.of("Image file"));
 
 	private final String m_label;
 
@@ -102,6 +115,23 @@ public enum MemoryFileFormat {
 
 	public int getFileCount() {
 		return m_filePrompts.size();
+	}
+
+	/** Whether the Memory Dumper can write this. */
+	public boolean isSavable() {
+		return this != MEDIUM_PROGRAM;
+	}
+
+	/**
+	 * The extensions to offer in an open dialog, or an empty list for "any file": a medium's name
+	 * says nothing about what it is ({@code .dsk} is every kind of disk), so it is not filtered on.
+	 */
+	public List<String> getOpenExtensions() {
+		return switch(this) {
+			case ABSOLUTE_PAPERTAPE -> List.of("ptap", "bin", "bic", "lda");
+			case MEDIUM_PROGRAM -> List.of();
+			default -> List.of(getDefaultExtension());
+		};
 	}
 
 	/** The extension to offer in a save dialog. */

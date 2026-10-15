@@ -3,6 +3,8 @@ package to.etc.pdp11.ui.load;
 import net.miginfocom.swing.MigLayout;
 import to.etc.pdp11.common.addr.Address;
 import to.etc.pdp11.common.addr.MemoryAddressType;
+import to.etc.pdp11.common.diag.MediumPrograms;
+import to.etc.pdp11.common.memfile.AbsoluteLoaderTape;
 import to.etc.pdp11.core.conn.ConnectionManager;
 import to.etc.pdp11.core.console.Console;
 import to.etc.pdp11.common.memfile.MemoryFileFormat;
@@ -15,15 +17,20 @@ import to.etc.pdp11.ui.UiColors;
 import to.etc.pdp11.ui.mem.MemoryCellGroupTable;
 
 import javax.swing.JButton;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
+import javax.swing.JList;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import java.awt.Component;
 import java.awt.Font;
 import java.awt.Window;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,6 +74,17 @@ public final class MemoryLoaderPanel extends JPanel {
 	private final List<JTextField> m_fileFields = new ArrayList<>();
 
 	private final List<JButton> m_fileBrowse = new ArrayList<>();
+
+	/** Which program on a medium to load; only for {@link MemoryFileFormat#MEDIUM_PROGRAM}. */
+	private final JLabel m_programLabel = new JLabel("Program:");
+
+	private final JComboBox<MediumPrograms.Program> m_program = new JComboBox<>();
+
+	/** The medium {@link #m_program} lists, or null when nothing has been read yet. */
+	private Path m_scannedMedium;
+
+	/** Whether {@link #m_program} should say which medium each program is on. */
+	private boolean m_programsOnSeveralVolumes;
 
 	private final JButton m_load = new JButton("Load file");
 
@@ -151,6 +169,19 @@ public final class MemoryLoaderPanel extends JPanel {
 			bar.add(browse, "wrap");
 		}
 
+		bar.add(m_programLabel);
+		bar.add(m_program, "growx, wrap");
+		m_program.setToolTipText("The programs on the medium. DRS programs and XXDP's own need software"
+			+ " loaded with them, as the Diagnostics window says; loading them is still allowed.");
+		m_program.setRenderer(new DefaultListCellRenderer() {
+			@Override
+			public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean selected,
+				boolean focus) {
+				Object shown = value instanceof MediumPrograms.Program p ? p.label(m_programsOnSeveralVolumes) : value;
+				return super.getListCellRendererComponent(list, shown, index, selected, focus);
+			}
+		});
+
 		m_startAddr.setToolTipText("Where to put the file's contents, for a format that does not say."
 			+ " Enter reads the file, same as Load file.");
 		//-- Enter acts, as it does in the Memory, Disassembler, Dumper, Memory Test and Bitfields
@@ -208,6 +239,9 @@ public final class MemoryLoaderPanel extends JPanel {
 		m_startAddr.setVisible(needsStart);
 		m_entryLabel.setVisible(f.hasEntryAddress());
 		m_entryAddr.setVisible(f.hasEntryAddress());
+		boolean medium = f == MemoryFileFormat.MEDIUM_PROGRAM;
+		m_programLabel.setVisible(medium);
+		m_program.setVisible(medium);
 		revalidate();
 		repaint();
 	}
@@ -218,13 +252,18 @@ public final class MemoryLoaderPanel extends JPanel {
 			return;
 		JFileChooser chooser = new JFileChooser();
 		chooser.setDialogTitle("Select a " + f.getFilePrompts().get(index).toLowerCase());
-		chooser.setFileFilter(new FileNameExtensionFilter(f.getLabel(), f.getDefaultExtension()));
+		List<String> extensions = f.getOpenExtensions();
+		if(!extensions.isEmpty())
+			chooser.setFileFilter(new FileNameExtensionFilter(f.getLabel(), extensions.toArray(String[]::new)));
 		String current = m_fileFields.get(index).getText().trim();
 		if(!current.isEmpty())
 			chooser.setSelectedFile(new java.io.File(current));
 		if(chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
 			return;
 		m_fileFields.get(index).setText(chooser.getSelectedFile().getAbsolutePath());
+		//-- A medium is read as soon as it is chosen, so the programs on it can be picked from.
+		if(f == MemoryFileFormat.MEDIUM_PROGRAM)
+			readMedium(chooser.getSelectedFile().toPath(), false);
 	}
 
 	// -------------------------------------------------------------------------------------
@@ -234,6 +273,10 @@ public final class MemoryLoaderPanel extends JPanel {
 	/** Read the file into the grid. Nothing is written to the machine. */
 	private void loadFile() {
 		MemoryFileFormat f = format();
+		if(f == MemoryFileFormat.MEDIUM_PROGRAM) {
+			loadFromMedium();
+			return;
+		}
 		List<Path> files = new ArrayList<>();
 		for(int i = 0; i < f.getFileCount(); i++) {
 			String name = m_fileFields.get(i).getText().trim();
@@ -267,36 +310,129 @@ public final class MemoryLoaderPanel extends JPanel {
 		m_status.setText("Reading " + files.get(0).getFileName() + " ...", UiColors.SECONDARY_TEXT);
 		m_context.onFile("Could not read " + files.get(0),
 			() -> MemoryFileLoader.load(f, m_group, files, at),
-			r -> {
+			r -> loaded(files.get(0).getFileName().toString(), files.get(0).toString(), r, null),
+			this::loadFailed);
+	}
+
+	/** Show what a load produced. On the event thread. */
+	private void loaded(String name, String from, MemoryFileLoader.Result r, String note) {
+		m_loading = false;
+		m_grid.rebuild();
+		for(String w : r.warnings()) {
+			m_context.getLogger().log(LogChannel.OTHER, "%s: %s", name, w);
+		}
+		//-- A format that says where the program starts tells the execution window, which
+		//-- is a different window and does not know this one exists.
+		if(r.entryAddress() != null) {
+			Address entry = Address.of(MemoryAddressType.VIRTUAL, r.entryAddress().val());
+			m_entryAddr.setText(entry.toOctal());
+			m_context.getMachineState().setStartPc(entry);
+		} else {
+			m_entryAddr.setText("");
+		}
+		m_context.getLogger().log(LogChannel.OTHER, "Loaded %d words from %s", r.wordsLoaded(), from);
+		boolean worry = !r.warnings().isEmpty() || note != null;
+		m_status.setText(r.wordsLoaded() + " words read from " + name
+			+ (r.entryAddress() == null ? "" : ", starting at " + m_entryAddr.getText())
+			+ (r.warnings().isEmpty() ? "" : "  -  " + r.warnings().get(0))
+			+ (note == null ? "" : "  -  " + note)
+			+ ".  Nothing has been written to the machine yet.",
+			worry ? UiColors.ERROR_TEXT : UiColors.OK_TEXT);
+		updateButtons();
+	}
+
+	private void loadFailed() {
+		m_loading = false;
+		m_grid.rebuild();                                   // a partial load still shows what it got
+		m_status.setText("Nothing loaded", UiColors.ERROR_TEXT);
+		updateButtons();
+	}
+
+	// -------------------------------------------------------------------------------------
+	// A program off a medium
+	// -------------------------------------------------------------------------------------
+
+	/**
+	 * Load the program chosen on the medium named, reading the medium first if it has not been.
+	 *
+	 * <p>A medium that holds exactly one program - a loose {@code .BIC}, a zip with one in it - is
+	 * loaded straight away; with more, the list is filled and the choice is left to the person.</p>
+	 */
+	private void loadFromMedium() {
+		String name = m_fileFields.get(0).getText().trim();
+		if(name.isEmpty()) {
+			m_status.error("Choose an image file first (use Browse)");
+			return;
+		}
+		Path medium = Path.of(name);
+		if(!medium.equals(m_scannedMedium)) {
+			readMedium(medium, true);
+			return;
+		}
+		MediumPrograms.Program p = (MediumPrograms.Program) m_program.getSelectedItem();
+		if(p == null) {
+			m_status.error("There is no program on " + medium.getFileName() + " to load");
+			return;
+		}
+		loadProgram(medium, p);
+	}
+
+	/** Read what is on a medium into the program list, off the event thread. */
+	private void readMedium(Path medium, boolean loadIfOnlyOne) {
+		m_loading = true;
+		updateButtons();
+		m_status.setText("Reading " + medium.getFileName() + " ...", UiColors.SECONDARY_TEXT);
+		m_context.onFile("Could not read " + medium,
+			() -> MediumPrograms.read(medium.getFileName().toString(), Files.readAllBytes(medium)),
+			c -> {
 				m_loading = false;
-				m_grid.rebuild();
-				for(String w : r.warnings()) {
-					m_context.getLogger().log(LogChannel.OTHER, "%s: %s", files.get(0).getFileName(), w);
+				m_scannedMedium = medium;
+				m_programsOnSeveralVolumes = c.isSeveralVolumes();
+				m_program.setModel(new DefaultComboBoxModel<>(c.programs().toArray(MediumPrograms.Program[]::new)));
+				for(String p : c.problems()) {
+					m_context.getLogger().log(LogChannel.OTHER, "%s", p);
 				}
-				//-- A format that says where the program starts tells the execution window, which
-				//-- is a different window and does not know this one exists.
-				if(r.entryAddress() != null) {
-					Address entry = Address.of(MemoryAddressType.VIRTUAL, r.entryAddress().val());
-					m_entryAddr.setText(entry.toOctal());
-					m_context.getMachineState().setStartPc(entry);
-				} else {
-					m_entryAddr.setText("");
-				}
-				m_context.getLogger().log(LogChannel.OTHER, "Loaded %d words from %s",
-					r.wordsLoaded(), files.get(0));
-				m_status.setText(r.wordsLoaded() + " words read from " + files.get(0).getFileName()
-					+ (r.entryAddress() == null ? "" : ", starting at " + m_entryAddr.getText())
-					+ (r.warnings().isEmpty() ? "" : "  -  " + r.warnings().get(0))
-					+ ".  Nothing has been written to the machine yet.",
-					r.warnings().isEmpty() ? UiColors.OK_TEXT : UiColors.ERROR_TEXT);
 				updateButtons();
+				if(c.programs().isEmpty()) {
+					m_status.error("No program found in " + medium.getFileName()
+						+ (c.problems().isEmpty() ? "" : ": " + c.problems().get(0)));
+				} else if(c.programs().size() == 1 && loadIfOnlyOne) {
+					loadProgram(medium, c.programs().get(0));
+				} else {
+					m_status.setText(c.programs().size() + " program" + (c.programs().size() == 1 ? "" : "s")
+						+ " on " + medium.getFileName() + ": choose one and press Load file", UiColors.SECONDARY_TEXT);
+				}
 			},
 			() -> {
 				m_loading = false;
-				m_grid.rebuild();                           // a partial load still shows what it got
-				m_status.setText("Nothing loaded", UiColors.ERROR_TEXT);
+				m_scannedMedium = null;
+				m_program.setModel(new DefaultComboBoxModel<>());
+				m_status.setText("Nothing read", UiColors.ERROR_TEXT);
 				updateButtons();
 			});
+	}
+
+	/**
+	 * Put one program from the medium into the grid.
+	 *
+	 * <p>Started where the Diagnostics window would start it: at its transfer address, or at 200
+	 * when that is odd, which is how nearly every diagnostic is shipped - see
+	 * {@link AbsoluteLoaderTape#startAddress()}.</p>
+	 */
+	private void loadProgram(Path medium, MediumPrograms.Program p) {
+		MemoryAddressType type = m_group.getType();
+		m_loading = true;
+		updateButtons();
+		m_status.setText("Loading " + p.name() + " ...", UiColors.SECONDARY_TEXT);
+		//-- Without its full stop: it goes in the middle of the status line.
+		String note = p.verdict().isRunnable() ? null : p.verdict().reason().replaceAll("\\.$", "");
+		m_context.onFile("Could not load " + p.name() + " from " + medium,
+			() -> {
+				AbsoluteLoaderTape tape = p.tape();
+				return MemoryFileLoader.loadTape(m_group, tape, Address.of(type, 0), Address.of(type, tape.startAddress()), p.name());
+			},
+			r -> loaded(p.name(), medium + " / " + p.volume() + " / " + p.name(), r, note),
+			this::loadFailed);
 	}
 
 	/**
@@ -391,6 +527,10 @@ public final class MemoryLoaderPanel extends JPanel {
 
 	public JComboBox<MemoryFileFormat> getFormatCombo() {
 		return m_format;
+	}
+
+	public JComboBox<MediumPrograms.Program> getProgramCombo() {
+		return m_program;
 	}
 
 	public JTextField getStartField() {

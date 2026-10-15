@@ -75,6 +75,7 @@ public final class MemoryDumper {
 			case TEXT_ONE_ADDR_PER_LINE -> saveText(group, files.get(0));
 			case TEXT_WORDS_ONLY -> saveWords(group, files.get(0));
 			case ABSOLUTE_PAPERTAPE -> savePaperTape(group, files.get(0), entry);
+			case MEDIUM_PROGRAM -> throw new IllegalArgumentException(format.getLabel() + " can only be loaded");
 		};
 	}
 

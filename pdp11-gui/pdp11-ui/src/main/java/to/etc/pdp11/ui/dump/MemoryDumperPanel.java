@@ -63,7 +63,8 @@ public final class MemoryDumperPanel extends JPanel {
 
 	private final JLabel m_entryLabel = new JLabel("Entry address:");
 
-	private final JComboBox<MemoryFileFormat> m_format = new JComboBox<>(MemoryFileFormat.values());
+	private final JComboBox<MemoryFileFormat> m_format = new JComboBox<>(java.util.Arrays.stream(MemoryFileFormat.values())
+		.filter(MemoryFileFormat::isSavable).toArray(MemoryFileFormat[]::new));
 
 	private final List<JLabel> m_fileLabels = new ArrayList<>();
 

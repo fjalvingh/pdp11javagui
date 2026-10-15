@@ -338,4 +338,56 @@ class MemoryLoaderPanelTest {
 		Path png = UiRenderer.renderToFile(panel, 980, 460, Path.of("target", "ui-render", "memory-loader.png"));
 		assertTrue(Files.size(png) > 0);
 	}
+
+	/**
+	 * A program off a medium: reading an archive of two lists them and loads neither, and the one
+	 * then chosen is what ends up in the grid, with its entry address.
+	 */
+	@Test
+	void aProgramIsChosenFromAnArchiveAndLoaded(@TempDir Path dir) throws Exception {
+		AppContext ctx = TestContext.create(dir);
+		MemoryLoaderPanel panel = Edt.call(() -> new MemoryLoaderPanel(ctx));
+		UiRenderer.layOut(panel, 980, 520);
+		Edt.run(panel::attach);
+
+		Path zip = dir.resolve("diags.zip");
+		try(java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(Files.newOutputStream(zip))) {
+			int at = 01000;
+			for(String name : List.of("FIRST.BIC", "SECOND.BIC")) {
+				MemoryCellGroup source = new MemoryCellGroups().addGroup(MemoryAddressType.PHYSICAL16, "src");
+				source.add(at, 2);
+				source.cell(0).setEditValue(CellValue.of(012700 + (at >> 9)));
+				source.cell(1).setEditValue(CellValue.of(0000000));
+				Path tape = dir.resolve(name);
+				MemoryDumper.save(MemoryFileFormat.ABSOLUTE_PAPERTAPE, source, List.of(tape),
+					Address.of(MemoryAddressType.PHYSICAL16, at));
+				out.putNextEntry(new java.util.zip.ZipEntry(name));
+				out.write(Files.readAllBytes(tape));
+				out.closeEntry();
+				at += 01000;
+			}
+		}
+
+		Edt.run(() -> panel.getFormatCombo().setSelectedItem(MemoryFileFormat.MEDIUM_PROGRAM));
+		assertTrue(panel.getProgramCombo().isVisible());
+		assertFalse(panel.getStartField().isVisible(), "the image says where it goes");
+		Edt.run(() -> {
+			panel.getFileField(0).setText(zip.toString());
+			panel.getLoadButton().doClick();
+		});
+		untilLoaded(panel);
+		assertEquals(2, Edt.call(() -> panel.getProgramCombo().getItemCount()));
+		assertTrue(panel.getGroup().isEmpty(), "two programs: nothing is loaded until one is chosen");
+
+		Edt.run(() -> {
+			panel.getProgramCombo().setSelectedIndex(1);
+			panel.getLoadButton().doClick();
+		});
+		untilLoaded(panel);
+		assertEquals(2, panel.getGroup().getCells().size());
+		assertEquals(CellValue.of(012702), panel.getGroup().findByAddress(Address.of(MemoryAddressType.PHYSICAL22, 02000)).getEditValue());
+		assertEquals("002000", panel.getEntryField().getText());
+		assertEquals(02000, ctx.getMachineState().getStartPc().val());
+		Edt.run(panel::dispose);
+	}
 }
